@@ -7,19 +7,14 @@ Run from `C:\xampp\htdocs\bookshop` in PowerShell after the frontend has been mo
 - Composer available on PATH
 - Node.js and pnpm
 
-## Laravel install
+## Laravel API
 
-```powershell
-cd C:\xampp\htdocs\bookshop
-composer create-project laravel/laravel backend
-cd backend
-php artisan install:api --no-interaction
-php artisan key:generate
-```
+Laravel 12 and Sanctum are installed in `backend/`. The `User` model supports Sanctum API tokens, and the API routes are in `backend/routes/api.php`.
 
 Create an empty MySQL database named `bookshop` using phpMyAdmin. Set `DB_CONNECTION=mysql`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=bookshop`, `DB_USERNAME=root` and your local `DB_PASSWORD` in `backend/.env`.
 
 ```powershell
+cd C:\xampp\htdocs\bookshop\backend
 php artisan migrate
 php artisan serve --host=127.0.0.1 --port=8000
 ```
