@@ -117,7 +117,7 @@ export default function Page() {
     }))
   }
 
-  if (authLoading) return <main className="login-screen" style={{alignItems:'center',justifyContent:'center'}}>Checking your session...</main>
+  if (authLoading) return <BrandLoader />
   if (!currentUser) return <LoginPage onLogin={(user) => setCurrentUser(user)} />
 
   return (
@@ -154,19 +154,19 @@ function LoginPage({ onLogin }: { onLogin: (user: BookshopUser) => void }) {
   }
   return <main className="login-screen">
     <section className="login-brand-panel">
-      <div className="login-brand"><div className="brand-mark"><BookOpen size={22} /></div><div><strong>Nifunze</strong><span>BOOKSHOP OS</span></div></div>
+      <div className="login-brand"><div className="brand-mark"><img src="/bookshop-emblem.svg" alt="" /></div><div><strong>Bookshop</strong><span>RETAIL WORKSPACE</span></div></div>
       <div className="login-story"><div className="eyebrow">MADE FOR KENYAN BOOKSELLERS</div><h1 tabIndex={-1}>Keep every shelf, sale, and school order moving.</h1><p>One calm workspace for M-Pesa sales, curriculum stock, suppliers, and your regular readers.</p><div className="login-points"><span><i /> KSh-ready checkout with M-Pesa</span><span><i /> KCSE and CBC catalogue tracking</span><span><i /> School account management</span></div></div>
-      <small className="login-footer">Nifunze Bookshop · Kenya</small>
+      <small className="login-footer">Bookshop · Kenya</small>
     </section>
     <section className="login-form-panel"><div className="login-form-wrap">
-      <div className="mobile-login-logo"><div className="brand-mark"><BookOpen size={20} /></div><strong>Nifunze</strong></div>
+      <div className="mobile-login-logo"><div className="brand-mark"><img src="/bookshop-emblem.svg" alt="" /></div><strong>Bookshop</strong></div>
       <div className="eyebrow">WELCOME BACK</div><h2>Sign in to your shop</h2>
       <p className="login-muted">Sign in with your assigned account. Access follows your role.</p>
       <form onSubmit={submit}>
         <label className="field-label">Work email<input className="text-input" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label>
         <label className="field-label">Password<div className="password-field"><input className="text-input" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /><button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button></div></label>
         {error && <p role="alert" style={{color:'#b91c1c',marginBottom:12}}>{error}</p>}
-        <button className="primary-button full" type="submit" disabled={pending}>{pending ? 'Signing in...' : 'Sign in to Nifunze'} <ArrowUpRight size={16} /></button>
+        <button className="primary-button full" type="submit" disabled={pending}>{pending ? 'Signing in...' : 'Sign in to Bookshop'} <ArrowUpRight size={16} /></button>
       </form>
     </div></section>
   </main>
