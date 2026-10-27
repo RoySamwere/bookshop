@@ -1,0 +1,240 @@
+'use client'
+
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, ChevronDown, ChevronLeft,
+  ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Search, Settings,
+  ShieldCheck, ShoppingCart, Truck, Users, WalletCards, X,
+} from 'lucide-react'
+import { hasPermission, roleLabel, type BookshopUser, type Permission } from '../lib/auth'
+
+const sections = [
+  { label: 'Dashboard', description: 'Your shop at a glance', icon: LayoutDashboard },
+  { label: 'Point of Sale', description: 'Create a sale and collect payment', icon: ShoppingCart },
+  { label: 'Sales History', description: 'Receipts and transactions', icon: FileText },
+  { label: 'Products & Books', description: 'Browse and manage your catalogue', icon: BookOpen },
+  { label: 'Inventory & Stock', description: 'Stock levels and replenishment', icon: Boxes },
+  { label: 'Suppliers', description: 'Your suppliers and publishing partners', icon: Truck },
+  { label: 'Customers', description: 'Your customer directory', icon: Users },
+  { label: 'Reports & Analytics', description: 'Sales and performance insights', icon: BarChart3 },
+  { label: 'Expenses', description: 'Shop expenses', icon: WalletCards, group: 'workspace' },
+  { label: 'Users', description: 'Team accounts and access rights', icon: Users, group: 'workspace', permission: 'users.manage' },
+  { label: 'Settings', description: 'Workspace settings', icon: Settings, group: 'workspace', permission: 'settings.manage' },
+] satisfies { label: string; description: string; icon: typeof BookOpen; group?: string; permission?: Permission }[]
+
+// Shared dismissal and focus behavior for the drawer, search, and popovers.
+function useOverlay<T extends HTMLElement>(open: boolean, close: () => void, modal = false) {
+  const panelRef = useRef<T>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef(close)
+  useEffect(() => { closeRef.current = close }, [close])
+
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement as HTMLElement | null
+    const panel = panelRef.current
+    const focusable = () => Array.from(panel?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), a[href], [tabindex="0"]',
+    ) || []).filter(element => element.getClientRects().length > 0)
+    if (modal) (focusable()[0] || panel)?.focus()
+    function keydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeRef.current()
+      }
+      if (modal && event.key === 'Tab') {
+        const items = focusable()
+        const first = items[0]
+        const last = items[items.length - 1]
+        if (event.shiftKey && (document.activeElement === first || !panel?.contains(document.activeElement))) {
+          event.preventDefault(); last?.focus()
+        } else if (!event.shiftKey && (document.activeElement === last || !panel?.contains(document.activeElement))) {
+          event.preventDefault(); first?.focus()
+        }
+      }
+    }
+    function outside(event: PointerEvent) {
+      if (!modal && !panel?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) closeRef.current()
+    }
+    function focusout(event: FocusEvent) {
+      if (!modal && !panel?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) closeRef.current()
+    }
+    document.addEventListener('keydown', keydown)
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('focusin', focusout)
+    return () => {
+      document.removeEventListener('keydown', keydown)
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('focusin', focusout)
+      // Do not steal focus from the next control after an outside click.
+      if (modal || panel?.contains(document.activeElement)) {
+        if (previous?.isConnected && !previous.closest('[inert]')) previous.focus()
+      }
+    }
+  }, [open, modal])
+  return { panelRef, triggerRef }
+}
+
+export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, children }: {
+  currentUser: BookshopUser; active: string; onNavigate: (section: string) => void
+  onSignOut: () => Promise<void>; children: ReactNode
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [mobile, setMobile] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [today, setToday] = useState('')
+  const mainRef = useRef<HTMLElement>(null)
+  const drawer = useOverlay<HTMLElement>(drawerOpen, () => setDrawerOpen(false), true)
+  const account = useOverlay<HTMLDivElement>(accountOpen, () => setAccountOpen(false))
+  const notifications = useOverlay<HTMLDivElement>(notificationsOpen, () => setNotificationsOpen(false))
+  const command = useOverlay<HTMLDivElement>(searchOpen, () => setSearchOpen(false), true)
+  const visibleSections = sections.filter(section => !('permission' in section) || hasPermission(currentUser, section.permission))
+  const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
+  const modalOpen = drawerOpen || searchOpen
+
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem('bookshop_sidebar_v1') === 'collapsed') } catch { /* Storage may be disabled. */ }
+    const media = window.matchMedia('(max-width: 1023px)')
+    const resize = () => { setMobile(media.matches); setDrawerOpen(false) }
+    resize()
+    media.addEventListener('change', resize)
+    const updateDate = () => setToday(new Intl.DateTimeFormat('en-KE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()))
+    updateDate()
+    const timer = window.setInterval(updateDate, 60000)
+    return () => { media.removeEventListener('change', resize); window.clearInterval(timer) }
+  }, [])
+
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setDrawerOpen(false); setAccountOpen(false); setNotificationsOpen(false)
+        setSearchOpen(previous => !previous)
+      }
+    }
+    window.addEventListener('keydown', shortcut)
+    return () => window.removeEventListener('keydown', shortcut)
+  }, [])
+
+  function navigate(section: string) {
+    onNavigate(section)
+    setDrawerOpen(false); setAccountOpen(false); setNotificationsOpen(false); setSearchOpen(false)
+    mainRef.current?.scrollTo({ top: 0 })
+    // The next page heading provides context to keyboard and screen-reader users.
+    window.requestAnimationFrame(() => mainRef.current?.querySelector<HTMLElement>('h1')?.focus())
+  }
+
+  function toggleCollapse() {
+    setCollapsed(previous => {
+      const next = !previous
+      try { localStorage.setItem('bookshop_sidebar_v1', next ? 'collapsed' : 'expanded') } catch { /* Optional preference. */ }
+      return next
+    })
+  }
+
+  const results = visibleSections.filter(section => `${section.label} ${section.description}`.toLowerCase().includes(search.toLowerCase()))
+
+  function navButton(section: typeof sections[number]) {
+    const Icon = section.icon
+    return <button key={section.label} className={`sidebar-link ${active === section.label ? 'is-active' : ''}`}
+      onClick={() => navigate(section.label)} aria-label={section.label} aria-current={active === section.label ? 'page' : undefined}
+      title={collapsed && !mobile ? section.label : undefined}>
+      <Icon size={19} aria-hidden="true" /><span className="sidebar-link-label">{section.label}</span>
+      {active === section.label && <span className="sidebar-active-dot" aria-hidden="true" />}
+    </button>
+  }
+
+  return <div className={`workspace-shell ${collapsed ? 'nav-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''} ${modalOpen ? 'overlay-open' : ''}`}>
+    <a className="skip-link" href="#workspace-content">Skip to content</a>
+    {drawerOpen && <div className="sidebar-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
+    <aside id="app-navigation" className="app-sidebar" ref={drawer.panelRef} tabIndex={-1}
+      role={mobile && drawerOpen ? 'dialog' : undefined} aria-modal={mobile && drawerOpen ? true : undefined}
+      aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
+      <div className="sidebar-brand">
+        <div className="brand-mark"><BookOpen size={22} aria-hidden="true" /></div>
+        <div className="sidebar-brand-copy"><strong>Nifunze<span>Bookshop workspace</span></strong></div>
+        <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
+      </div>
+      <div className="sidebar-scroll">
+        <div className="shop-indicator"><span className="status-dot" /><span>Main shop</span><span className="shop-status">Online</span></div>
+        <div className="sidebar-group-label">OPERATIONS</div>
+        <nav className="sidebar-links" aria-label="Shop operations">{visibleSections.filter(section => !('group' in section)).map(navButton)}</nav>
+        <div className="sidebar-group-label workspace-group">WORKSPACE</div>
+        <nav className="sidebar-links" aria-label="Workspace">{visibleSections.filter(section => 'group' in section).map(navButton)}</nav>
+      </div>
+      <div className="sidebar-footer">
+        <div className="sidebar-identity"><span className="user-avatar">{initials}</span><div><strong>{currentUser.name}</strong><span>{roleLabel(currentUser.role)}</span></div><ShieldCheck size={17} aria-hidden="true" /></div>
+        <button className="collapse-control" onClick={toggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} aria-controls="app-navigation" title={collapsed ? 'Expand sidebar' : undefined}>
+          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>Collapse sidebar</span>
+        </button>
+      </div>
+    </aside>
+
+    <div className="workspace-main" ref={mainRef} inert={modalOpen}>
+      <header className="app-header">
+        <div className="header-leading">
+          <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>
+          <div className="header-breadcrumb"><span>Main shop</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>
+        </div>
+        <div className="header-actions">
+          <button ref={command.triggerRef} className="workspace-search" aria-label="Search workspace" aria-haspopup="dialog" aria-expanded={searchOpen} aria-keyshortcuts="Control+k Meta+k" onClick={() => { setSearch(''); setSearchOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}>
+            <Search size={17} /><span>Find a workspace…</span><kbd>Ctrl K</kbd>
+          </button>
+          <time className="header-date">{today}</time>
+          <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><PlusIcon /><span>New sale</span></button>
+          <div className="header-popover-wrap">
+            <button ref={notifications.triggerRef} className={`header-icon ${notificationsOpen ? 'is-open' : ''}`} aria-label="Stock notifications" aria-expanded={notificationsOpen} aria-controls="stock-notifications" onClick={() => { setNotificationsOpen(previous => !previous); setAccountOpen(false) }}><Bell size={19} /><span className="notification-indicator" /></button>
+            {notificationsOpen && <div ref={notifications.panelRef} id="stock-notifications" className="header-popover notification-popover">
+              <div className="popover-title"><strong>Stock attention</strong><span>Demo catalogue</span></div>
+              <div className="notification-content"><span className="notification-symbol"><Boxes size={22} /></span><div><strong>3 products need a review</strong><p>Two items are running low and one is out of stock.</p></div></div>
+              <button className="popover-link" onClick={() => navigate('Inventory & Stock')}>Review inventory <ArrowUpRight size={16} /></button>
+            </div>}
+          </div>
+          <div className="header-divider" />
+          <div className="header-popover-wrap">
+            <button ref={account.triggerRef} className={`profile-trigger ${accountOpen ? 'is-open' : ''}`} aria-label="Account options" aria-expanded={accountOpen} aria-controls="account-options" onClick={() => { setAccountOpen(previous => !previous); setNotificationsOpen(false) }}>
+              <span className="user-avatar">{initials}</span><span className="profile-trigger-copy"><strong>{currentUser.name}</strong><small>{roleLabel(currentUser.role)}</small></span><ChevronDown size={15} className="profile-chevron" />
+            </button>
+            {accountOpen && <div ref={account.panelRef} id="account-options" className="header-popover profile-popover">
+              <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · Main shop</small></div>
+              {hasPermission(currentUser, 'users.manage') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
+              {hasPermission(currentUser, 'settings.manage') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}
+              <button className="popover-action signout-action" onClick={() => { setAccountOpen(false); void onSignOut() }}><LogOut size={17} /> Sign out</button>
+            </div>}
+          </div>
+        </div>
+      </header>
+      <main id="workspace-content" tabIndex={-1}>{children}</main>
+    </div>
+
+    {searchOpen && <div className="command-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSearchOpen(false) }}>
+      <div ref={command.panelRef} className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-search-title" tabIndex={-1}>
+        <div className="command-input-row"><Search size={21} aria-hidden="true" /><label className="sr-only" id="workspace-search-title" htmlFor="workspace-search-input">Search workspace</label>
+          <input id="workspace-search-input" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Where would you like to go?"
+            onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); command.panelRef.current?.querySelector<HTMLButtonElement>('[data-search-result]')?.focus() } if (event.key === 'Enter' && results[0]) navigate(results[0].label) }} />
+          <button className="header-icon" aria-label="Close search" onClick={() => setSearchOpen(false)}><X size={19} /></button>
+        </div>
+        <div className="command-results" onKeyDown={event => {
+          if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
+          event.preventDefault()
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-search-result]'))
+          const index = items.indexOf(document.activeElement as HTMLButtonElement)
+          items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+        }}>
+          <p className="command-caption">WORKSPACES <span aria-live="polite">{results.length} results</span></p>
+          {results.map(({ label, description, icon: Icon }) => <button key={label} className="command-result" data-search-result onClick={() => navigate(label)}><span className="command-result-icon"><Icon size={19} /></span><span><strong>{label}</strong><small>{description}</small></span><ChevronRight size={16} /></button>)}
+          {results.length === 0 && <div className="command-empty">No workspaces match “{search}”. Try products, stock, or sales.</div>}
+        </div>
+        <div className="command-footer"><span>↑ ↓ to move · Enter to open</span><span>Esc to close</span></div>
+      </div>
+    </div>}
+  </div>
+}
+
+function PlusIcon() {
+  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+}

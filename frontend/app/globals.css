@@ -18,3 +18,12 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { curs
 .compact-mode .card{border-radius:6px}.compact-mode .products-page,.compact-mode .inventory-page{padding-top:20px}
 .pos-mode .sidebar{width:76px;align-items:center}.pos-mode .sidebar .brand-row{justify-content:center;padding-left:0;padding-right:0}.pos-mode .sidebar .sidebar-toggle{display:none}.pos-mode .sidebar .nav-item{justify-content:center;padding-left:10px;padding-right:10px}.pos-mode .sidebar .sidebar-bottom{display:none}.pos-mode .main-content{min-width:0}.pos-mode .topbar{padding-left:24px}.pos-mode .top-actions .global-search,.pos-mode .top-actions .date-label{display:none}
 @media (max-width:700px){.pos-mode .sidebar{width:62px}.pos-mode .topbar{padding-left:14px}.pos-mode .crumb-muted{display:none}}
+
+.role-badge{display:inline-block;padding:4px 9px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:.3px}.role-badge.owner{background:#e9eefa;color:#3a4fa5}.role-badge.admin{background:#e4f7f3;color:#15896e}.role-badge.user{background:#f3f4f7;color:#5d6b82}
+.catalogue-row.catalogue-head{grid-template-columns:2fr 1.5fr 1fr 1fr auto}.catalogue-row:not(.catalogue-head){grid-template-columns:2fr 1.5fr 1fr 1fr auto}
+
+.app-shell{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.sidebar{height:100vh;height:100dvh;overflow-x:hidden;overflow-y:auto;flex-shrink:0;overscroll-behavior-y:contain}
+.sidebar .brand-row{position:sticky;top:0;z-index:2;background:var(--sidebar);flex-shrink:0}
+.main-content{height:100vh;height:100dvh;overflow-y:auto;overscroll-behavior-y:contain}
+.topbar{position:sticky;top:0;z-index:30;flex:none}
