@@ -154,12 +154,12 @@ function LoginPage({ onLogin }: { onLogin: (user: BookshopUser) => void }) {
   }
   return <main className="login-screen">
     <section className="login-brand-panel">
-      <div className="login-brand"><div className="brand-mark"><img src="/bookshop-emblem.svg" alt="" /></div><div><strong>Bookshop</strong><span>RETAIL WORKSPACE</span></div></div>
+      <div className="login-brand"><img className="nifunze-full-logo" src="/nifunze-logo.png" alt="Nifunze Lessons" /></div>
       <div className="login-story"><div className="eyebrow">MADE FOR KENYAN BOOKSELLERS</div><h1 tabIndex={-1}>Keep every shelf, sale, and school order moving.</h1><p>One calm workspace for M-Pesa sales, curriculum stock, suppliers, and your regular readers.</p><div className="login-points"><span><i /> KSh-ready checkout with M-Pesa</span><span><i /> KCSE and CBC catalogue tracking</span><span><i /> School account management</span></div></div>
       <small className="login-footer">Bookshop · Kenya</small>
     </section>
     <section className="login-form-panel"><div className="login-form-wrap">
-      <div className="mobile-login-logo"><div className="brand-mark"><img src="/bookshop-emblem.svg" alt="" /></div><strong>Bookshop</strong></div>
+      <div className="mobile-login-logo"><div className="brand-mark"><img src="/nifunze-favicon.png" alt="" /></div><strong>Bookshop</strong></div>
       <div className="eyebrow">WELCOME BACK</div><h2>Sign in to your shop</h2>
       <p className="login-muted">Sign in with your assigned account. Access follows your role.</p>
       <form onSubmit={submit}>
