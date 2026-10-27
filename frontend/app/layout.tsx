@@ -4,7 +4,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Nifunze Bookshop | Retail Operations',
   description: 'A modern point of sale and inventory workspace for Nifunze Bookshop.',
-  icons: { icon: '/bookshop-emblem.svg', shortcut: '/bookshop-emblem.svg', apple: '/bookshop-emblem.svg' },
+  icons: { icon: '/nifunze-favicon.png', shortcut: '/nifunze-favicon.png', apple: '/nifunze-favicon.png' },
 }
 
 export const viewport: Viewport = {
