@@ -192,6 +192,7 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
   const [books, setBooks] = useState<BookRow[]>([])
   const [count, setCount] = useState(0)
   const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(20)
   const [lastPage, setLastPage] = useState(1)
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
@@ -203,14 +204,14 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await api<{ data: BookRow[]; total: number; current_page: number; last_page: number }>('/books', { query: { page, search } })
+      const result = await api<{ data: BookRow[]; total: number; current_page: number; last_page: number }>('/books', { query: { page, search, per_page: perPage } })
       setBooks(result.data)
       setCount(result.total)
       setLastPage(result.last_page)
       setError('')
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load catalogue') }
     finally { setLoading(false) }
-  }, [page, search])
+  }, [page, search, perPage])
   useEffect(() => { void load() }, [load])
   async function saveBook(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -238,7 +239,7 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
     </div><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving…':'Save product'}</button></form>}
     <section className="card catalogue-card"><div className="card-heading"><div><h2>Products catalogue</h2><p>Data loaded from Laravel and MySQL. Stock is managed separately in Inventory.</p></div><form className="catalogue-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query) }}><Search size={15}/><input aria-label="Search catalogue" placeholder="Search title, ISBN or SKU" value={query} onChange={e => setQuery(e.target.value)}/><button type="submit" className="text-button">Search</button></form></div>
       {loading?<p style={{padding:20}}>Loading catalogue…</p>:<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>ISBN</span><span>SKU</span><span>Price</span><span>Reorder level</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.isbn||'—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span>{book.reorder_level}</span></div>)}{books.length===0&&<p style={{padding:20}}>No products found. Run the demo catalogue seeder or add your first product.</p>}</div>}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><label>Items per page <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}>{[10,20,50,100,200].map(n=><option key={n} value={n}>{n}</option>)}</select></label><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(lastPage)}>Last »</button></div>
     </section>
   </div>
 }
