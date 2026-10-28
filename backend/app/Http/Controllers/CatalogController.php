@@ -42,10 +42,10 @@ class CatalogController extends Controller
         ]);
         $skus=array_map(fn($row)=>strtoupper(trim($row['sku'])),$data['rows']);
         if(count($skus)!==count(array_unique($skus)))
-            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate SKUs in upload batch.']);
+            throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Duplicate SKUs in upload batch.']);
         $existing=DB::table('books')->whereIn('sku',array_column($data['rows'],'sku'))->pluck('sku')->all();
         if($existing)
-            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Already registered SKUs: '.implode(', ',array_slice($existing,0,10))]);
+            throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Already registered SKUs: '.implode(', ',array_slice($existing,0,10))]);
         $now=now();
         DB::transaction(function()use($data,$now){
             foreach($data['rows'] as $row)
