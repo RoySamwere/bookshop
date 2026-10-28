@@ -15,6 +15,7 @@ class CatalogController extends Controller
             'subcategory_id'=>'nullable|integer|exists:product_subcategories,id',
             'ruling_style'=>'nullable|string|max:100','page_count'=>'nullable|integer|min:1',
             'paper_size'=>'nullable|string|max:30','binding_type'=>'nullable|string|max:100',
+            'receiving_search'=>'nullable|boolean',
         ]);
         $query=DB::table('books as b')
             ->leftJoin('product_subcategories as s','s.id','=','b.product_subcategory_id')
@@ -26,9 +27,9 @@ class CatalogController extends Controller
             if($request->filled($field)) $query->where('b.'.$field,$request->input($field));
         if($request->filled('search')){
             $words=preg_split('/\\s+/',trim($request->input('search')));
-            foreach($words as $word) $query->where(fn($q)=>$q->where('b.title','like',"%{$word}%")->orWhere('b.sku','like',"%{$word}%")->orWhere('b.isbn','like',"%{$word}%"));
+            foreach($words as $word) $query->where(fn($q)=>$q->where('b.title','like',"%{$word}%")->orWhere('b.sku','like',"%{$word}%")->orWhere('b.isbn','like',"%{$word}%")->orWhere('s.name','like',"%{$word}%")->orWhere('c.name','like',"%{$word}%")->orWhere('b.brand','like',"%{$word}%")->orWhere('b.ruling_style','like',"%{$word}%")->orWhere('b.paper_size','like',"%{$word}%"));
         }
-        return $query->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
+        return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
     }
     public function hierarchy() {
         return DB::table('product_categories')->orderBy('name')->get()->map(function($category){
