@@ -88,6 +88,9 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   const [unitId, setUnitId] = useState('')
   const [units, setUnits] = useState<{id:number;name:string;pieces_per_unit:number}[]>([])
   const [reference, setReference] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [suppliers, setSuppliers] = useState<{id:number;name:string}[]>([])
+  const [supplierQuery, setSupplierQuery] = useState('')
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [books, setBooks] = useState<Book[]>([])
@@ -121,13 +124,14 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
 
   useEffect(() => { if (!book) {setUnits([]);setUnitId('');return};let active=true;api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${book.id}/units`).then(data=>{if(active)setUnits(data)}).catch(()=>{if(active)setUnits([])});return ()=>{active=false} },[book])
 
+  useEffect(() => { let active=true;api<{data:{id:number;name:string}[]}>('/suppliers',{query:{per_page:100}}).then(r=>{if(active)setSuppliers(r.data)}).catch(()=>undefined);return ()=>{active=false} },[])
   async function save(event: FormEvent) {
     event.preventDefault()
     if (submitting.current) return
     if (!book) { setError(new ApiError('Select a product to receive.', 422)); return }
     submitting.current = true; setBusy(true); setError(null)
     try {
-      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
+      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, supplier_id:supplierId?Number(supplierId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
       onSaved(`${Number(quantity)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units received. ${book.title} now has ${result.quantity} units on hand at ${branches.find(b => b.id === Number(branch))?.name}.`)
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; setBusy(false) }
@@ -147,7 +151,8 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
         <Field label="Received as"><select className={inputClass} value={unitId} onChange={e=>setUnitId(e.target.value)}><option value="">Individual piece (×1)</option>{units.map(u=><option key={u.id} value={u.id}>{u.name} (×{u.pieces_per_unit})</option>)}</select></Field>
         <p className="text-sm text-slate-600">Adds {Number(quantity||0)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units to stock.</p>
-        <Field label="Delivery reference (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
+        <Field label="Supplier (optional for opening stock)" error={error?.field('supplier_id')}><input className={inputClass} placeholder="Filter suppliers…" value={supplierQuery} onChange={e=>setSupplierQuery(e.target.value)}/><select className={inputClass} value={supplierId} onChange={e=>setSupplierId(e.target.value)}><option value="">Opening stock / no supplier</option>{suppliers.filter(s=>s.name.toLowerCase().includes(supplierQuery.toLowerCase())||String(s.id)===supplierId).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+        <Field label="Delivery note or invoice number (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
         <Field label="Notes (optional)" error={error?.field('notes')}><textarea className={`${inputClass} h-20 py-3`} maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opening stock, delivery details…" /></Field>
       </fieldset>
       <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5"><button type="button" className={secondaryButton} disabled={busy || creating} onClick={onClose}>Cancel</button><button type="submit" className={primaryButton} disabled={busy || creating || !book}>{busy ? 'Receiving…' : 'Receive stock'}</button></div>
