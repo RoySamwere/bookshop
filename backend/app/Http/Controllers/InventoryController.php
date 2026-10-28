@@ -34,6 +34,41 @@ class InventoryController extends Controller
             ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
+    public function bulkReceive(Request $request, InventoryService $service) {
+        $data=$request->validate([
+            'branch_id'=>['required','integer',Rule::exists('branches','id')->where('is_active',true)],
+            'supplier_id'=>['required','integer',Rule::exists('suppliers','id')->where('is_active',true)],
+            'rows'=>'required|array|min:1|max:100',
+            'rows.*.title'=>'required|string|max:255',
+            'rows.*.sku'=>'required|string|max:100',
+            'rows.*.cost_price'=>'required|numeric|min:0',
+            'rows.*.selling_price'=>'required|numeric|min:0',
+            'rows.*.quantity'=>'required|integer|min:1|max:1000000',
+        ]);
+        $this->authorizeBranch($request,(int)$data['branch_id']);
+        $skus=array_map(fn($r)=>strtoupper(trim($r['sku'])),$data['rows']);
+        if(count($skus)!==count(array_unique($skus)))
+            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate SKUs in this batch.']);
+        $received=DB::transaction(function()use($data,$request,$service){
+            foreach($data['rows'] as $row){
+                $book=DB::table('books')->where('sku',$row['sku'])->lockForUpdate()->first();
+                if($book && !$book->is_active)
+                    throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Inactive product: '.$row['sku']]);
+                if(!$book){
+                    $id=DB::table('books')->insertGetId([
+                        'title'=>$row['title'],'sku'=>$row['sku'],
+                        'cost_price'=>$row['cost_price'],'selling_price'=>$row['selling_price'],
+                        'reorder_level'=>10,'is_active'=>true,'created_at'=>now(),'updated_at'=>now()
+                    ]);
+                }else{$id=$book->id;}
+                $service->change((int)$id,(int)$data['branch_id'],(int)$row['quantity'],'receipt',
+                    $request->user()->id,'Bulk CSV import','Stock received from bulk CSV',null,
+                    (int)$row['quantity'],1,(int)$data['supplier_id']);
+            }
+            return count($data['rows']);
+        });
+        return response()->json(['received'=>$received],201);
+    }
     public function receive(Request $request, InventoryService $service) {
         $data = $request->validate([
             'book_id' => ['required', 'integer', Rule::exists('books', 'id')->where('is_active', true)],
