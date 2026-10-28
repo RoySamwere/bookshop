@@ -45,6 +45,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     Route::middleware('permission:workspace.access')->group(function () {
+        Route::get('/pos/branches', [PosController::class, 'branchesForPos'])->middleware('permission:pos.access');
         Route::get('/pos/products', [PosController::class, 'products'])->middleware('permission:pos.access');
         Route::post('/pos/checkout', [PosController::class, 'checkout'])->middleware('permission:pos.access');
         Route::get('/pos/sales', [PosController::class, 'sales'])->middleware('permission:sales.view');
