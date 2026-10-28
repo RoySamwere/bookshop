@@ -47,6 +47,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
         Route::get('/product-hierarchy', [CatalogController::class, 'hierarchy'])->middleware('permission:catalog.view');
         Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
         Route::get('/books-export', [CatalogController::class, 'exportBooks'])->middleware('permission:catalog.view');
+        Route::post('/books-bulk-create', [CatalogController::class, 'bulkCreateBooks'])->middleware('permission:catalog.manage');
         Route::post('/books-import', [CatalogController::class, 'importBooks'])->middleware('permission:catalog.manage');
         Route::get('/catalog/{table}', [CatalogController::class, 'lookup'])->middleware('permission:catalog.view');
         Route::get('/books/{book}/units', [ProductUnitController::class,'index'])->middleware('permission:catalog.view');
