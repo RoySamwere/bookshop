@@ -76,11 +76,11 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
         <Pagination meta={result} onPage={setPage} />
       </>}
     </section>
-    {receipt && <ReceiveStockDialog initial={receipt} branches={branches.filter(b => b.is_active)} onClose={() => setReceipt(null)} onSaved={message => { setReceipt(null); setReload(n => n + 1); notify(message) }} />}
+    {receipt && <ReceiveStockDialog initial={receipt} canCreateProduct={currentUser.permissions.includes('catalog.manage')} branches={branches.filter(b => b.is_active)} onClose={() => setReceipt(null)} onSaved={message => { setReceipt(null); setReload(n => n + 1); notify(message) }} />}
   </div>
 }
 
-function ReceiveStockDialog({ initial, branches, onClose, onSaved }: { initial: { book?: Book; branchId?: number }; branches: Branch[]; onClose: () => void; onSaved: (message: string) => void }) {
+function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSaved }: { initial: { book?: Book; branchId?: number }; branches: Branch[]; canCreateProduct: boolean; onClose: () => void; onSaved: (message: string) => void }) {
   const [book, setBook] = useState<Book | null>(initial.book ?? null)
   const [branch, setBranch] = useState(String(initial.branchId ?? branches[0]?.id ?? ''))
   const [quantity, setQuantity] = useState('')
@@ -90,23 +90,31 @@ function ReceiveStockDialog({ initial, branches, onClose, onSaved }: { initial: 
   const [books, setBooks] = useState<Book[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const [completedSearch, setCompletedSearch] = useState('')
+  const [addingProduct, setAddingProduct] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [productMessage, setProductMessage] = useState('')
   const [retry, setRetry] = useState(0)
   const [error, setError] = useState<ApiError | null>(null)
   const [busy, setBusy] = useState(false)
   const submitting = useRef(false)
 
   useEffect(() => {
-    if (book) return
+    const term = search.trim()
+    if (book || addingProduct || !term) {
+      setBooks([]); setSearching(false); setSearchError(''); setCompletedSearch('')
+      return
+    }
     let cancelled = false
     setSearching(true); setSearchError(''); setBooks([])
     const timer = window.setTimeout(() => {
-      api<{ data: Book[] }>('/books', { query: { search, active_only: 1 } })
+      api<{ data: Book[] }>('/books', { query: { search: term, active_only: 1 } })
         .then(data => { if (!cancelled) setBooks(data.data) })
         .catch(e => { if (!cancelled) setSearchError(errorMessage(e)) })
-        .finally(() => { if (!cancelled) setSearching(false) })
+        .finally(() => { if (!cancelled) { setSearching(false); setCompletedSearch(term) } })
     }, 300)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [book, search, retry])
+  }, [book, addingProduct, search, retry])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -119,20 +127,58 @@ function ReceiveStockDialog({ initial, branches, onClose, onSaved }: { initial: 
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; setBusy(false) }
   }
-  return <Modal variant="original" title="Receive stock" description="Add a delivery or opening stock to a branch." icon={<PackagePlus size={21} />} busy={busy} onClose={onClose}>
+  return <Modal variant="original" title="Receive stock" description="Add a delivery or opening stock to a branch." icon={<PackagePlus size={21} />} busy={busy || creating} onClose={onClose}>
     <form onSubmit={save}>
       <FormAlert message={error?.message ?? ''} />
-      <fieldset disabled={busy} className="space-y-4 disabled:opacity-70">
-        {book ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4"><strong className="block text-sm text-slate-800">{book.title}</strong><span className="text-xs text-slate-500">{book.sku}</span><button type="button" className="ml-3 text-sm font-semibold text-blue-600" onClick={() => setBook(null)}>Change product</button>{error?.field('book_id') && <p className="mt-2 text-xs text-rose-600">{error.field('book_id')}</p>}</div> : <div>
-          <Field label="Find a product" hint="Search the catalogue by title, SKU or ISBN. Add new products in Products & Books first."><input className={inputClass} value={search} maxLength={255} onChange={e => setSearch(e.target.value)} placeholder="Search products…" /></Field>
-          <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-slate-100" aria-live="polite">{searching ? <p className="p-4 text-sm text-slate-500">Searching…</p> : searchError ? <ErrorState message={searchError} onRetry={() => setRetry(n => n + 1)} /> : books.length ? books.map(item => <button type="button" key={item.id} className="block w-full border-b border-slate-100 px-4 py-3 text-left text-sm hover:bg-blue-50 focus:bg-blue-50" onClick={() => setBook(item)}><strong className="block">{item.title}</strong><span className="text-xs text-slate-400">{item.sku}</span></button>) : <p className="p-4 text-sm text-slate-500">No active products found. Try a different search.</p>}</div>
+      <FormAlert tone="success" message={productMessage} />
+      <fieldset disabled={busy || creating} className="space-y-4 disabled:opacity-70">
+        {book ? <div className="stock-product-selected"><strong>{book.title}</strong><span>{book.sku}</span><button type="button" className="text-button" onClick={() => { setBook(null); setSearch(''); setAddingProduct(false); setProductMessage(''); setError(null) }}>Change product</button>{error?.field('book_id') && <p className="mt-2 text-xs text-rose-600">{error.field('book_id')}</p>}</div> : <div>
+          <Field label="Find a product" hint="Start typing a name, SKU or ISBN. If there’s no match, you can add the product here."><input className={inputClass} value={search} maxLength={255} disabled={addingProduct} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => { setSearch(e.target.value); setBooks([]); setSearchError(''); setSearching(Boolean(e.target.value.trim())) }} placeholder="Type to find or add a product…" /></Field>
+          {!addingProduct && search.trim() && <div className="stock-product-results" aria-live="polite">{searching || completedSearch !== search.trim() ? <p>Searching…</p> : searchError ? <ErrorState message={searchError} onRetry={() => setRetry(n => n + 1)} /> : books.length ? books.map(item => <button type="button" key={item.id} className="stock-product-option" onClick={() => { setBook(item); setError(null) }}><strong>{item.title}</strong><span>{item.sku}</span></button>) : <div className="stock-product-missing"><p>No product matches “{search.trim()}”.</p>{canCreateProduct ? <button type="button" className="secondary-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Add “{search.trim()}” as a new product</button> : <p>Ask a catalogue manager to add this product.</p>}</div>}</div>}
+          {!addingProduct && canCreateProduct && search.trim() && !searching && completedSearch === search.trim() && !searchError && books.length > 0 && !books.some(item => item.title.toLowerCase() === search.trim().toLowerCase() || item.sku.toLowerCase() === search.trim().toLowerCase()) && <button type="button" className="text-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Not listed? Add “{search.trim()}”</button>}
+          {addingProduct && <AddReceiptProduct initialName={search.trim()} creating={creating} onBusy={setCreating} onCancel={() => setAddingProduct(false)} onCreated={item => { setBook(item); setAddingProduct(false); setError(null); setProductMessage('Product added. Enter the quantity below to receive stock.') }} />}
         </div>}
         <div className="grid gap-4 sm:grid-cols-2"><Field label="Receiving branch" error={error?.field('branch_id')}><select required className={inputClass} value={branch} onChange={e => setBranch(e.target.value)}><option value="">Choose branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
         <Field label="Delivery reference (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
         <Field label="Notes (optional)" error={error?.field('notes')}><textarea className={`${inputClass} h-20 py-3`} maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opening stock, delivery details…" /></Field>
       </fieldset>
-      <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5"><button type="button" className={secondaryButton} disabled={busy} onClick={onClose}>Cancel</button><button type="submit" className={primaryButton} disabled={busy || !book}>{busy ? 'Receiving…' : 'Receive stock'}</button></div>
+      <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5"><button type="button" className={secondaryButton} disabled={busy || creating} onClick={onClose}>Cancel</button><button type="submit" className={primaryButton} disabled={busy || creating || !book}>{busy ? 'Receiving…' : 'Receive stock'}</button></div>
     </form>
   </Modal>
+}
+
+function AddReceiptProduct({ initialName, creating, onBusy, onCancel, onCreated }: { initialName: string; creating: boolean; onBusy: (busy: boolean) => void; onCancel: () => void; onCreated: (book: Book) => void }) {
+  const [form, setForm] = useState({ title: initialName, sku: '', isbn: '', cost_price: '', selling_price: '', reorder_level: '10' })
+  const [error, setError] = useState<ApiError | null>(null)
+  const fields = useRef<HTMLFieldSetElement>(null)
+  const submitting = useRef(false)
+
+  async function create() {
+    if (submitting.current) return
+    // Validate product fields without requiring the stock quantity yet.
+    for (const input of fields.current?.querySelectorAll<HTMLInputElement>('input') ?? []) {
+      if (!input.reportValidity()) return
+    }
+    submitting.current = true; onBusy(true); setError(null)
+    try {
+      const product = await api<Book>('/books', { method: 'POST', body: { ...form, title: form.title.trim(), sku: form.sku.trim(), isbn: form.isbn.trim() || null, cost_price: Number(form.cost_price), selling_price: Number(form.selling_price), reorder_level: Number(form.reorder_level) } })
+      onCreated(product)
+    } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
+    finally { submitting.current = false; onBusy(false) }
+  }
+
+  return <section className="stock-add-product" aria-label="Add a missing product" onKeyDown={event => { if (event.key === 'Enter' && event.target instanceof HTMLInputElement) { event.preventDefault(); void create() } }}>
+    <h3>Add a new product</h3><p>Save its catalogue details, then receive stock below.</p>
+    <FormAlert message={error?.message ?? ''} />
+    <fieldset ref={fields} disabled={creating} className="grid gap-4 sm:grid-cols-2">
+      <Field label="Product name" className="sm:col-span-2" error={error?.field('title')}><input className={inputClass} required autoFocus maxLength={255} value={form.title} onChange={e => setForm(previous => ({ ...previous, title: e.target.value }))} /></Field>
+      <Field label="SKU" error={error?.field('sku')}><input className={inputClass} required maxLength={100} value={form.sku} onChange={e => setForm(previous => ({ ...previous, sku: e.target.value }))} placeholder="Unique product code" /></Field>
+      <Field label="ISBN (optional)" error={error?.field('isbn')}><input className={inputClass} maxLength={20} value={form.isbn} onChange={e => setForm(previous => ({ ...previous, isbn: e.target.value }))} /></Field>
+      <Field label="Cost price (KES)" error={error?.field('cost_price')}><input className={inputClass} required type="number" min="0" step="0.01" value={form.cost_price} onChange={e => setForm(previous => ({ ...previous, cost_price: e.target.value }))} /></Field>
+      <Field label="Selling price (KES)" error={error?.field('selling_price')}><input className={inputClass} required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => setForm(previous => ({ ...previous, selling_price: e.target.value }))} /></Field>
+      <Field label="Reorder level" error={error?.field('reorder_level')}><input className={inputClass} required type="number" min="0" step="1" value={form.reorder_level} onChange={e => setForm(previous => ({ ...previous, reorder_level: e.target.value }))} /></Field>
+    </fieldset>
+    <div className="stock-add-product-actions"><button type="button" className="secondary-button" disabled={creating} onClick={onCancel}>Back to search</button><button type="button" className="primary-button" disabled={creating} onClick={() => void create()}>{creating ? 'Adding…' : 'Save product & select'}</button></div>
+  </section>
 }

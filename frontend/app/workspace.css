@@ -507,6 +507,22 @@ h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .stock-receipt-modal .text-input { display: block; margin-top: 7px; width: 100%; font: inherit; }
 .stock-receipt-modal textarea.text-input { min-height: 80px; resize: vertical; }
 .stock-receipt-modal .primary-button, .stock-receipt-modal .secondary-button { justify-content: center; }
+.stock-product-selected, .stock-add-product { padding: 16px; border: 1px solid #ccebe6; border-radius: 8px; background: #f5fcfa; }
+.stock-product-selected > strong, .stock-product-selected > span { display: block; font-size: 13px; }
+.stock-product-selected > span { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.stock-product-selected .text-button { padding: 10px 0 0; }
+.stock-product-results { margin-top: 10px; max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.stock-product-results > p, .stock-product-missing { padding: 14px; font-size: 12px; color: var(--muted); }
+.stock-product-option { display: block; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--border); background: white; text-align: left; }
+.stock-product-option:hover, .stock-product-option:focus-visible { background: #effaf7; }
+.stock-product-option strong, .stock-product-option span { display: block; font-size: 12px; }
+.stock-product-option span { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.stock-product-missing p { margin: 0 0 12px; }
+.stock-product-missing button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.stock-add-product { margin-top: 14px; }
+.stock-add-product h3 { margin: 0; color: var(--primary); font-size: 14px; }
+.stock-add-product > p { margin: 6px 0 16px; color: var(--muted); font-size: 12px; }
+.stock-add-product-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .stock-receipt-modal :focus-visible, .stock-filter-bar :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 700px) {
   .inventory-page { padding: 22px 16px 32px; }

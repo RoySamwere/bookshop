@@ -21,6 +21,23 @@ class InventoryTest extends TestCase
         ], $attributes));
     }
 
+    public function test_a_missing_product_can_be_created_then_received_in_the_same_workflow(): void
+    {
+        $branch = Branch::factory()->create();
+        $user = User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]);
+        $this->actingAs($user, 'sanctum');
+        $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(0, 'data');
+
+        $payload = ['title' => 'New Science Book', 'sku' => 'SCI-NEW', 'isbn' => null, 'cost_price' => 350, 'selling_price' => 500, 'reorder_level' => 10];
+        $book = $this->postJson('/api/books', $payload)->assertCreated()->assertJsonPath('title', 'New Science Book')->json('id');
+        $this->assertDatabaseCount('inventory_balances', 0);
+        $this->postJson('/api/books', $payload)->assertUnprocessable()->assertJsonValidationErrors('sku');
+        $this->postJson('/api/inventory/receive', ['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 25])
+            ->assertCreated()->assertJsonPath('quantity', 25);
+        $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $book);
+        $this->assertDatabaseHas('inventory_movements', ['book_id' => $book, 'branch_id' => $branch->id, 'type' => 'receipt', 'quantity_change' => 25]);
+    }
+
     public function test_receiving_creates_a_balance_and_adds_to_it_with_a_movement_for_each_receipt(): void
     {
         $branch = Branch::factory()->create();
