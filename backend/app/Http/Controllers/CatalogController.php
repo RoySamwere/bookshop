@@ -36,6 +36,7 @@ class CatalogController extends Controller
             'rows'=>'required|array|min:1|max:200',
             'rows.*.title'=>'required|string|max:255',
             'rows.*.sku'=>'required|string|max:100',
+            'rows.*.product_subcategory_id'=>'required|integer|exists:product_subcategories,id',
             'rows.*.selling_price'=>'required|numeric|min:0',
             'rows.*.cost_price'=>'required|numeric|min:0',
             'rows.*.reorder_level'=>'nullable|integer|min:0',
@@ -105,7 +106,7 @@ class CatalogController extends Controller
     public function storeBook(Request $request) {
         $data = $request->validate([
             'title'=>'required|string|max:255','subtitle'=>'nullable|string|max:255','isbn'=>'nullable|string|max:20|unique:books,isbn',
-            'sku'=>'required|string|max:100|unique:books,sku','book_category_id'=>'nullable|exists:book_categories,id',
+            'sku'=>'required|string|max:100|unique:books,sku','product_subcategory_id'=>'required|integer|exists:product_subcategories,id','book_category_id'=>'nullable|exists:book_categories,id',
             'publisher_id'=>'nullable|exists:publishers,id','edition'=>'nullable|string|max:100','language'=>'nullable|string|max:100',
             'curriculum'=>'nullable|string|max:100','grade'=>'nullable|string|max:100','description'=>'nullable|string',
             'cover_url'=>'nullable|url|max:2048','cost_price'=>'required|numeric|min:0','selling_price'=>'required|numeric|min:0',
