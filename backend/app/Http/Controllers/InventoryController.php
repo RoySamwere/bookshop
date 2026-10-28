@@ -32,7 +32,7 @@ class InventoryController extends Controller
             'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('is_active', true)],
             'quantity' => 'required|integer|min:1|max:2147483647',
             'product_unit_id' => 'nullable|integer|exists:product_units,id',
-            'supplier_id' => ['nullable','integer',Rule::exists('suppliers','id')->where('is_active',true)],
+            'supplier_id' => ['required','integer',Rule::exists('suppliers','id')->where('is_active',true)],
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
