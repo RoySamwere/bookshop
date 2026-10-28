@@ -9,6 +9,7 @@ import { CustomerHome } from '../../components/profile-view'
 import { ErrorState, secondaryButton } from '../../components/ui-kit'
 import { ApiError, UNAUTHORIZED_EVENT, errorMessage, tokenStore } from '../../lib/api'
 import { getCurrentUser, hasPermission, logout, resendMyVerification, type BookshopUser } from '../../lib/auth'
+import { sessionLoginUrl } from '../../lib/session'
 
 /** Signed-in customers and staff applicants. Staff with workspace access are sent to /dashboard. */
 export default function AccountPage() {
@@ -36,13 +37,13 @@ export default function AccountPage() {
 
   useEffect(() => {
     load()
-    const expired = () => router.replace('/login?expired=1&next=/account')
+    const expired = (event: Event) => { setUser(null); router.replace(sessionLoginUrl((event as CustomEvent).detail?.reason === 'idle' ? 'idle' : 'expired', window.location)) }
     window.addEventListener(UNAUTHORIZED_EVENT, expired)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, expired)
   }, [load, router])
 
   async function signOut() {
-    await logout().catch(() => undefined)
+    void logout().catch(() => undefined)
     router.replace('/login?signed_out=1')
   }
 

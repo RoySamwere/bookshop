@@ -1,11 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Boxes, Download, PackagePlus, Search } from 'lucide-react'
+import { Bell, BookOpen, Boxes, Download, PackagePlus, Plus, Search } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import type { BookshopUser } from '../lib/auth'
 import { branchesApi, type Branch } from '../lib/workspace-api'
-import { Card, EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, PageHeader, Pagination, StatCard, inputClass, primaryButton, secondaryButton } from './ui-kit'
+import { EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, Pagination } from './ui-kit'
+
+const inputClass = 'text-input'
+const primaryButton = 'primary-button'
+const secondaryButton = 'secondary-button'
 
 type StockRow = { id: number; book_id: number; branch_id: number; title: string; sku: string; isbn: string | null; quantity: number; reserved: number; reorder_level: number; branch_name: string }
 type Book = { id: number; title: string; sku: string; is_active: boolean }
@@ -50,31 +54,28 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     const link = document.createElement('a'); link.href = url; link.download = 'hekima-stock-page.csv'; link.click(); URL.revokeObjectURL(url)
   }
   const summary = result?.summary
-  return <div className="products-page">
-    <PageHeader eyebrow="OPERATIONS · INVENTORY CONTROL" icon={<Boxes size={16} />} title="Inventory & Stock" description="Receive products into your branches and track saved stock balances."
-      actions={<><button className={secondaryButton} onClick={exportPage} disabled={loading || !!error || !result?.data.length}><Download size={16} /> Export current page</button>{canManage && <button className={primaryButton} onClick={() => setReceipt({ branchId: branch ? Number(branch) : undefined })} disabled={!branches.some(b => b.is_active)}><PackagePlus size={17} /> Receive stock</button>}</>} />
+  return <div className="inventory-page">
+    <div className="page-heading compact"><div><div className="eyebrow">OPERATIONS · INVENTORY CONTROL</div><h1 tabIndex={-1}>Inventory & Stock</h1><p>Monitor stock levels, receive deliveries, and keep your shelves ready for customers.</p></div><div className="heading-actions"><button className={secondaryButton} onClick={exportPage} disabled={loading || !!error || !result?.data.length}><Download size={16} /> Export current page</button>{canManage && <button className={primaryButton} onClick={() => setReceipt({ branchId: branch ? Number(branch) : undefined })} disabled={!branches.some(b => b.is_active)}><Plus size={17} /> Receive stock</button>}</div></div>
     {branchError && <div className="mb-5"><ErrorState message={branchError} onRetry={() => void loadBranches()} /></div>}
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard label="Inventory value" value={loading || error ? '—' : money(summary?.value ?? 0)} hint="On hand at selling price" icon={<Boxes size={19} />} />
-      <StatCard label="Units on hand" value={loading || error ? '—' : Number(summary?.units ?? 0).toLocaleString()} hint={`${summary?.stock_lines ?? 0} product / branch balances`} icon={<Boxes size={19} />} tone="emerald" />
-      <StatCard label="Low stock" value={loading || error ? '—' : summary?.low ?? 0} hint="Available units at or below reorder level" icon={<Boxes size={19} />} tone="amber" />
-      <StatCard label="Out of stock" value={loading || error ? '—' : summary?.out_of_stock ?? 0} hint="No available units in recorded balances" icon={<Boxes size={19} />} tone="pink" />
+    <div className="inventory-stats">
+      <div className="card catalog-stat"><span>Inventory value</span><strong>{loading || error ? '—' : money(summary?.value ?? 0)}</strong><small>At selling price</small></div>
+      <div className="card catalog-stat"><span>Units on hand</span><strong>{loading || error ? '—' : Number(summary?.units ?? 0).toLocaleString()}</strong><small>Across {summary?.stock_lines ?? 0} product / branch balances</small></div>
+      <div className="card catalog-stat warning"><span>Low stock</span><strong>{loading || error ? '—' : summary?.low ?? 0}</strong><small>At or below reorder level</small></div>
+      <div className="card catalog-stat danger"><span>Out of stock</span><strong>{loading || error ? '—' : summary?.out_of_stock ?? 0}</strong><small>No available units</small></div>
     </div>
-    <Card title="Stock levels" description="Balances appear after stock is first received. Totals follow the branch and search filters." flush>
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-5">
-        <form className="flex flex-1 items-center gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query.trim()) }}><Search size={17} className="text-slate-400" /><input className={`${inputClass} mt-0 min-w-32`} aria-label="Search stock" placeholder="Title, SKU or ISBN" maxLength={255} value={query} onChange={e => setQuery(e.target.value)} /><button className={secondaryButton}>Search</button></form>
-        <select aria-label="Filter by branch" className={`${inputClass} mt-0 w-auto`} value={branch} onChange={e => { setBranch(e.target.value); setPage(1) }}><option value="">All my branches</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.is_active ? '' : ' (inactive)'}</option>)}</select>
-        <select aria-label="Filter by stock status" className={`${inputClass} mt-0 w-auto`} value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">All stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
-      </div>
+    {!loading && !error && Number(summary?.low ?? 0) + Number(summary?.out_of_stock ?? 0) > 0 && <section className="card inventory-alert"><div className="alert-icon"><Bell size={17} /></div><div><strong>Stock attention needed</strong><p>{Number(summary?.low ?? 0) + Number(summary?.out_of_stock ?? 0)} product / branch balances need replenishment.</p></div><button className="secondary-button" onClick={() => { setStatus(Number(summary?.low ?? 0) ? 'low' : 'out'); setPage(1) }}>Review stock</button></section>}
+    <section className="card inventory-table-card">
+      <div className="card-heading"><div><h2>Stock levels</h2><p>Live quantities by product and branch. Receive a product to create its first balance.</p></div><form className="inventory-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query.trim()) }}><Search size={16} /><input aria-label="Search stock" placeholder="Search title, SKU or ISBN…" maxLength={255} value={query} onChange={e => setQuery(e.target.value)} /><button type="submit" className="text-button">Search</button></form></div>
+      <div className="stock-filter-bar"><div className="inventory-tabs">{[{ value: '', label: 'All stock' }, { value: 'low', label: 'Low stock' }, { value: 'out', label: 'Out of stock' }].map(tab => <button type="button" key={tab.value} aria-pressed={status === tab.value} className={status === tab.value ? 'selected' : ''} onClick={() => { setStatus(tab.value); setPage(1) }}>{tab.label}{tab.value && <span>{tab.value === 'low' ? summary?.low ?? 0 : summary?.out_of_stock ?? 0}</span>}</button>)}</div><label className="stock-branch-filter">Branch<select value={branch} onChange={e => { setBranch(e.target.value); setPage(1) }}><option value="">All my branches</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.is_active ? '' : ' (inactive)'}</option>)}</select></label></div>
       {loading ? <LoadingState label="Loading inventory" /> : error ? <ErrorState message={error} onRetry={() => setReload(n => n + 1)} /> : !result?.data.length ? <EmptyState icon={<Boxes size={24} />} title="No stock balances found" body="Receive stock for an existing product to create a balance, or change your filters." /> : <>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr>{['Product', 'Branch', 'On hand', 'Reserved', 'Available', 'Status', ''].map((label, i) => <th className="px-5 py-3" key={i}>{label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{result.data.map(row => {
+        <div className="stock-list-scroll"><div className="inventory-list">{result.data.map((row, index) => {
           const available = row.quantity - row.reserved
           const label = available === 0 ? 'Out of stock' : available <= row.reorder_level ? 'Low stock' : 'Healthy'
-          return <tr key={row.id}><td className="px-5 py-4"><strong className="block text-slate-800">{row.title}</strong><span className="text-xs text-slate-400">{row.sku}</span></td><td className="px-5 py-4">{row.branch_name}</td><td className="px-5 py-4">{row.quantity}</td><td className="px-5 py-4">{row.reserved}</td><td className="px-5 py-4 font-semibold">{available}</td><td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${available === 0 ? 'bg-rose-50 text-rose-700' : available <= row.reorder_level ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{label}</span></td><td className="px-5 py-4">{canManage && branches.some(b => b.id === row.branch_id && b.is_active) && <button className={secondaryButton} onClick={() => setReceipt({ book: { id: row.book_id, title: row.title, sku: row.sku, is_active: true }, branchId: row.branch_id })}>Restock</button>}</td></tr>
-        })}</tbody></table></div>
+          return <div className="inventory-row" key={row.id}><div className={`inventory-book ${['teal', 'indigo', 'amber', 'violet', 'rose', 'sky'][index % 6]}`}><BookOpen size={18} /></div><div className="inventory-product"><strong title={row.title}>{row.title}</strong><span>{row.sku} · {row.branch_name}</span></div><div className="inventory-number"><strong>{row.quantity}</strong><span>on hand</span></div><div className="inventory-bar"><div><span>{available} available · {row.reserved} reserved</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, available / Math.max(1, row.reorder_level * 3) * 100)}%` }} /></i><span>Reorder at {row.reorder_level}</span></div></div><span className={`stock-status ${label.toLowerCase().replaceAll(' ', '-')}`}>{label}</span>{canManage && branches.some(b => b.id === row.branch_id && b.is_active) ? <button className="row-action" aria-label={`Restock ${row.title} at ${row.branch_name}`} onClick={() => setReceipt({ book: { id: row.book_id, title: row.title, sku: row.sku, is_active: true }, branchId: row.branch_id })}>Restock</button> : <span />}</div>
+        })}</div></div>
         <Pagination meta={result} onPage={setPage} />
       </>}
-    </Card>
+    </section>
     {receipt && <ReceiveStockDialog initial={receipt} branches={branches.filter(b => b.is_active)} onClose={() => setReceipt(null)} onSaved={message => { setReceipt(null); setReload(n => n + 1); notify(message) }} />}
   </div>
 }
@@ -118,7 +119,7 @@ function ReceiveStockDialog({ initial, branches, onClose, onSaved }: { initial: 
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; setBusy(false) }
   }
-  return <Modal title="Receive stock" description="Add units to an existing product. Each receipt records who received it, the branch, and the resulting balance." icon={<PackagePlus size={21} />} busy={busy} onClose={onClose}>
+  return <Modal variant="original" title="Receive stock" description="Add a delivery or opening stock to a branch." icon={<PackagePlus size={21} />} busy={busy} onClose={onClose}>
     <form onSubmit={save}>
       <FormAlert message={error?.message ?? ''} />
       <fieldset disabled={busy} className="space-y-4 disabled:opacity-70">

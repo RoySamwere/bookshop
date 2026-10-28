@@ -29,7 +29,8 @@ Route::post('/auth/email/resend', [RegistrationController::class, 'resend'])->mi
 // Public website: launch notification signups.
 Route::post('/public/launch-subscribers', [LaunchSubscriberController::class, 'store'])->middleware('throttle:subscribe');
 
-Route::middleware(['auth:sanctum', 'active'])->group(function () {
+Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function () {
+    Route::post('/auth/activity', fn () => response()->noContent());
     // Every signed-in account, including customers.
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);

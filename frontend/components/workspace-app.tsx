@@ -13,6 +13,7 @@ import { ProfileView } from './profile-view'
 import { ErrorState } from './ui-kit'
 import { ApiError, UNAUTHORIZED_EVENT, tokenStore, api } from '../lib/api'
 import { getCurrentUser, hasPermission, homeFor, logout, type BookshopUser } from '../lib/auth'
+import { sessionLoginUrl } from '../lib/session'
 import {
   ArrowUpRight,
   Bell,
@@ -86,12 +87,13 @@ export function WorkspaceApp() {
     // Customers and pending applicants have no workspace; their account page explains why.
     if (!hasPermission(user, 'workspace.access')) { router.replace(homeFor(user)); return }
     setCurrentUser(user)
-    setActive(previous => canOpenSection(user, previous) ? previous : firstSection(user))
+    const requested = new URLSearchParams(window.location.search).get('section')
+    setActive(previous => requested && canOpenSection(user, requested) ? requested : canOpenSection(user, previous) ? previous : firstSection(user))
   }, [router])
 
   const restoreSession = useCallback(() => {
     setBootError('')
-    if (!tokenStore.get()) { router.replace('/login?next=/dashboard'); return }
+    if (!tokenStore.get()) { router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); return }
     setAuthLoading(true)
     getCurrentUser()
       .then(user => { enterWorkspace(user); setAuthLoading(false) })
@@ -99,15 +101,15 @@ export function WorkspaceApp() {
         // Network failures keep the token so a retry can restore the session.
         if (error instanceof ApiError && error.status === 0) { setBootError(error.message); setAuthLoading(false); return }
         tokenStore.clear()
-        router.replace('/login?next=/dashboard')
+        router.replace(sessionLoginUrl('expired', window.location))
       })
   }, [enterWorkspace, router])
 
   useEffect(() => {
     restoreSession()
-    function expired() {
+    function expired(event: Event) {
       setCurrentUser(null)
-      router.replace('/login?expired=1&next=/dashboard')
+      router.replace(sessionLoginUrl((event as CustomEvent).detail?.reason === 'idle' ? 'idle' : 'expired', window.location))
     }
     window.addEventListener(UNAUTHORIZED_EVENT, expired)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, expired)
@@ -116,12 +118,17 @@ export function WorkspaceApp() {
   async function signOut() {
     setCart([])
     setShowCheckout(false)
-    await logout().catch(() => undefined)
+    void logout().catch(() => undefined)
     router.replace('/login?signed_out=1')
   }
 
   function navigateTo(section: string) {
-    if (currentUser && canOpenSection(currentUser, section)) setActive(section)
+    if (currentUser && canOpenSection(currentUser, section)) {
+      setActive(section)
+      const url = new URL(window.location.href)
+      url.searchParams.set('section', section)
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    }
   }
 
   const filteredProducts = useMemo(() => products.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(query.toLowerCase())), [query])

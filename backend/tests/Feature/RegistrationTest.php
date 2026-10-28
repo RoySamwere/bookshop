@@ -249,12 +249,15 @@ class RegistrationTest extends TestCase
         $long = $this->postJson('/api/auth/login', ['email' => $user->email, 'password' => 'password', 'remember' => true])->json('data.token');
 
         $this->travel(61)->minutes();
+        // Test absolute token lifetime independently of the inactivity deadline.
+        $user->tokens()->update(['last_activity_at' => now()]);
         $this->app['auth']->forgetGuards();
         $this->withToken($short)->getJson('/api/auth/me')->assertUnauthorized();
         $this->app['auth']->forgetGuards();
         $this->withToken($long)->getJson('/api/auth/me')->assertOk();
 
         $this->travel(540)->minutes();
+        $user->tokens()->update(['last_activity_at' => now()]);
         $this->app['auth']->forgetGuards();
         $this->withToken($long)->getJson('/api/auth/me')->assertUnauthorized();
     }

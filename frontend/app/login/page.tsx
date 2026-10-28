@@ -29,6 +29,7 @@ function LoginScreen() {
 
   const notice = params.get('reset') ? 'Your password has been changed. Sign in with your new password.'
     : params.get('verified') ? 'Your email address is verified. Sign in to continue.'
+    : params.get('idle') ? 'You were signed out after 10 minutes of inactivity. Sign in to return to your last page.'
     : params.get('expired') ? 'Your session has ended. Sign in again to continue.'
     : params.get('signed_out') ? 'You have signed out.'
     : ''
@@ -78,7 +79,7 @@ function LoginScreen() {
       <button className={`${primaryButton} w-full`} type="submit" disabled={pending || !email.trim() || !password}>
         {pending ? 'Signing in…' : 'Sign in'} {!pending && <ArrowUpRight size={16} />}
       </button>
-      <p className="-mt-1 text-xs text-slate-500">Only tick “Remember me” on a device you don&apos;t share. You stay signed in for up to 7 days.</p>
+      <p className="-mt-1 text-xs text-slate-500">Only tick “Remember me” on a device you don&apos;t share. All sessions sign out after 10 minutes of inactivity.</p>
     </form>
     <p className="hk-auth-alt">New here? <Link href="/register" className="hk-auth-link">Create an account</Link></p>
   </AuthShell>

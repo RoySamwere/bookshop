@@ -39,7 +39,7 @@ export const homeFor = (user: BookshopUser) => hasPermission(user, 'workspace.ac
 
 /** Only follow same-site paths after sign-in, never another host. */
 export function safeNextPath(next: string | null) {
-  return next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : null
+  return next && next.startsWith('/') && !next.startsWith('//') && !/[\\\u0000-\u001f\u007f]/.test(next) ? next : null
 }
 
 export type RegisterPayload = { name: string; email: string; phone: string | null; password: string; password_confirmation: string; terms: boolean; request_staff_access: boolean }

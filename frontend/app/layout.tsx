@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { brand } from '../lib/brand'
+import { SessionManager } from '../components/session-manager'
 import './globals.css'
 import './workspace.css'
 import './public.css'
@@ -30,6 +31,7 @@ export default function RootLayout({
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Libre+Caslon+Display&display=swap" />
       </head>
       <body className="antialiased">
+        <SessionManager />
         {children}
       </body>
     </html>

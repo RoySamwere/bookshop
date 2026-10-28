@@ -110,7 +110,7 @@ export function Pagination({ meta, onPage }: { meta: Paginated<unknown>['meta'];
 }
 
 /** Accessible modal: traps focus, closes on Escape or backdrop click unless busy. */
-export function Modal({ title, description, icon, onClose, busy = false, wide = false, children }: { title: string; description?: string; icon?: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; children: ReactNode }) {
+export function Modal({ title, description, icon, onClose, busy = false, wide = false, variant, children }: { title: string; description?: string; icon?: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; variant?: 'original'; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null)
   const closeRef = useRef(onClose)
   const busyRef = useRef(busy)
@@ -132,9 +132,9 @@ export function Modal({ title, description, icon, onClose, busy = false, wide = 
     return () => { document.removeEventListener('keydown', keydown); if (previous?.isConnected) previous.focus() }
   }, [])
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-sm"
+  return <div className={variant === 'original' ? 'modal-backdrop stock-receipt-backdrop' : 'fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-sm'}
     onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <section ref={panel} className={`my-auto w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/20`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <section ref={panel} className={variant === 'original' ? 'checkout-modal stock-receipt-modal' : `my-auto w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/20`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5 sm:px-7">
         <div>
           {icon && <span className="mb-3 grid size-10 place-items-center rounded-xl bg-blue-50 text-[#087df5]">{icon}</span>}
