@@ -188,7 +188,7 @@ function Dashboard({ active, setActive, userName }: { active: string; setActive:
   return <OverviewDashboard userName={userName} products={products} sales={sales} onNavigate={setActive} />
 }
 function ProductsBooksView() {
-  type BookRow = { id:number; title:string; sku:string; isbn:string|null; selling_price:string|number; category_name?:string|null; subcategory_name?:string|null; is_active?:boolean }
+  type BookRow={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;category_name?:string|null;subcategory_name?:string|null;is_active?:boolean}
   const [books,setBooks]=useState<BookRow[]>([])
   const [count,setCount]=useState(0)
   const [page,setPage]=useState(1)
@@ -199,21 +199,24 @@ function ProductsBooksView() {
   const [error,setError]=useState('')
   const load=useCallback(async()=>{
     setLoading(true)
-    try{
-      const result=await api<{data:BookRow[];total:number;last_page:number}>('/books',{query:{page,per_page:30,search}})
-      setBooks(result.data);setCount(result.total);setLastPage(Math.max(1,result.last_page));setError('')
-    }catch(e){setError(e instanceof Error?e.message:'Unable to load products')}
-    finally{setLoading(false)}
+    try{const r=await api<{data:BookRow[];total:number;last_page:number}>('/books',{query:{page,per_page:30,search}})
+      setBooks(r.data);setCount(r.total);setLastPage(Math.max(1,r.last_page));setError('')
+    }catch(e){setError(e instanceof Error?e.message:'Unable to load products')}finally{setLoading(false)}
   },[page,search])
   useEffect(()=>{void load()},[load])
   useEffect(()=>{const t=window.setTimeout(()=>{setPage(1);setSearch(query.trim())},250);return()=>window.clearTimeout(t)},[query])
-  return <div className="products-page">
-    <div className="page-heading compact"><div><div className="eyebrow">SHOP CATALOGUE</div><h1 tabIndex={-1}>Products & Books</h1><p>Products available in your shop. Add products and receive quantities from Inventory & Stock.</p></div></div>
-    <section className="card catalogue-card">
-      <div className="card-heading"><div><h2>Product catalogue</h2><p>{count.toLocaleString('en-KE')} registered products</p></div><div className="catalogue-search"><Search size={15}/><input aria-label="Search products" placeholder="Search by name, SKU or ISBN…" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button className="text-button" type="button" onClick={()=>setQuery('')}>Clear</button>}</div></div>
-      {error&&<div role="alert" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={()=>void load()}>Retry</button></div>}
-      {loading?<p style={{padding:20}}>Loading products…</p>:!error&&books.length===0?<div style={{padding:24}}><h3>{search?'No matching products':'No products registered yet'}</h3><p>{search?'Try a different search.':'Open Inventory & Stock to upload products and their quantities.'}</p></div>:!error&&<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Status</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.subcategory_name||book.category_name||'—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span>{book.is_active===false?'Inactive':'Available'}</span></div>)}</div>}
-      {!error&&lastPage>1&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:16,gap:16}}><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
+  return <div className="space-y-6">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div><p className="text-xs font-bold uppercase tracking-[.18em] text-teal-700">Shop catalogue</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Products &amp; Books</h1><p className="mt-1 text-sm text-slate-500">Browse products registered through Inventory &amp; Stock.</p></div>
+      <div className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm"><BookOpen size={18} className="text-teal-700"/><span className="text-sm font-medium text-slate-500">Products</span><strong className="text-lg tabular-nums text-slate-900">{count.toLocaleString('en-KE')}</strong></div>
+    </header>
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div><h2 className="font-semibold text-slate-900">Product directory</h2><p className="mt-0.5 text-xs text-slate-500">All products in your shop</p></div>
+        <div className="relative w-full sm:max-w-sm"><Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input aria-label="Search products" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-16 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100" placeholder="Search product, SKU or ISBN" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-teal-700" onClick={()=>setQuery('')}>Clear</button>}</div>
+      </div>
+      {error?<div role="alert" className="p-6 text-sm text-red-700">{error} <button className="ml-2 underline" onClick={()=>void load()}>Retry</button></div>:loading?<div className="p-10 text-center text-sm text-slate-500">Loading products…</div>:books.length===0?<div className="p-12 text-center"><BookOpen size={32} className="mx-auto text-slate-300"/><h3 className="mt-3 font-semibold text-slate-800">{search?'No matching products':'Your catalogue is empty'}</h3><p className="mt-1 text-sm text-slate-500">{search?'Try another search.':'Add products using Bulk Upload Stock in Inventory & Stock.'}</p></div>:<div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Product</th><th className="px-5 py-3 font-semibold">Category</th><th className="px-5 py-3 font-semibold">SKU</th><th className="px-5 py-3 text-right font-semibold">Selling price</th><th className="px-5 py-3 font-semibold">Status</th></tr></thead><tbody className="divide-y divide-slate-100">{books.map(book=><tr key={book.id} className="transition-colors hover:bg-slate-50"><td className="px-5 py-4 font-medium text-slate-900">{book.title}</td><td className="px-5 py-4 text-slate-500">{book.subcategory_name||book.category_name||'—'}</td><td className="px-5 py-4 font-mono text-xs text-slate-600">{book.sku}</td><td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{money(Number(book.selling_price))}</td><td className="px-5 py-4"><span className={book.is_active===false?'inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600':'inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700'}>{book.is_active===false?'Inactive':'Active'}</span></td></tr>)}</tbody></table></div>}
+      {!error&&lastPage>1&&<div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm"><span className="text-slate-500">Page {page} of {lastPage}</span><div className="flex gap-2"><button className="rounded-lg border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><button className="rounded-lg border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div></div>}
     </section>
   </div>
 }
