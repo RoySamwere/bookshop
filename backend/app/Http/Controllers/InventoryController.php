@@ -41,13 +41,7 @@ class InventoryController extends Controller
         $factor=$unit ? (int)$unit->pieces_per_unit : 1;
         $pieces=(int)$data['quantity']*$factor;
         if($pieces>2147483647) throw \Illuminate\Validation\ValidationException::withMessages(['quantity'=>'Converted quantity exceeds the maximum stock movement.']);
-        $quantity=DB::transaction(function()use($service,$data,$request,$unit,$factor,$pieces){
-            $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null);
-            DB::table('inventory_movements')->where('book_id',$data['book_id'])->where('branch_id',$data['branch_id'])->where('type','receipt')->orderByDesc('id')->limit(1)->update([
-                'product_unit_id'=>$unit?->id,'package_quantity'=>$data['quantity'],'units_per_package'=>$factor,
-            ]);
-            return $quantity;
-        });
+        $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null,$unit?->id,(int)$data['quantity'],$factor);
         return response()->json(['message'=>'Stock received successfully.','quantity'=>$quantity,'pieces_received'=>$pieces,'units_per_package'=>$factor],201);
     }
     public function movements(Request $request) {
