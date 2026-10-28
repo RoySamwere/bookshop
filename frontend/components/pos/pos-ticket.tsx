@@ -9,7 +9,7 @@ import { receiptDate } from './receipt-print'
 
 /** The paper ticket: a white card with a torn bottom edge. */
 export function Ticket({ children, label }: { children: ReactNode; label: string }) {
-  return <section aria-label={label} className="pos-ticket relative flex min-h-0 flex-1 flex-col rounded-t-2xl bg-white">{children}</section>
+  return <section aria-label={label} className="pos-ticket relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1e8f4] bg-white shadow-[0_8px_35px_-22px_rgba(19,37,74,.3)]">{children}</section>
 }
 
 const Kbd = ({ children }: { children: ReactNode }) => <kbd className="rounded border border-current/25 px-1 py-px text-[10.5px] font-semibold opacity-70">{children}</kbd>
@@ -32,7 +32,7 @@ export function SaleView({ cart, flashId, profile, onQuantity, onRemove, onHold,
   useEffect(() => { if (flashId) listRef.current?.querySelector(`[data-line="${flashId}"]`)?.scrollIntoView({ block: 'nearest' }) }, [flashId, cart])
 
   return <Ticket label="Current sale">
-    <header className="flex items-center justify-between gap-3 border-b border-dashed border-slate-200 px-5 pb-3 pt-4">
+    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 pb-4 pt-5">
       <div>
         <h2 className="text-[17px] font-bold text-[#13254a]">Current sale</h2>
         <p className="text-[13px] tabular-nums text-slate-500">{units ? `${units} ${units === 1 ? 'item' : 'items'} · ${cart.length} ${cart.length === 1 ? 'line' : 'lines'}` : 'Nothing added yet'}</p>
@@ -56,7 +56,7 @@ export function SaleView({ cart, flashId, profile, onQuantity, onRemove, onHold,
       {cart.map(line => <TicketLine key={line.product.id} line={line} flash={flashId === line.product.id} onQuantity={onQuantity} onRemove={onRemove} />)}
     </ol>}
 
-    <footer className="border-t border-dashed border-slate-300 px-5 pb-6 pt-4">
+    <footer className="border-t border-slate-200 bg-[#fbfcff] px-5 pb-6 pt-5">
       {vat && total > 0 && <div className="mb-1 flex justify-between text-[13px] tabular-nums text-slate-500"><span>Includes {vat.label}</span><span>{formatKes(vat.amount)}</span></div>}
       <div className="flex items-end justify-between gap-3">
         <span className="pb-1 text-[14px] font-semibold text-slate-600">Amount due</span>
