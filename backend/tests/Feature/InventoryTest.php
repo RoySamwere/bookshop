@@ -21,6 +21,21 @@ class InventoryTest extends TestCase
         ], $attributes));
     }
 
+    public function test_inventory_accepts_the_default_thirty_item_page_size(): void
+    {
+        $branch = Branch::factory()->create();
+        $this->actingAs(User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]), 'sanctum');
+        for ($index = 1; $index <= 35; $index++) {
+            $book = $this->book(['sku' => 'PAGE-'.$index]);
+            DB::table('inventory_balances')->insert(['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 1, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        }
+
+        $this->getJson('/api/inventory?page=1&per_page=30')->assertOk()->assertJsonCount(30, 'data')
+            ->assertJsonPath('per_page', 30)->assertJsonPath('total', 35)->assertJsonPath('last_page', 2);
+        $this->getJson('/api/inventory?page=2&per_page=30')->assertOk()->assertJsonCount(5, 'data');
+        $this->getJson('/api/inventory?per_page=')->assertOk()->assertJsonPath('per_page', 30);
+    }
+
     public function test_a_missing_product_can_be_created_then_received_in_the_same_workflow(): void
     {
         $branch = Branch::factory()->create();

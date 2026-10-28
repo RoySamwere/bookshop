@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 class InventoryController extends Controller
 {
     public function index(Request $request) {
-        $request->validate(['branch_id'=>'nullable|integer|exists:branches,id', 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,50,100,200']);
+        $request->validate(['branch_id'=>'nullable|integer|exists:branches,id', 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
         $branches=$user->role==='system_owner' ? null : $user->branches()->pluck('branches.id')->all();
         $query = DB::table('inventory_balances as i')->join('books as b','b.id','=','i.book_id')
@@ -23,7 +23,7 @@ class InventoryController extends Controller
             ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('i.quantity - i.reserved > 0 AND i.quantity - i.reserved <= b.reorder_level'))
             ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('i.quantity - i.reserved = 0'))
             ->select('i.*','b.title','b.sku','b.isbn','b.reorder_level','br.name as branch_name')
-            ->orderBy('b.title')->orderBy('i.id')->paginate((int) $request->input('per_page',30));
+            ->orderBy('b.title')->orderBy('i.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
     public function receive(Request $request, InventoryService $service) {
