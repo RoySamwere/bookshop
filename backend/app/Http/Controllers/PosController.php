@@ -37,9 +37,31 @@ class PosController extends Controller
     }
 
     public function sales(Request $request) {
+        $data=$request->validate([
+            'date'=>'nullable|date_format:Y-m-d',
+            'from'=>'nullable|date_format:Y-m-d',
+            'to'=>'nullable|date_format:Y-m-d',
+            'search'=>'nullable|string|max:100',
+            'payment_method'=>['nullable',Rule::in(['cash','mpesa','card'])],
+            'branch_id'=>'nullable|integer|exists:branches,id',
+            'page'=>'nullable|integer|min:1',
+        ]);
         $allowed=$this->branches($request);
-        return DB::table('pos_sales')->when($allowed!==null,fn($q)=>$q->whereIn('branch_id',$allowed))
-            ->orderByDesc('id')->paginate(30);
+        if(isset($data['branch_id']))abort_if($allowed!==null&&!in_array((int)$data['branch_id'],$allowed,true),403);
+        $base=DB::table('pos_sales as s')->leftJoin('branches as b','b.id','=','s.branch_id')
+            ->leftJoin('users as u','u.id','=','s.cashier_id')
+            ->when($allowed!==null,fn($q)=>$q->whereIn('s.branch_id',$allowed))
+            ->when(isset($data['branch_id']),fn($q)=>$q->where('s.branch_id',$data['branch_id']))
+            ->when(isset($data['date']),fn($q)=>$q->whereDate('s.created_at',$data['date']))
+            ->when(isset($data['from']),fn($q)=>$q->whereDate('s.created_at','>=',$data['from']))
+            ->when(isset($data['to']),fn($q)=>$q->whereDate('s.created_at','<=',$data['to']))
+            ->when(isset($data['payment_method']),fn($q)=>$q->where('s.payment_method',$data['payment_method']))
+            ->when($data['search']??null,fn($q,$v)=>$q->where(function($q)use($v){
+                $q->where('s.receipt_number','like',"%{$v}%")->orWhere('s.payment_reference','like',"%{$v}%");
+            }));
+        $summary=(clone $base)->selectRaw('COUNT(*) as transactions, COALESCE(SUM(s.total),0) as revenue, COALESCE(SUM(CASE WHEN s.payment_method="cash" THEN s.total ELSE 0 END),0) as cash, COALESCE(SUM(CASE WHEN s.payment_method="mpesa" THEN s.total ELSE 0 END),0) as mpesa, COALESCE(SUM(CASE WHEN s.payment_method="card" THEN s.total ELSE 0 END),0) as card')->first();
+        $sales=(clone $base)->select('s.*','b.name as branch_name','u.name as cashier_name')->orderByDesc('s.id')->paginate(30);
+        return response()->json(['data'=>$sales->items(),'current_page'=>$sales->currentPage(),'last_page'=>$sales->lastPage(),'total'=>$sales->total(),'summary'=>$summary]);
     }
 
     public function checkout(Request $request, InventoryService $inventory) {
