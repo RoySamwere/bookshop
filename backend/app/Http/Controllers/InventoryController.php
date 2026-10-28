@@ -48,12 +48,12 @@ class InventoryController extends Controller
         $this->authorizeBranch($request,(int)$data['branch_id']);
         $skus=array_map(fn($r)=>strtoupper(trim($r['sku'])),$data['rows']);
         if(count($skus)!==count(array_unique($skus)))
-            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate SKUs in this batch.']);
+            throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Duplicate SKUs in this batch.']);
         $received=DB::transaction(function()use($data,$request,$service){
             foreach($data['rows'] as $row){
                 $book=DB::table('books')->where('sku',$row['sku'])->lockForUpdate()->first();
                 if($book && !$book->is_active)
-                    throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Inactive product: '.$row['sku']]);
+                    throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Inactive product: '.$row['sku']]);
                 if(!$book){
                     $id=DB::table('books')->insertGetId([
                         'title'=>$row['title'],'sku'=>$row['sku'],
