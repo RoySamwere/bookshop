@@ -102,7 +102,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     setBulkRows([]);setBulkError('');if(!file)return
     try{
       if(file.size>5_000_000)throw new Error('Excel file must be under 5 MB')
-      if(!/\\.xlsx$/i.test(file.name))throw new Error('Upload the completed .xlsx Excel template.')
+      if(!/\.xlsx$/i.test(file.name))throw new Error('Upload the completed .xlsx Excel template.')
       const ExcelJS=(await import('exceljs')).default
       const wb=new ExcelJS.Workbook()
       await wb.xlsx.load(await file.arrayBuffer() as never)
