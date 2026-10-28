@@ -31,6 +31,28 @@ class CatalogController extends Controller
         }
         return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
     }
+    public function bulkCreateBooks(Request $request) {
+        $data=$request->validate([
+            'rows'=>'required|array|min:1|max:200',
+            'rows.*.title'=>'required|string|max:255',
+            'rows.*.sku'=>'required|string|max:100',
+            'rows.*.selling_price'=>'required|numeric|min:0',
+            'rows.*.cost_price'=>'required|numeric|min:0',
+            'rows.*.reorder_level'=>'nullable|integer|min:0',
+        ]);
+        $skus=array_map(fn($row)=>strtoupper(trim($row['sku'])),$data['rows']);
+        if(count($skus)!==count(array_unique($skus)))
+            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate SKUs in upload batch.']);
+        $existing=DB::table('books')->whereIn('sku',array_column($data['rows'],'sku'))->pluck('sku')->all();
+        if($existing)
+            throw \Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Already registered SKUs: '.implode(', ',array_slice($existing,0,10))]);
+        $now=now();
+        DB::transaction(function()use($data,$now){
+            foreach($data['rows'] as $row)
+                DB::table('books')->insert(array_merge($row,['reorder_level'=>$row['reorder_level']??10,'is_active'=>true,'created_at'=>$now,'updated_at'=>$now]));
+        });
+        return response()->json(['created'=>count($data['rows'])],201);
+    }
     public function exportBooks(Request $request) {
         $columns=['id','title','sku','isbn','brand','ruling_style','page_count','paper_size','binding_type','cost_price','selling_price','reorder_level','is_active','product_subcategory_id'];
         return response()->streamDownload(function() use ($columns) {
