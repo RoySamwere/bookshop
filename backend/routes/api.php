@@ -39,6 +39,22 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     Route::middleware('permission:workspace.access')->group(function () {
+        Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
+        Route::get('/catalog/{table}', [CatalogController::class, 'lookup'])->middleware('permission:catalog.view');
+        Route::post('/books', [CatalogController::class, 'storeBook'])->middleware('permission:catalog.manage');
+        Route::patch('/books/{book}', [CatalogController::class, 'updateBook'])->middleware('permission:catalog.manage');
+        Route::post('/catalog/{table}', [CatalogController::class, 'createLookup'])->middleware('permission:catalog.manage');
+        Route::get('/suppliers', [CatalogController::class, 'suppliers'])->middleware('permission:suppliers.view');
+        Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
+        Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
+        Route::get('/inventory/movements', [InventoryController::class, 'movements'])->middleware('permission:inventory.view');
+        Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])->middleware('permission:inventory.manage');
+        Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])->middleware('permission:inventory.manage');
+        Route::get('/purchase-orders', [ProcurementController::class, 'index'])->middleware('permission:inventory.view');
+        Route::get('/purchase-orders/{order}', [ProcurementController::class, 'show'])->middleware('permission:inventory.view');
+        Route::post('/purchase-orders', [ProcurementController::class, 'store'])->middleware('permission:inventory.manage');
+        Route::post('/purchase-orders/{order}/approve', [ProcurementController::class, 'approve'])->middleware('permission:inventory.manage');
+        Route::post('/purchase-orders/{order}/receive', [ProcurementController::class, 'receive'])->middleware('permission:inventory.manage');
         Route::get('/business', [BusinessProfileController::class, 'show']);
         Route::put('/business', [BusinessProfileController::class, 'update'])->middleware('permission:settings.manage');
 
