@@ -91,8 +91,7 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   const [supplierId, setSupplierId] = useState('')
   const [suppliers, setSuppliers] = useState<{id:number;name:string}[]>([])
   const [supplierQuery, setSupplierQuery] = useState('')
-  const [newSupplierName, setNewSupplierName] = useState('')
-  const [supplierMessage, setSupplierMessage] = useState('')
+  const [supplierOpen, setSupplierOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [books, setBooks] = useState<Book[]>([])
@@ -131,6 +130,7 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
     event.preventDefault()
     if (submitting.current) return
     if (!book) { setError(new ApiError('Select a product to receive.', 422)); return }
+    if (!supplierId) { setError(new ApiError('Select a supplier from the list.', 422)); return }
     submitting.current = true; setBusy(true); setError(null)
     try {
       const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, supplier_id:supplierId?Number(supplierId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
@@ -153,9 +153,15 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
         <Field label="Received as"><select className={inputClass} value={unitId} onChange={e=>setUnitId(e.target.value)}><option value="">Individual piece (×1)</option>{units.map(u=><option key={u.id} value={u.id}>{u.name} (×{u.pieces_per_unit})</option>)}</select></Field>
         <p className="text-sm text-slate-600">Adds {Number(quantity||0)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units to stock.</p>
-        <Field label="Supplier (optional for opening stock)" error={error?.field('supplier_id')}><input className={inputClass} placeholder="Filter suppliers…" value={supplierQuery} onChange={e=>setSupplierQuery(e.target.value)}/><select className={inputClass} value={supplierId} onChange={e=>setSupplierId(e.target.value)}><option value="">Opening stock / no supplier</option>{suppliers.filter(s=>s.name.toLowerCase().includes(supplierQuery.toLowerCase())||String(s.id)===supplierId).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-        {canCreateProduct&&<div className="flex gap-2"><input className={inputClass} placeholder="New supplier name" value={newSupplierName} onChange={e=>setNewSupplierName(e.target.value)}/><button type="button" className={secondaryButton} disabled={!newSupplierName.trim()} onClick={async()=>{try{const created=await api<{id:number;name:string}>('/suppliers',{method:'POST',body:{name:newSupplierName.trim()}});setSuppliers(old=>[...old,created]);setSupplierId(String(created.id));setNewSupplierName('');setSupplierMessage('Supplier saved and selected')}catch(e){setSupplierMessage(errorMessage(e))}}}>Add supplier</button></div>}
-        {supplierMessage&&<p role="status">{supplierMessage}</p>}
+        <div className="relative">
+          <Field label="Supplier *" error={error?.field('supplier_id')}>
+            <input className={inputClass} role="combobox" aria-expanded={supplierOpen} aria-controls="receipt-supplier-options" aria-autocomplete="list" required value={supplierOpen ? supplierQuery : (suppliers.find(s=>String(s.id)===supplierId)?.name ?? '')} placeholder="Search and select a supplier…" onFocus={()=>{setSupplierOpen(true);setSupplierQuery('')}} onChange={e=>{setSupplierQuery(e.target.value);setSupplierId('');setSupplierOpen(true)}} onBlur={()=>window.setTimeout(()=>setSupplierOpen(false),150)} />
+          </Field>
+          {supplierOpen&&<div id="receipt-supplier-options" role="listbox" className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+            {suppliers.filter(x=>x.name.toLowerCase().includes(supplierQuery.toLowerCase())).map(x=><button key={x.id} role="option" aria-selected={String(x.id)===supplierId} type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-100" onMouseDown={e=>e.preventDefault()} onClick={()=>{setSupplierId(String(x.id));setSupplierQuery('');setSupplierOpen(false)}}>{x.name}</button>)}
+            {!suppliers.some(x=>x.name.toLowerCase().includes(supplierQuery.toLowerCase()))&&<p className="px-3 py-2 text-sm">No matching suppliers. Register one on the Suppliers page.</p>}
+          </div>}
+        </div>
         <Field label="Delivery note or invoice number (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
         <Field label="Notes (optional)" error={error?.field('notes')}><textarea className={`${inputClass} h-20 py-3`} maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opening stock, delivery details…" /></Field>
       </fieldset>
