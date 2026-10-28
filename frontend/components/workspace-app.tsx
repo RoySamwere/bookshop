@@ -242,7 +242,7 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
   async function addUnit(event:React.FormEvent) {
     event.preventDefault();if(!unitBook)return;setUnitError('');
     try {await api(`/books/${unitBook.id}/units`,{method:'POST',body:{name:unitName.trim(),pieces_per_unit:Number(unitFactor)}});
-      setUnits(await api(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
+      setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
     catch(e){setUnitError(e instanceof Error?e.message:'Unable to save packaging')}
   }
   function downloadCsv() {
