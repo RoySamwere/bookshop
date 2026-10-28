@@ -5,8 +5,11 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BusinessProfileController;
+use App\Http\Controllers\CatalogController;
+use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LaunchSubscriberController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProcurementController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TaxRateController;
@@ -48,6 +51,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
         Route::get('/inventory/movements', [InventoryController::class, 'movements'])->middleware('permission:inventory.view');
+        Route::post('/inventory/receive', [InventoryController::class, 'receive'])->middleware('permission:inventory.manage');
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])->middleware('permission:inventory.manage');
         Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])->middleware('permission:inventory.manage');
         Route::get('/purchase-orders', [ProcurementController::class, 'index'])->middleware('permission:inventory.view');
@@ -65,7 +69,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::delete('/tax-rates/{taxRate}', [TaxRateController::class, 'destroy']);
         });
 
-        Route::get('/branches', [BranchController::class, 'index'])->middleware('permission:branches.view');
+        Route::get('/branches', [BranchController::class, 'index'])->middleware('permission:branches.view,inventory.view');
         Route::post('/branches', [BranchController::class, 'store'])->middleware('permission:branches.manage');
         Route::patch('/branches/{branch}', [BranchController::class, 'update'])->middleware('permission:branches.manage');
 

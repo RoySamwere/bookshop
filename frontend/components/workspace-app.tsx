@@ -6,6 +6,7 @@ import BrandLoader from './brand-loader'
 import { WorkspaceShell, PROFILE_SECTION, canOpenSection, firstSection } from './workspace-shell'
 import { OverviewDashboard } from './overview-dashboard'
 import { UsersView } from './users-view'
+import { InventoryView } from './inventory-view'
 import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
 import { ProfileView } from './profile-view'
@@ -54,7 +55,7 @@ const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { minimumF
 // Modules below still run on sample data; they connect to live records in later phases.
 const PREVIEW_MODULES: Record<string, string> = {
   'Dashboard': 'Phase 5', 'Point of Sale': 'Phase 3', 'Sales History': 'Phase 3', 
-  'Inventory & Stock': 'Phase 2', 'Suppliers': 'Phase 2', 'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
+  'Suppliers': 'Phase 2', 'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
 }
 
 function PreviewNotice({ section }: { section: string }) {
@@ -159,7 +160,7 @@ export function WorkspaceApp() {
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
     : active === 'Point of Sale' ? <POSView filteredProducts={filteredProducts} query={query} setQuery={setQuery} cart={cart} addToCart={addToCart} updateQuantity={updateQuantity} subtotal={subtotal} tax={tax} total={total} setCart={setCart} setShowCheckout={setShowCheckout} />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
-    : active === 'Inventory & Stock' ? <InventoryView setToast={notify} />
+    : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
     : active === 'Suppliers' ? <SuppliersView setToast={notify} />
     : <Dashboard active={active} setActive={navigateTo} userName={currentUser.name} />
@@ -233,21 +234,6 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>
     </section>
   </div>
-}
-
-function InventoryView({ setToast }: { setToast: (value: string) => void }) {
-  const [filter, setFilter] = useState('All stock')
-  const [search, setSearch] = useState('')
-  const [received, setReceived] = useState<number[]>([])
-  const inventoryRows = products.filter((product) => `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(search.toLowerCase()))
-  const lowStock = products.filter((product) => product.stock > 0 && product.stock <= 8)
-  const outOfStock = products.filter((product) => product.stock === 0)
-  const visibleRows = inventoryRows.filter((product) => filter === 'All stock' || (filter === 'Low stock' ? product.stock > 0 && product.stock <= 8 : product.stock === 0))
-  function markReceived(id: number) {
-    setReceived((current) => current.includes(id) ? current : [...current, id])
-    setToast('Stock receipt recorded · 10 units added')
-  }
-  return <div className="inventory-page"><div className="page-heading compact"><div><div className="eyebrow">OPERATIONS · INVENTORY CONTROL</div><h1 tabIndex={-1}>Inventory & Stock</h1><p>Monitor stock levels, identify gaps, and keep your shelves ready for customers.</p></div><div className="heading-actions"><button className="secondary-button" onClick={() => setToast('Stock report exported') }><Download size={16} /> Export report</button><button className="primary-button" onClick={() => setToast('New stock receipt started')}><Plus size={17} /> Receive stock</button></div></div><div className="inventory-stats"><div className="card catalog-stat"><span>Inventory value</span><strong>KSh 2.84M</strong><small>At selling price</small></div><div className="card catalog-stat"><span>Units on hand</span><strong>319</strong><small>Across {products.length} SKUs</small></div><div className="card catalog-stat warning"><span>Low stock</span><strong>{lowStock.length}</strong><small>Reorder soon</small></div><div className="card catalog-stat danger"><span>Out of stock</span><strong>{outOfStock.length}</strong><small>Needs action today</small></div></div><section className="card inventory-alert"><div className="alert-icon"><Bell size={17} /></div><div><strong>Stock attention needed</strong><p>{lowStock.length + outOfStock.length} items need a review before the next school rush.</p></div><button className="secondary-button" onClick={() => setFilter('Low stock')}>Review low stock</button></section><section className="card inventory-table-card"><div className="card-heading"><div><h2>Stock levels</h2><p>Live catalogue quantities by SKU</p></div><div className="inventory-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search stock..." /></div></div><div className="inventory-tabs">{['All stock', 'Low stock', 'Out of stock'].map((item) => <button key={item} className={filter === item ? 'selected' : ''} onClick={() => setFilter(item)}>{item}{item === 'Low stock' && <span>{lowStock.length}</span>}{item === 'Out of stock' && <span>{outOfStock.length}</span>}</button>)}</div><div className="inventory-list">{visibleRows.map((product) => { const isReceived = received.includes(product.id); const status = product.stock === 0 ? 'Out of stock' : product.stock <= 8 ? 'Low stock' : 'Healthy'; return <div className="inventory-row" key={product.id}><div className={`inventory-book ${product.tone}`}><BookOpen size={18} /></div><div className="inventory-product"><strong>{product.name}</strong><span>{product.sku} · {product.category}</span></div><div className="inventory-number"><strong>{isReceived ? product.stock + 10 : product.stock}</strong><span>units</span></div><div className="inventory-bar"><div><span>Stock level</span><i><b style={{ width: `${Math.min(((isReceived ? product.stock + 10 : product.stock) / 100) * 100, 100)}%` }} /></i></div></div><span className={`stock-status ${status.toLowerCase().replace(' ', '-')}`}>{status}</span><button className="row-action" onClick={() => markReceived(product.id)}>{isReceived ? 'Received' : 'Restock'}</button></div> })}{visibleRows.length === 0 && <div className="inventory-empty">No stock items match your search.</div>}</div></section></div>
 }
 
 const demoCustomers = [

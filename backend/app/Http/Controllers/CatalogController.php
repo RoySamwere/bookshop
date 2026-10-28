@@ -9,7 +9,7 @@ use Illuminate\Validation\Rule;
 class CatalogController extends Controller
 {
     public function books(Request $request) {
-        return DB::table('books')->when($request->query('search'), fn ($q, $s) => $q->where(fn ($q) => $q->where('title','like',"%{$s}%")->orWhere('isbn','like',"%{$s}%")->orWhere('sku','like',"%{$s}%")))->orderBy('title')->paginate(20);
+        return DB::table('books')->when($request->boolean('active_only'), fn ($q) => $q->where('is_active', true))->when($request->query('search'), fn ($q, $s) => $q->where(fn ($q) => $q->where('title','like',"%{$s}%")->orWhere('isbn','like',"%{$s}%")->orWhere('sku','like',"%{$s}%")))->orderBy('title')->orderBy('id')->paginate(20);
     }
     public function storeBook(Request $request) {
         $data = $request->validate([
