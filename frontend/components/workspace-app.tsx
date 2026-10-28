@@ -167,7 +167,7 @@ export function WorkspaceApp() {
     : active === 'Settings' ? <SettingsView currentUser={currentUser} notify={notify} />
     : active === 'Audit Log' ? <AuditView />
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
-    : active === 'Point of Sale' ? <PosTerminal currentUser={currentUser} notify={notify} onExit={() => navigateTo(canOpenSection(currentUser, 'Dashboard') ? 'Dashboard' : firstSection(currentUser))} />
+    : active === 'Point of Sale' ? <PosTerminal currentUser={currentUser} notify={notify} onExit={() => navigateTo(canOpenSection(currentUser, 'Dashboard') ? 'Dashboard' : firstSection(currentUser))} onNavigate={navigateTo} />
     : active === 'Sales History' ? <SalesHistoryView />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />

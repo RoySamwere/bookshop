@@ -1,15 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Keyboard, LogOut, PauseCircle, ReceiptText, ShoppingBag, LayoutDashboard, Boxes, Users, Settings2, Menu, Store, ChartNoAxesColumnIncreasing } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { ChevronLeft, Keyboard, LogOut, PauseCircle, ReceiptText, ShoppingBag, LayoutDashboard, Boxes, Users, Settings2, Menu, Store, ChartNoAxesColumnIncreasing, BookOpen, Truck } from 'lucide-react'
 import { ApiError, errorMessage } from '../../lib/api'
-import { hasPermission, type BookshopUser, type Permission } from '../../lib/auth'
+import { hasPermission, type BookshopUser } from '../../lib/auth'
 import { brand } from '../../lib/brand'
 import { formatKes, posApi, toNumber, type PaymentMethod, type PosBranch, type PosCategory, type PosDaySummary, type PosProduct, type PosReceipt, type PosSale } from '../../lib/pos-api'
 import { addToCart, available, cartTotal, cartUnits, draftStore, heldStore, newSaleKey, setQuantity, type CartLine, type HeldSale } from '../../lib/pos-store'
 import type { BusinessProfile } from '../../lib/workspace-api'
 import { BrandMark } from '../brand-mark'
+import { canOpenSection } from '../workspace-shell'
 import { PosCatalogue, type CatalogueHandle } from './pos-catalogue'
 import { HeldSalesPanel, ShortcutsPanel, TodayPanel } from './pos-panels'
 import { ReceiptView, SaleView, TenderView, tenderIsValid } from './pos-ticket'
@@ -35,9 +35,14 @@ const typingInField = (target: EventTarget | null) => target instanceof HTMLElem
 const cartSignature = (cart: CartLine[]) => cart.map(line => `${line.product.id}x${line.quantity}`).join(',')
 
 /** The cashier's till: scan or tap products, take payment and hand over a receipt. */
-export function PosTerminal({ currentUser, notify, onExit }: { currentUser: BookshopUser; notify: (message: string) => void; onExit: () => void }) {
-  const router = useRouter()
+export function PosTerminal({ currentUser, notify, onExit, onNavigate }: { currentUser: BookshopUser; notify: (message: string) => void; onExit: () => void; onNavigate: (section: string) => void }) {
   const [navOpen, setNavOpen] = useState(false)
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNavOpen(false) } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [navOpen])
   const userId = currentUser.id
   const canSeeSales = hasPermission(currentUser, 'sales.view')
   const wide = useWideScreen()
@@ -257,26 +262,30 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
 
   const initials = currentUser.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
-  const navItems: { label: string; icon: typeof Store; permission: Permission }[] = [
-    { label: 'Dashboard', icon: LayoutDashboard, permission: 'workspace.access' },
-    { label: 'Point of Sale', icon: Store, permission: 'pos.access' },
-    { label: 'Inventory', icon: Boxes, permission: 'inventory.view' },
-    { label: 'Sales History', icon: ReceiptText, permission: 'sales.view' },
-    { label: 'Customers', icon: Users, permission: 'customers.view' },
-    { label: 'Reports', icon: ChartNoAxesColumnIncreasing, permission: 'reports.view' },
-    { label: 'Settings', icon: Settings2, permission: 'settings.view' },
+  // Labels match the workspace sections, so the rail opens the same pages as the main sidebar.
+  const navItems: { label: string; icon: typeof Store }[] = [
+    { label: 'Dashboard', icon: LayoutDashboard },
+    { label: 'Point of Sale', icon: Store },
+    { label: 'Sales History', icon: ReceiptText },
+    { label: 'Products & Books', icon: BookOpen },
+    { label: 'Inventory & Stock', icon: Boxes },
+    { label: 'Suppliers', icon: Truck },
+    { label: 'Customers', icon: Users },
+    { label: 'Reports & Analytics', icon: ChartNoAxesColumnIncreasing },
+    { label: 'Settings', icon: Settings2 },
   ]
-  const posNav = navItems.filter(item => item.label === 'Point of Sale' || hasPermission(currentUser, item.permission))
+  const posNav = navItems.filter(item => item.label === 'Point of Sale' || canOpenSection(currentUser, item.label))
   function goToSection(section: string) {
     setNavOpen(false)
-    if (section !== 'Point of Sale') router.push('/dashboard?section=' + encodeURIComponent(section))
+    // The unfinished sale stays saved on this device, so leaving the till loses nothing.
+    if (section !== 'Point of Sale') onNavigate(section)
   }
 
   return <div className="pos-root flex h-dvh overflow-hidden bg-[#f4f7fc] text-[#162c4c]">
     {navOpen && <button type="button" className="fixed inset-0 z-40 bg-[#13254a]/40 md:hidden" onClick={() => setNavOpen(false)} aria-label="Close navigation" />}
     <aside className={`z-50 flex w-[76px] shrink-0 flex-col items-center border-r border-white/10 bg-[#142341] py-5 text-white shadow-lg max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:transition-transform ${navOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'} md:relative md:translate-x-0`} aria-label="POS navigation">
       <div className="mb-7 flex size-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15"><BrandMark size={34} /></div>
-      <nav className="flex w-full flex-1 flex-col items-center gap-2 px-2" aria-label="Quick navigation">
+      <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1 [scrollbar-width:none]" aria-label="Quick navigation">
         {posNav.map(item => { const Icon = item.icon; const active = item.label === 'Point of Sale'; return <button key={item.label} type="button" title={item.label} aria-label={item.label} aria-current={active ? 'page' : undefined} onClick={() => goToSection(item.label)} className={`relative flex size-12 items-center justify-center rounded-xl transition ${active ? 'bg-[#176cf4] text-white shadow-lg' : 'text-[#b9c9e3] hover:bg-white/10 hover:text-white'}`}><Icon size={21} aria-hidden="true" />{active && <span className="absolute -left-2 h-7 w-1 rounded-r-full bg-[#e3b450]" />}</button> })}
       </nav>
       <button type="button" title="Exit till" aria-label="Exit till" onClick={onExit} className="mt-3 flex size-11 items-center justify-center rounded-xl text-[#b9c9e3] hover:bg-white/10 hover:text-white"><LogOut size={21}/></button>
