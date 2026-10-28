@@ -10,7 +10,7 @@ export const primaryButton = `${buttonClass} bg-gradient-to-r from-[#087df5] to-
 export const secondaryButton = `${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-100`
 export const dangerButton = `${buttonClass} border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 focus:ring-rose-100`
 
-/** Compact version of the Nifunze fish loader for use inside pages and panels. */
+/** Compact version of the fish loader for use inside pages and panels. */
 export function FishSpinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
   return <span className={`fish-inline fish-inline-${size}`} aria-hidden="true">
     <svg viewBox="0 0 120 72" fill="none"><path d="M16 36 2 18v36l14-18c21-21 48-25 78-1-30 24-57 20-78 1Z" fill="currentColor" /><circle cx="75" cy="30" r="3" fill="#fff" /></svg>

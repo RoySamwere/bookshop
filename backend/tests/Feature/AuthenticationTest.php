@@ -72,14 +72,14 @@ class AuthenticationTest extends TestCase
         $user->createToken('other-device');
 
         $this->withToken($current)->putJson('/api/auth/password', [
-            'current_password' => 'wrong', 'password' => 'new-password-1', 'password_confirmation' => 'new-password-1',
+            'current_password' => 'wrong', 'password' => 'New-password-1', 'password_confirmation' => 'New-password-1',
         ])->assertUnprocessable()->assertJsonValidationErrors('current_password');
 
         $this->withToken($current)->putJson('/api/auth/password', [
-            'current_password' => 'password', 'password' => 'new-password-1', 'password_confirmation' => 'new-password-1',
+            'current_password' => 'password', 'password' => 'New-password-1', 'password_confirmation' => 'New-password-1',
         ])->assertOk();
 
-        $this->assertTrue(Hash::check('new-password-1', $user->fresh()->password));
+        $this->assertTrue(Hash::check('New-password-1', $user->fresh()->password));
         $this->assertSame(1, $user->tokens()->count());
         $this->assertDatabaseHas('audit_logs', ['action' => 'auth.password_changed', 'user_id' => $user->id]);
     }
@@ -98,20 +98,20 @@ class AuthenticationTest extends TestCase
             $token = $notification->token;
             $url = $notification->toMail($user)->actionUrl;
 
-            return str_starts_with($url, config('app.frontend_url').'/?reset_token=');
+            return str_starts_with($url, config('app.frontend_url').'/reset-password?token=');
         });
 
         $this->postJson('/api/auth/reset-password', [
-            'token' => 'invalid', 'email' => $user->email, 'password' => 'brand-new-pass', 'password_confirmation' => 'brand-new-pass',
+            'token' => 'invalid', 'email' => $user->email, 'password' => 'Brand-new-pass1', 'password_confirmation' => 'Brand-new-pass1',
         ])->assertUnprocessable();
 
         $this->postJson('/api/auth/reset-password', [
-            'token' => $token, 'email' => $user->email, 'password' => 'brand-new-pass', 'password_confirmation' => 'brand-new-pass',
+            'token' => $token, 'email' => $user->email, 'password' => 'Brand-new-pass1', 'password_confirmation' => 'Brand-new-pass1',
         ])->assertOk();
 
-        $this->assertTrue(Hash::check('brand-new-pass', $user->fresh()->password));
+        $this->assertTrue(Hash::check('Brand-new-pass1', $user->fresh()->password));
         $this->assertSame(0, $user->tokens()->count());
-        $this->postJson('/api/auth/login', ['email' => $user->email, 'password' => 'brand-new-pass'])->assertOk();
+        $this->postJson('/api/auth/login', ['email' => $user->email, 'password' => 'Brand-new-pass1'])->assertOk();
     }
 
     public function test_deactivated_accounts_do_not_receive_reset_links(): void
@@ -131,10 +131,10 @@ class AuthenticationTest extends TestCase
         $cashier->createToken('till');
 
         $this->actingAs($admin, 'sanctum')->postJson("/api/users/{$cashier->id}/reset-password", [
-            'password' => 'temporary-pass', 'password_confirmation' => 'temporary-pass',
+            'password' => 'Temporary-pass1', 'password_confirmation' => 'Temporary-pass1',
         ])->assertOk();
 
-        $this->assertTrue(Hash::check('temporary-pass', $cashier->fresh()->password));
+        $this->assertTrue(Hash::check('Temporary-pass1', $cashier->fresh()->password));
         $this->assertSame(0, $cashier->tokens()->count());
         $this->assertSame(1, $cashier->unreadNotifications()->count());
     }

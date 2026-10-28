@@ -19,7 +19,9 @@ class AuthController extends Controller
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+            'remember' => ['sometimes', 'boolean'],
         ]);
+        $credentials['email'] = strtolower(trim($credentials['email']));
 
         $user = User::where('email', $credentials['email'])->first();
 
@@ -36,9 +38,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Your account is not authorised to sign in.'], 403);
         }
 
-        $token = $user->createToken('bookshop-web', ['*'], $this->tokenExpiry())->plainTextToken;
+        $remember = $request->boolean('remember');
+        $token = $user->createToken($remember ? 'bookshop-web-remembered' : 'bookshop-web', ['*'], $this->tokenExpiry($remember))->plainTextToken;
         $user->forceFill(['last_login_at' => now()])->save();
-        AuditLog::record('auth.login', "{$user->name} signed in", $user, actor: $user);
+        AuditLog::record('auth.login', "{$user->name} signed in", $user, ['remember' => $remember], $user);
 
         return response()->json([
             'message' => 'Signed in successfully.',
@@ -78,7 +81,7 @@ class AuthController extends Controller
         $user = $request->user();
         $request->validate([
             'current_password' => ['required', 'current_password:sanctum'],
-            'password' => ['required', 'confirmed', 'different:current_password', PasswordRule::min(8)],
+            'password' => ['required', 'confirmed', 'different:current_password', PasswordRule::defaults()],
         ], ['current_password.current_password' => 'Your current password is incorrect.']);
 
         $user->password = $request->input('password');
@@ -109,7 +112,7 @@ class AuthController extends Controller
         $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+            'password' => ['required', 'confirmed', PasswordRule::defaults()],
         ]);
 
         $status = Password::reset(
@@ -124,15 +127,21 @@ class AuthController extends Controller
         );
 
         if ($status !== Password::PASSWORD_RESET) {
-            throw ValidationException::withMessages(['email' => [__($status)]]);
+            // Never reveal whether the email exists; every broker failure means the link cannot be used.
+            throw ValidationException::withMessages(['token' => ['This reset link is invalid or has expired. Request a new one.']]);
         }
 
         return response()->json(['message' => 'Your password has been reset. You can now sign in.']);
     }
 
-    private function tokenExpiry(): ?\DateTimeInterface
+    /** Per-token expiry, never later than Sanctum's hard ceiling. */
+    private function tokenExpiry(bool $remember): ?\DateTimeInterface
     {
-        $minutes = (int) config('sanctum.expiration');
+        $ceiling = (int) config('sanctum.expiration');
+        $minutes = (int) config($remember ? 'sanctum.remember_lifetime' : 'sanctum.token_lifetime');
+        if ($ceiling > 0) {
+            $minutes = $minutes > 0 ? min($minutes, $ceiling) : $ceiling;
+        }
 
         return $minutes > 0 ? now()->addMinutes($minutes) : null;
     }

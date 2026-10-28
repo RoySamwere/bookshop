@@ -50,7 +50,13 @@ return [
     |
     */
 
-    'expiration' => env('SANCTUM_TOKEN_EXPIRATION', 720),
+    // Hard ceiling for every token. Each sign-in also sets its own expiry below it:
+    // token_lifetime normally, remember_lifetime when "Remember me" is ticked.
+    'expiration' => env('SANCTUM_REMEMBER_EXPIRATION', 10080),
+
+    'token_lifetime' => env('SANCTUM_TOKEN_EXPIRATION', 720),
+
+    'remember_lifetime' => env('SANCTUM_REMEMBER_EXPIRATION', 10080),
 
     /*
     |--------------------------------------------------------------------------

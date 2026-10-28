@@ -30,7 +30,7 @@ class UserRequest extends FormRequest
             'name' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
             'email' => [$creating ? 'required' : 'sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($target?->id)],
             'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\s-]{7,30}$/'],
-            'password' => $creating ? ['required', 'confirmed', Password::min(8)] : ['prohibited'],
+            'password' => $creating ? ['required', 'confirmed', Password::defaults()] : ['prohibited'],
             'role' => [$creating ? 'required' : 'sometimes', Rule::in($caller->assignableRoles())],
             'is_active' => ['sometimes', 'boolean'],
             'branch_ids' => ['sometimes', 'array'],

@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarDays, KeyRound, Mail, Pencil, Phone, Power, Search, ShieldCheck, Trash2, UserPlus, UserRound, Users } from 'lucide-react'
+import { CalendarDays, Clock3, History, KeyRound, Mail, MailCheck, Pencil, Phone, Power, Search, ShieldCheck, Trash2, UserPlus, UserRound, Users } from 'lucide-react'
 import { ApiError, errorMessage, type Paginated } from '../lib/api'
 import { roleLabel, type BookshopUser, type Role } from '../lib/auth'
-import { branchesApi, usersApi, type Branch, type RoleInfo, type TeamMember, type UserPayload } from '../lib/workspace-api'
+import { branchesApi, usersApi, type Branch, type RoleInfo, type TeamMember, type UserCounts, type UserPayload } from '../lib/workspace-api'
+import { AccountHistoryDialog, PendingRequests, StaffRequestBadge, VerificationBadge } from './account-review'
 import { Card, EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, ModalActions, PageHeader, Pagination, StatCard, StatusBadge, formatDate, inputClass, primaryButton } from './ui-kit'
 
 const ROLE_TONES: Record<string, string> = {
@@ -23,14 +24,16 @@ export function RoleBadge({ role }: { role: string }) {
 }
 
 type Filters = { search: string; role: string; status: string; branch_id: string; page: number }
-type Dialog = { kind: 'create' } | { kind: 'edit' | 'password'; user: TeamMember } | null
+type Dialog = { kind: 'create' } | { kind: 'edit' | 'password' | 'history'; user: TeamMember } | null
 
 export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; notify: (message: string) => void }) {
   const canManage = currentUser.permissions.includes('users.manage')
+  const canViewHistory = currentUser.permissions.includes('audit.view')
   const [filters, setFilters] = useState<Filters>({ search: '', role: '', status: '', branch_id: '', page: 1 })
   const [searchInput, setSearchInput] = useState('')
   const [result, setResult] = useState<Paginated<TeamMember> | null>(null)
-  const [counts, setCounts] = useState<{ active: number; inactive: number } | null>(null)
+  const [counts, setCounts] = useState<UserCounts | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [roles, setRoles] = useState<RoleInfo[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,7 +78,13 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
     try {
       notify((await usersApi.setStatus(user.id, !user.is_active)).message)
       await load()
+      setReloadKey(key => key + 1)
     } catch (e) { notify(errorMessage(e)) } finally { setBusyId(null) }
+  }
+
+  async function resendVerification(user: TeamMember) {
+    setBusyId(user.id)
+    try { notify((await usersApi.resendVerification(user.id)).message) } catch (e) { notify(errorMessage(e)) } finally { setBusyId(null) }
   }
 
   async function remove(user: TeamMember) {
@@ -84,6 +93,7 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
     try {
       notify((await usersApi.remove(user.id)).message)
       await load()
+      setReloadKey(key => key + 1)
     } catch (e) { notify(errorMessage(e)) } finally { setBusyId(null) }
   }
 
@@ -92,11 +102,14 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
       description={currentUser.role === 'system_owner' ? 'Manage your bookshop team, their roles and the branches they work in.' : 'Team members in your branches and the customer accounts you look after.'}
       actions={canManage && <button className={primaryButton} disabled={!formDataReady} onClick={() => setDialog({ kind: 'create' })}><UserPlus size={17} /> Add user</button>} />
 
-    <div className="mb-5 grid gap-4 sm:grid-cols-3">
+    <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard label="Accounts" value={counts ? counts.active + counts.inactive : '—'} hint="Visible to you, excluding yourself" icon={<Users size={19} />} />
       <StatCard label="Active" value={counts?.active ?? '—'} hint="Can sign in" icon={<ShieldCheck size={19} />} tone="emerald" />
       <StatCard label="Deactivated" value={counts?.inactive ?? '—'} hint="Sign-in blocked, history kept" icon={<Power size={19} />} tone="pink" />
+      <StatCard label="Awaiting approval" value={counts?.pending ?? '—'} hint={counts?.unverified ? `${counts.unverified} email${counts.unverified === 1 ? '' : 's'} not verified yet` : 'Staff access requests'} icon={<Clock3 size={19} />} tone="amber" />
     </div>
+
+    {canManage && formDataReady && <PendingRequests reloadKey={reloadKey} roles={assignable} branches={branches} notify={notify} onChanged={() => void load()} />}
 
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
@@ -112,7 +125,7 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
             <option value="">All roles</option>{roles.filter(role => role.value !== 'system_owner').map(role => <option key={role.value} value={role.value}>{role.label}</option>)}
           </select>
           <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700" value={filters.status} onChange={e => setFilter('status', e.target.value)} aria-label="Filter by status">
-            <option value="">Any status</option><option value="active">Active</option><option value="inactive">Deactivated</option>
+            <option value="">Any status</option><option value="active">Active</option><option value="inactive">Deactivated</option><option value="pending">Awaiting approval</option><option value="unverified">Email not verified</option>
           </select>
           <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700" value={filters.branch_id} onChange={e => setFilter('branch_id', e.target.value)} aria-label="Filter by branch">
             <option value="">All branches</option>{branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
@@ -122,10 +135,10 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
 
       {loading && !result ? <LoadingState label="Loading your team" /> : error ? <ErrorState message={error} onRetry={load} /> : result && <>
         <div className={`overflow-x-auto transition-opacity ${loading ? 'opacity-60' : ''}`}>
-          <table className="w-full min-w-[860px] text-left">
+          <table className="w-full min-w-[1000px] text-left">
             <thead className="bg-slate-50/80"><tr className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
               <th scope="col" className="px-6 py-3.5">Account</th><th scope="col" className="px-5 py-3.5">Role</th><th scope="col" className="px-5 py-3.5">Branches</th>
-              <th scope="col" className="px-5 py-3.5">Status</th><th scope="col" className="px-5 py-3.5">Last sign-in</th><th scope="col" className="px-5 py-3.5 text-right">Manage</th>
+              <th scope="col" className="px-5 py-3.5">Status</th><th scope="col" className="px-5 py-3.5">Registered</th><th scope="col" className="px-5 py-3.5">Last sign-in</th><th scope="col" className="px-5 py-3.5 text-right">Manage</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
               {result.data.map(user => <tr key={user.id} className="transition-colors hover:bg-slate-50/70">
@@ -135,17 +148,23 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
                     <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
                     <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-400"><Mail size={12} />{user.email}</p>
                     {user.phone && <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400"><Phone size={12} />{user.phone}</p>}
+                    {user.staff_access_status && user.staff_access_status !== 'approved' && <div className="mt-1.5"><StaffRequestBadge status={user.staff_access_status} /></div>}
                   </div>
                 </div></td>
                 <td className="px-5 py-4"><RoleBadge role={user.role} /></td>
                 <td className="px-5 py-4 text-sm text-slate-600">{user.branches?.length ? user.branches.map(branch => branch.name).join(', ') : <span className="text-slate-400">—</span>}</td>
-                <td className="px-5 py-4"><StatusBadge active={user.is_active} inactiveLabel="Deactivated" /></td>
+                <td className="px-5 py-4"><div className="flex flex-col items-start gap-1.5"><StatusBadge active={user.is_active} inactiveLabel="Deactivated" /><VerificationBadge verified={user.email_verified} /></div></td>
+                <td className="px-5 py-4 text-sm text-slate-500"><span className="block">{formatDate(user.created_at)}</span><span className="text-xs text-slate-400">{user.registration_source === 'public' ? 'Self-registered' : 'Added by staff'}</span></td>
                 <td className="px-5 py-4 text-sm text-slate-500"><span className="inline-flex items-center gap-2"><CalendarDays size={14} className="text-slate-400" />{user.last_login_at ? formatDate(user.last_login_at, true) : 'Never'}</span></td>
-                <td className="px-5 py-4">{user.can_manage ? <div className="flex justify-end gap-1">
+                <td className="px-5 py-4">{user.can_manage || canViewHistory ? <div className="flex justify-end gap-1">
+                  {canViewHistory && <RowAction label={`View ${user.name}'s history`} onClick={() => setDialog({ kind: 'history', user })}><History size={15} /></RowAction>}
+                  {user.can_manage && !user.email_verified && <RowAction label={`Resend verification email to ${user.name}`} disabled={busyId === user.id} onClick={() => void resendVerification(user)}><MailCheck size={15} /></RowAction>}
+                  {user.can_manage && <>
                   <RowAction label={`Edit ${user.name}`} disabled={busyId === user.id || !formDataReady} onClick={() => setDialog({ kind: 'edit', user })}><Pencil size={15} /></RowAction>
                   <RowAction label={`Reset password for ${user.name}`} disabled={busyId === user.id} onClick={() => setDialog({ kind: 'password', user })}><KeyRound size={15} /></RowAction>
                   <RowAction label={`${user.is_active ? 'Deactivate' : 'Reactivate'} ${user.name}`} disabled={busyId === user.id} onClick={() => void toggleStatus(user)} tone={user.is_active ? 'amber' : 'emerald'}><Power size={15} /></RowAction>
                   <RowAction label={`Delete ${user.name}`} disabled={busyId === user.id} onClick={() => void remove(user)} tone="rose"><Trash2 size={15} /></RowAction>
+                  </>}
                 </div> : <p className="text-right text-xs text-slate-400">View only</p>}</td>
               </tr>)}
             </tbody>
@@ -169,6 +188,7 @@ export function UsersView({ currentUser, notify }: { currentUser: BookshopUser; 
 
     {dialog?.kind === 'create' && <UserFormDialog roles={assignable} branches={branches} onClose={() => setDialog(null)} onSaved={message => { setDialog(null); notify(message); void load() }} />}
     {dialog?.kind === 'edit' && <UserFormDialog user={dialog.user} roles={assignable} branches={branches} onClose={() => setDialog(null)} onSaved={message => { setDialog(null); notify(message); void load() }} />}
+    {dialog?.kind === 'history' && <AccountHistoryDialog user={dialog.user} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'password' && <ResetPasswordDialog user={dialog.user} onClose={() => setDialog(null)} onSaved={message => { setDialog(null); notify(message) }} />}
   </div>
 }
@@ -220,7 +240,7 @@ function UserFormDialog({ user, roles, branches, onClose, onSaved }: { user?: Te
           <select className={inputClass} value={form.role} onChange={e => set('role', e.target.value as Role)}>{roleOptions.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}</select>
         </Field>
         {!editing && <>
-          <Field label="Password" error={error?.field('password')}><input className={inputClass} type="password" autoComplete="new-password" value={form.password} onChange={e => set('password', e.target.value)} placeholder="At least 8 characters" required minLength={8} /></Field>
+          <Field label="Password" error={error?.field('password')}><input className={inputClass} type="password" autoComplete="new-password" value={form.password} onChange={e => set('password', e.target.value)} placeholder="8+ characters: Aa, 1 and a symbol" required minLength={8} /></Field>
           <Field label="Confirm password"><input className={inputClass} type="password" autoComplete="new-password" value={form.password_confirmation} onChange={e => set('password_confirmation', e.target.value)} placeholder="Enter password again" required minLength={8} /></Field>
         </>}
       </div>
@@ -261,7 +281,7 @@ function ResetPasswordDialog({ user, onClose, onSaved }: { user: TeamMember; onC
   return <Modal title={`Reset ${user.name}'s password`} description="Set a temporary password and share it with them securely. They will be signed out everywhere." icon={<KeyRound size={19} />} onClose={onClose} busy={busy}>
     <form onSubmit={submit}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Temporary password"><input className={inputClass} type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} placeholder="At least 8 characters" /></Field>
+        <Field label="Temporary password"><input className={inputClass} type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} placeholder="8+ characters: Aa, 1 and a symbol" /></Field>
         <Field label="Confirm password"><input className={inputClass} type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required minLength={8} /></Field>
       </div>
       <FormAlert message={error} />

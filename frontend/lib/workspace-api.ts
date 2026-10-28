@@ -3,8 +3,12 @@ import type { BranchSummary, Permission, Role } from './auth'
 
 export type TeamMember = {
   id: number; name: string; email: string; phone: string | null; role: Role; role_label: string; is_active: boolean
-  last_login_at: string | null; created_at: string; branches: BranchSummary[]; can_manage: boolean
+  last_login_at: string | null; created_at: string; branches: BranchSummary[]; can_manage: boolean; can_review: boolean
+  email_verified: boolean; email_verified_at: string | null; registration_source: 'public' | null
+  staff_access_status: 'pending' | 'approved' | 'rejected' | null; staff_access_requested_at: string | null
+  staff_access_reviewed_at: string | null; staff_access_note: string | null
 }
+export type UserCounts = { active: number; inactive: number; pending: number; unverified: number }
 export type RoleInfo = { value: Role; label: string; description: string; permissions: Permission[]; uses_branches: boolean; assignable: boolean }
 export type Branch = { id: number; name: string; code: string; email: string | null; phone: string | null; address: string | null; city: string | null; is_main: boolean; is_active: boolean; users_count?: number }
 export type TaxRate = { id: number; name: string; code: string; rate: string; is_default: boolean; is_active: boolean }
@@ -21,13 +25,21 @@ type Saved<T> = { data: T; message: string }
 export type UserPayload = { name?: string; email?: string; phone?: string | null; role?: Role; branch_ids?: number[]; password?: string; password_confirmation?: string }
 
 export const usersApi = {
-  list: (query: { search?: string; role?: string; status?: string; branch_id?: number | string; page?: number }) => api<Paginated<TeamMember> & { counts: { active: number; inactive: number } }>('/users', { query }),
+  list: (query: { search?: string; role?: string; status?: string; branch_id?: number | string; page?: number; per_page?: number }) => api<Paginated<TeamMember> & { counts: UserCounts }>('/users', { query }),
   create: (body: UserPayload) => api<Saved<TeamMember>>('/users', { method: 'POST', body }),
   update: (id: number, body: UserPayload) => api<Saved<TeamMember>>(`/users/${id}`, { method: 'PATCH', body }),
   setStatus: (id: number, is_active: boolean) => api<Saved<TeamMember>>(`/users/${id}/status`, { method: 'PATCH', body: { is_active } }),
   resetPassword: (id: number, password: string, password_confirmation: string) => api<{ message: string }>(`/users/${id}/reset-password`, { method: 'POST', body: { password, password_confirmation } }),
   remove: (id: number) => api<{ message: string }>(`/users/${id}`, { method: 'DELETE' }),
   roles: async () => (await api<{ data: RoleInfo[] }>('/roles')).data,
+  approve: (id: number, body: { role: Role; branch_ids: number[] }) => api<Saved<TeamMember>>(`/users/${id}/approve`, { method: 'POST', body }),
+  reject: (id: number, note: string) => api<Saved<TeamMember>>(`/users/${id}/reject`, { method: 'POST', body: { note: note || null } }),
+  resendVerification: (id: number) => api<{ message: string }>(`/users/${id}/resend-verification`, { method: 'POST' }),
+  history: async (id: number) => (await api<{ data: AuditEntry[] }>(`/users/${id}/audit-logs`)).data,
+}
+
+export const launchSubscribersApi = {
+  subscribe: (email: string, website = '') => api<{ message: string }>('/public/launch-subscribers', { method: 'POST', body: { email, website }, auth: false }),
 }
 
 export const branchesApi = {

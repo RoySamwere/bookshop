@@ -1,9 +1,12 @@
 'use client'
 
+import { BrandMark } from './brand-mark'
+import { brand } from '../lib/brand'
+
 export default function BrandLoader() {
   return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Opening Bookshop">
     <div className="brand-loading-content">
-      <img className="brand-loading-emblem" src="/favicon.png" alt="Bookshop emblem" />
+      <BrandMark size={86} className="brand-loading-emblem" />
       <div className="brand-fish-stage" aria-hidden="true">
         <svg className="brand-fish" viewBox="0 0 120 72" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M16 36 2 18v36l14-18c21-21 48-25 78-1-30 24-57 20-78 1Z" fill="currentColor" />
@@ -12,7 +15,7 @@ export default function BrandLoader() {
         </svg>
         <div className="brand-fish-wave" />
       </div>
-      <h1>Bookshop</h1>
+      <h1>{brand.name}</h1>
       <p>Preparing your workspace</p>
       <div className="brand-loading-track"><span /></div>
     </div>

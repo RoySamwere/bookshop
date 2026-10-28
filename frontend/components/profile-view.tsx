@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { KeyRound, LogOut, ShoppingBag, UserRound } from 'lucide-react'
 import { ApiError, errorMessage } from '../lib/api'
 import { changePassword, updateProfile, type BookshopUser } from '../lib/auth'
 import { Card, Field, FormAlert, PageHeader, inputClass, primaryButton, secondaryButton } from './ui-kit'
 import { RoleBadge } from './users-view'
+import { BrandMark } from './brand-mark'
+import { brand } from '../lib/brand'
 
 export function ProfileView({ currentUser, onUpdated, notify }: { currentUser: BookshopUser; onUpdated: (user: BookshopUser) => void; notify: (message: string) => void }) {
   return <div className="products-page">
@@ -74,7 +76,7 @@ function PasswordCard({ notify }: { notify: (message: string) => void }) {
       <div className="grid gap-4">
         <Field label="Current password" error={error?.field('current_password')}><input className={inputClass} type="password" autoComplete="current-password" {...input('current_password')} required /></Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="New password" error={error?.field('password')}><input className={inputClass} type="password" autoComplete="new-password" {...input('password')} required minLength={8} /></Field>
+          <Field label="New password" error={error?.field('password')} hint="8+ characters with upper and lower case, a number and a symbol."><input className={inputClass} type="password" autoComplete="new-password" {...input('password')} required minLength={8} /></Field>
           <Field label="Confirm new password"><input className={inputClass} type="password" autoComplete="new-password" {...input('password_confirmation')} required minLength={8} /></Field>
         </div>
       </div>
@@ -84,19 +86,20 @@ function PasswordCard({ notify }: { notify: (message: string) => void }) {
   </Card>
 }
 
-/** Customers sign in to the online store; until it launches (Phase 6) they get account management only. */
-export function CustomerHome({ currentUser, onUpdated, notify, onSignOut }: { currentUser: BookshopUser; onUpdated: (user: BookshopUser) => void; notify: (message: string) => void; onSignOut: () => void }) {
+/** Customers sign in to the online store; until it launches they get account management only. */
+export function CustomerHome({ currentUser, onUpdated, notify, onSignOut, banner }: { currentUser: BookshopUser; onUpdated: (user: BookshopUser) => void; notify: (message: string) => void; onSignOut: () => void; banner?: ReactNode }) {
   return <div className="min-h-dvh bg-[#f8f8ff]">
     <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-8">
-      <div className="flex items-center gap-3"><span className="brand-mark grid size-10 place-items-center"><img src="/favicon.png" alt="" /></span><strong className="text-[#164c9b]">Nifunze Bookshop</strong></div>
+      <a href="/" className="flex items-center gap-3 no-underline"><BrandMark size={38} /><strong className="text-[#13254a]">{brand.name}</strong></a>
       <button className={`${secondaryButton} h-10`} onClick={onSignOut}><LogOut size={16} /> Sign out</button>
     </header>
     <div className="mx-auto max-w-5xl">
-      <section className="mx-4 mt-6 rounded-2xl bg-gradient-to-r from-[#087df5] to-[#7b5cd6] p-6 text-white shadow-sm sm:mx-8">
-        <p className="flex items-center gap-2 text-xs font-bold tracking-[0.16em] text-white/80"><ShoppingBag size={15} /> ONLINE STORE</p>
+      <section className="mx-4 mt-6 rounded-2xl bg-[#13254a] p-6 text-white shadow-sm sm:mx-8">
+        <p className="flex items-center gap-2 text-sm font-semibold text-[#f2dfa7]"><ShoppingBag size={15} /> Your {brand.shortName} account</p>
         <h1 className="mt-2 text-2xl font-bold">Welcome, {currentUser.name.split(' ')[0]}</h1>
-        <p className="mt-1 max-w-xl text-sm text-white/85">Online ordering is coming soon. You can keep your details up to date here in the meantime.</p>
+        <p className="mt-1 max-w-xl text-sm text-white/80">Online ordering opens after our launch. Until then you can keep your details and password up to date here.</p>
       </section>
+      {banner && <div className="mx-4 mt-4 sm:mx-8">{banner}</div>}
       <div className="[&_.products-page]:px-4 sm:[&_.products-page]:px-8"><ProfileView currentUser={currentUser} onUpdated={onUpdated} notify={notify} /></div>
     </div>
   </div>

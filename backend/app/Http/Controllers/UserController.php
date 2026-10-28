@@ -23,7 +23,7 @@ class UserController extends Controller
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'role' => ['nullable', Rule::in(Roles::all())],
-            'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'status' => ['nullable', Rule::in(['active', 'inactive', 'pending', 'unverified'])],
             'branch_id' => ['nullable', 'integer'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ]);
@@ -32,6 +32,8 @@ class UserController extends Controller
         $counts = [
             'active' => (clone $visible)->where('is_active', true)->count(),
             'inactive' => (clone $visible)->where('is_active', false)->count(),
+            'pending' => (clone $visible)->where('staff_access_status', User::ACCESS_PENDING)->count(),
+            'unverified' => (clone $visible)->whereNull('email_verified_at')->count(),
         ];
 
         $users = $visible->with('branches')
@@ -40,7 +42,11 @@ class UserController extends Controller
                     ->orWhere('email', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%"),
             ))
             ->when($filters['role'] ?? null, fn (Builder $query, string $role) => $query->where('role', $role))
-            ->when($filters['status'] ?? null, fn (Builder $query, string $status) => $query->where('is_active', $status === 'active'))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status) => match ($status) {
+                'pending' => $query->where('staff_access_status', User::ACCESS_PENDING),
+                'unverified' => $query->whereNull('email_verified_at'),
+                default => $query->where('is_active', $status === 'active'),
+            })
             ->when($filters['branch_id'] ?? null, fn (Builder $query, int $branchId) => $query->whereHas(
                 'branches', fn (Builder $branch) => $branch->whereKey($branchId),
             ))
@@ -131,7 +137,7 @@ class UserController extends Controller
     public function resetPassword(Request $request, User $user): JsonResponse
     {
         $this->authorizeManagement($request, $user);
-        $data = $request->validate(['password' => ['required', 'confirmed', Password::min(8)]]);
+        $data = $request->validate(['password' => ['required', 'confirmed', Password::defaults()]]);
 
         $user->password = $data['password'];
         $user->save();

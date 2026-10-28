@@ -74,8 +74,8 @@ class AuditAndNotificationsTest extends TestCase
         $admin = User::factory()->inBranches($main)->create(['role' => Roles::ADMIN]);
 
         $this->actingAs($admin, 'sanctum')->postJson('/api/users', [
-            'name' => 'New Cashier', 'email' => 'cashier@example.test', 'password' => 'a-secure-password',
-            'password_confirmation' => 'a-secure-password', 'role' => Roles::CASHIER, 'branch_ids' => [$main->id],
+            'name' => 'New Cashier', 'email' => 'cashier@example.test', 'password' => 'A-secure-passw0rd',
+            'password_confirmation' => 'A-secure-passw0rd', 'role' => Roles::CASHIER, 'branch_ids' => [$main->id],
         ])->assertCreated();
 
         $this->assertSame('New team member', $owner->notifications()->first()->data['title']);

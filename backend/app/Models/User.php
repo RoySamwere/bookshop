@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\Roles;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,10 +13,16 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
+
+    public const SOURCE_PUBLIC = 'public';
+
+    public const ACCESS_PENDING = 'pending';
+    public const ACCESS_APPROVED = 'approved';
+    public const ACCESS_REJECTED = 'rejected';
 
     protected $fillable = [
         'name',
@@ -45,6 +52,10 @@ class User extends Authenticatable
             'password' => 'hashed',
             'created_by' => 'integer',
             'is_active' => 'boolean',
+            'terms_accepted_at' => 'datetime',
+            'staff_access_requested_at' => 'datetime',
+            'staff_access_reviewed_at' => 'datetime',
+            'staff_access_reviewed_by' => 'integer',
         ];
     }
 
@@ -56,6 +67,16 @@ class User extends Authenticatable
     public function creator(): BelongsTo
     {
         return $this->belongsTo(self::class, 'created_by');
+    }
+
+    public function staffAccessReviewer(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'staff_access_reviewed_by');
+    }
+
+    public function hasPendingStaffRequest(): bool
+    {
+        return $this->staff_access_status === self::ACCESS_PENDING;
     }
 
     public function hasKnownRole(): bool
@@ -154,6 +175,9 @@ class User extends Authenticatable
             ...$this->only(['id', 'name', 'email', 'phone', 'role']),
             'role_label' => Roles::label($this->role),
             'is_active' => $this->is_active,
+            'email_verified' => $this->hasVerifiedEmail(),
+            'staff_access_status' => $this->staff_access_status,
+            'staff_access_note' => $this->staff_access_status === self::ACCESS_REJECTED ? $this->staff_access_note : null,
             'permissions' => $this->permissions(),
             'assignable_roles' => $this->assignableRoles(),
             'branches' => $this->branches()->get(['branches.id', 'name', 'code', 'is_main'])

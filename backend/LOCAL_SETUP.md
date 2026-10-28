@@ -1,62 +1,103 @@
-# Bookshop local setup — Windows XAMPP
+# Hekima Bookshop — local setup (Windows XAMPP)
 
-Run from `C:\xampp\htdocs\bookshop` in PowerShell after the frontend has been moved into `frontend`.
+The repository has two folders: `backend/` (Laravel 12 API, MySQL, Sanctum) and `frontend/` (Next.js 16, React 19, TypeScript, Tailwind CSS). Run the commands below from `C:\xampp\htdocs\bookshop` in PowerShell.
 
 ## Requirements
 - XAMPP with PHP 8.2+ and MySQL running
-- Composer available on PATH
-- Node.js and pnpm
+- Composer on PATH
+- Node.js and pnpm (`corepack enable`)
 
 ## Laravel API
 
-Laravel 12 and Sanctum are installed in `backend/`. The `User` model supports Sanctum API tokens, and the API routes are in `backend/routes/api.php`.
-
-Create an empty MySQL database named `bookshop` using phpMyAdmin. Set `DB_CONNECTION=mysql`, `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=bookshop`, `DB_USERNAME=root` and your local `DB_PASSWORD` in `backend/.env`.
+Create an empty MySQL database named `bookshop` in phpMyAdmin. Copy `backend/.env.example` to `backend/.env` and set the `DB_*` values, then:
 
 ```powershell
 cd C:\xampp\htdocs\bookshop\backend
+composer install
+php artisan key:generate   # first time only
 php artisan migrate
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
+Migrations are additive. They never overwrite existing users or records.
+
 ## System Owner account
 
-Set `SYSTEM_OWNER_EMAIL`, `SYSTEM_OWNER_NAME`, and `SYSTEM_OWNER_PASSWORD` in `backend/.env`. Use a password of at least 12 characters. Do not commit this file. Create the initial owner with the included seeder:
+Set `SYSTEM_OWNER_EMAIL`, `SYSTEM_OWNER_NAME` and `SYSTEM_OWNER_PASSWORD` (12+ characters) in `backend/.env`. Never commit this file.
 
 ```powershell
-cd C:\xampp\htdocs\bookshop\backend
-php artisan db:seed --class=SystemOwnerSeeder
+php artisan db:seed
 ```
 
-The seeder preserves an existing owner's password and refuses to promote an existing non-owner account. Sign in through the frontend using the owner's credentials, then open **Users** to create team accounts.
-
-## User rights
-
-| Role | Sign in and shop workspace | User management | Settings access |
-| --- | --- | --- | --- |
-| System Owner | Full access | View all accounts; create admins/users; change non-owner roles; remove non-owner accounts | Yes |
-| Administrator (`admin`) | Full access | Create users; list/remove only their own user/staff accounts | Yes |
-| User (`user`) / existing Staff (`staff`) | Shop operations, including POS, catalogue, stock, sales, customers, suppliers, expenses and reports | None | No |
-
-Owners can change a non-owner account between Administrator and User using the role selector in **Users**. Owner accounts and self-deletion are protected. Role changes and account deletion revoke that account's API tokens. The user must sign in again after a role change. Existing `staff` accounts retain operational access without a database migration or promotion to administrator. Unknown roles are denied.
-
-`GET /api/auth/me` and login return the current role, permission names, and assignable roles. The frontend uses these to display permitted navigation; the API independently enforces user-management rules on every request. `created_by` is set by the server so admins cannot choose another account's ownership. Previously created accounts with no creator remain manageable by the owner.
-
-The shop operation screens currently use demo data and some sections, including Settings, are placeholders. Their navigation rights are defined here; persistent business operations will need matching API authorization when implemented.
-
-Run access-control regression tests with `php artisan test`. Tests use an isolated in-memory SQLite database.
+The seeders are idempotent. They keep an existing owner's password, refuse to promote an existing non-owner account, and create the default business profile, main branch and tax rates only if they are missing.
 
 ## Frontend
 
-Once the existing Next.js files are in `frontend/`:
-
 ```powershell
 cd C:\xampp\htdocs\bookshop\frontend
-corepack enable
+copy .env.example .env.local   # then adjust if needed
 pnpm install
 pnpm dev
 ```
 
-Frontend: http://localhost:3000
+| Address | What it is |
+| --- | --- |
+| http://localhost:3000/ | Public Coming Soon website (no sign-in needed) |
+| http://localhost:3000/login | Sign in to the management system |
+| http://localhost:3000/register | Create an account (always a customer account) |
+| http://localhost:3000/forgot-password, /reset-password | Password recovery |
+| http://localhost:3000/verify-email | Email verification links land here |
+| http://localhost:3000/dashboard | Management system (staff only) |
+| http://localhost:3000/account | Customers and staff applicants |
+| http://127.0.0.1:8000/api | Laravel API |
 
-Backend: http://127.0.0.1:8000
+### Branding and contact details
+
+The brand name and the contact details on the public site come from `frontend/.env.local` (`NEXT_PUBLIC_BRAND_NAME`, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_CONTACT_PHONE`, `NEXT_PUBLIC_CONTACT_WHATSAPP`, `NEXT_PUBLIC_CONTACT_ADDRESS`, `NEXT_PUBLIC_CONTACT_HOURS`). Empty values are hidden, so nothing invented ever shows. Restart `pnpm dev` (or rebuild) after changing them. Set `APP_NAME="Hekima Bookshop"` in `backend/.env` so emails carry the same name.
+
+## Email (verification, password reset, approvals)
+
+By default `MAIL_MAILER=log`. Nothing is sent, and every email, with its link, is written to `backend/storage/logs/laravel.log`. Copy a link from there while testing locally.
+
+For real delivery, set your provider's SMTP details in `backend/.env`:
+
+```
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.your-provider.com
+MAIL_PORT=587
+MAIL_SCHEME=null          # STARTTLS on 587; use smtps with port 465
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+MAIL_FROM_ADDRESS="no-reply@your-domain"
+MAIL_FROM_NAME="${APP_NAME}"
+FRONTEND_URL=http://localhost:3000
+```
+
+Run `php artisan config:clear` after editing. If mail fails, registration and approvals still complete. The failure is logged, and users can request a new link.
+
+## Accounts and access
+
+Public registration always creates a **customer** account with an unverified email. Ticking "I work at Hekima Bookshop and need staff access" only files a **request**. No staff or admin rights are ever granted automatically.
+
+System Owners and Administrators see requests at the top of **Users**. To approve, choose a role and branch (Administrators can assign Store Manager, Cashier or Inventory Officer within their own branches; owners can also assign Administrator). The applicant must verify their email first. To decline, add an optional note, which the applicant sees on their account page and in the email. Every decision is in the audit log and in the account's history.
+
+| Role | Access |
+| --- | --- |
+| System Owner | Everything, including settings, branches and all users |
+| Administrator | Operations, staff and customers in assigned branches |
+| Store Manager | Sales, stock and staff overview |
+| Cashier | POS, sales, receipts and permitted returns |
+| Inventory Officer | Catalogue, suppliers and stock |
+| Customer | Their own account; the online store when it opens |
+
+Passwords need 8+ characters with upper and lower case, a number and a symbol. Sign-in tokens last 12 hours, or 7 days with "Remember me" (`SANCTUM_TOKEN_EXPIRATION`, `SANCTUM_REMEMBER_EXPIRATION`). Verification links last 24 hours (`AUTH_VERIFICATION_EXPIRE`) and reset links 60 minutes.
+
+## Tests
+
+```powershell
+cd C:\xampp\htdocs\bookshop\backend
+php artisan test          # isolated in-memory SQLite database
+cd ..\frontend
+npx tsc --noEmit
+pnpm build
+```

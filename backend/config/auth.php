@@ -112,6 +112,11 @@ return [
     |
     */
 
+    // Minutes an email verification link stays valid.
+    'verification' => [
+        'expire' => env('AUTH_VERIFICATION_EXPIRE', 1440),
+    ],
+
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
 ];

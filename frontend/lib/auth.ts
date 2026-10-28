@@ -13,8 +13,11 @@ export type Permission =
 export type Role = 'system_owner' | 'admin' | 'store_manager' | 'cashier' | 'inventory_officer' | 'customer'
 export type BranchSummary = { id: number; name: string; code: string; is_main?: boolean }
 
+export type StaffAccessStatus = 'pending' | 'approved' | 'rejected' | null
+
 export type BookshopUser = {
   id: number; name: string; email: string; phone: string | null; role: Role; role_label: string; is_active: boolean
+  email_verified: boolean; staff_access_status: StaffAccessStatus; staff_access_note: string | null
   permissions: Permission[]; assignable_roles: Role[]; branches: BranchSummary[]
 }
 
@@ -25,10 +28,40 @@ const ROLE_LABELS: Record<string, string> = {
 export const roleLabel = (role: string) => ROLE_LABELS[role] || role
 export const hasPermission = (user: BookshopUser, permission: Permission) => user.permissions?.includes(permission) ?? false
 
-export async function login(email: string, password: string) {
-  const { data } = await api<{ data: { token: string; user: BookshopUser } }>('/auth/login', { method: 'POST', body: { email, password }, auth: false })
-  tokenStore.set(data.token)
+export async function login(email: string, password: string, remember = false) {
+  const { data } = await api<{ data: { token: string; user: BookshopUser } }>('/auth/login', { method: 'POST', body: { email, password, remember }, auth: false })
+  tokenStore.set(data.token, remember)
   return data.user
+}
+
+/** Where a signed-in account belongs: staff go to the management system, everyone else to their account page. */
+export const homeFor = (user: BookshopUser) => hasPermission(user, 'workspace.access') ? '/dashboard' : '/account'
+
+/** Only follow same-site paths after sign-in, never another host. */
+export function safeNextPath(next: string | null) {
+  return next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : null
+}
+
+export type RegisterPayload = { name: string; email: string; phone: string | null; password: string; password_confirmation: string; terms: boolean; request_staff_access: boolean }
+
+export function register(payload: RegisterPayload) {
+  return api<{ message: string; data: { email: string; verification_email_sent: boolean; staff_access_status: StaffAccessStatus } }>('/auth/register', { method: 'POST', body: payload, auth: false })
+}
+
+export type VerificationLink = { id: string; hash: string; expires: string; signature: string }
+
+export function verifyEmail(link: VerificationLink) {
+  return api<{ message: string; status: 'verified' | 'already_verified' }>(`/auth/email/verify/${encodeURIComponent(link.id)}/${encodeURIComponent(link.hash)}`, {
+    query: { expires: link.expires, signature: link.signature }, auth: false,
+  })
+}
+
+export function resendVerification(email: string) {
+  return api<{ message: string }>('/auth/email/resend', { method: 'POST', body: { email }, auth: false })
+}
+
+export function resendMyVerification() {
+  return api<{ message: string }>('/auth/email/verification-notification', { method: 'POST' })
 }
 
 export async function getCurrentUser() {

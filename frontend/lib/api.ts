@@ -20,10 +20,24 @@ export class ApiError extends Error {
   }
 }
 
+// Normal sign-ins live for this browser tab only; "Remember me" keeps the token across tabs and restarts.
+function storage(kind: 'session' | 'local'): Storage | null {
+  try { return kind === 'session' ? window.sessionStorage : window.localStorage } catch { return null }
+}
+
 export const tokenStore = {
-  get: () => { try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null } },
-  set: (token: string) => { try { sessionStorage.setItem(TOKEN_KEY, token) } catch { /* Storage may be disabled. */ } },
-  clear: () => { try { sessionStorage.removeItem(TOKEN_KEY) } catch { /* Storage may be disabled. */ } },
+  get: () => {
+    try { return storage('session')?.getItem(TOKEN_KEY) || storage('local')?.getItem(TOKEN_KEY) || null } catch { return null }
+  },
+  set: (token: string, remember = false) => {
+    tokenStore.clear()
+    try { storage(remember ? 'local' : 'session')?.setItem(TOKEN_KEY, token) } catch { /* Storage may be disabled. */ }
+  },
+  clear: () => {
+    for (const kind of ['session', 'local'] as const) {
+      try { storage(kind)?.removeItem(TOKEN_KEY) } catch { /* Storage may be disabled. */ }
+    }
+  },
 }
 
 type RequestOptions = { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; query?: Record<string, string | number | boolean | undefined | null>; auth?: boolean; token?: string }

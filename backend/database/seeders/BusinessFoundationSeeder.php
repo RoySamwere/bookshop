@@ -15,12 +15,12 @@ class BusinessFoundationSeeder extends Seeder
     public function run(): void
     {
         BusinessProfile::query()->firstOrCreate([], [
-            'name' => 'Nifunze Bookshop',
+            'name' => 'Hekima Bookshop',
             'country' => 'Kenya',
             'currency' => 'KES',
             'timezone' => 'Africa/Nairobi',
             'receipt_prefix' => 'NS',
-            'receipt_footer' => 'Thank you for shopping with Nifunze Bookshop.',
+            'receipt_footer' => 'Thank you for shopping with Hekima Bookshop.',
         ]);
 
         $main = Branch::where('is_main', true)->first();

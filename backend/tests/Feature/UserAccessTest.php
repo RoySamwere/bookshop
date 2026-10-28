@@ -198,7 +198,7 @@ class UserAccessTest extends TestCase
         $this->getJson('/api/users?status=inactive')->assertOk()->assertJsonCount(1, 'data');
         $this->getJson("/api/users?branch_id={$this->westlands->id}")->assertOk()->assertJsonCount(1, 'data');
         $this->getJson('/api/users')->assertOk()->assertJsonStructure(['data', 'meta' => ['total', 'current_page'], 'links'])
-            ->assertJsonPath('counts', ['active' => 1, 'inactive' => 1]);
+            ->assertJsonPath('counts', ['active' => 1, 'inactive' => 1, 'pending' => 0, 'unverified' => 0]);
         $this->getJson('/api/users?status=inactive')->assertJsonPath('counts.active', 1);
     }
 
@@ -219,8 +219,8 @@ class UserAccessTest extends TestCase
             'name' => 'Shop User',
             'email' => 'new-user@example.test',
             'phone' => '+254 712 345 678',
-            'password' => 'a-secure-password',
-            'password_confirmation' => 'a-secure-password',
+            'password' => 'A-secure-passw0rd',
+            'password_confirmation' => 'A-secure-passw0rd',
             'role' => $role,
             'branch_ids' => $branchIds,
         ];

@@ -9,6 +9,8 @@ import {
 import { hasPermission, roleLabel, type BookshopUser, type Permission } from '../lib/auth'
 import { notificationsApi, type AppNotification } from '../lib/workspace-api'
 import { formatDate } from './ui-kit'
+import { BrandMark } from './brand-mark'
+import { brand } from '../lib/brand'
 
 export const PROFILE_SECTION = 'My Profile'
 
@@ -197,8 +199,8 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       role={mobile && drawerOpen ? 'dialog' : undefined} aria-modal={mobile && drawerOpen ? true : undefined}
       aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
       <div className="sidebar-brand">
-        <div className="brand-mark"><img src="/favicon.png" alt="" /></div>
-        <div className="sidebar-brand-copy"><strong>Nifunze<span>Bookshop workspace</span></strong></div>
+        <BrandMark size={36} className="flex-none rounded-[11px] ring-1 ring-white/15" />
+        <div className="sidebar-brand-copy"><strong>{brand.shortName}<span>Bookshop management</span></strong></div>
         <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
       </div>
       <div className="sidebar-scroll">

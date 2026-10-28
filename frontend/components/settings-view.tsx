@@ -73,9 +73,9 @@ function BusinessTab({ canEdit, notify }: { canEdit: boolean; notify: (message: 
       <Card title="Business profile" description="Shown on receipts, invoices and the online store.">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Trading name" error={error?.field('name')}><input className={inputClass} {...text('name')} required /></Field>
-          <Field label="Registered (legal) name" error={error?.field('legal_name')}><input className={inputClass} {...text('legal_name')} placeholder="e.g. Nifunze Lessons Ltd" /></Field>
+          <Field label="Registered (legal) name" error={error?.field('legal_name')}><input className={inputClass} {...text('legal_name')} placeholder="e.g. Hekima Bookshop Ltd" /></Field>
           <Field label="KRA PIN" error={error?.field('kra_pin')} hint="Format A123456789Z"><input className={inputClass} {...text('kra_pin')} placeholder="P051234567X" /></Field>
-          <Field label="Email" error={error?.field('email')}><input className={inputClass} type="email" {...text('email')} placeholder="hello@nifunze.co.ke" /></Field>
+          <Field label="Email" error={error?.field('email')}><input className={inputClass} type="email" {...text('email')} placeholder="hello@yourbookshop.co.ke" /></Field>
           <Field label="Phone" error={error?.field('phone')}><input className={inputClass} type="tel" {...text('phone')} placeholder="+254 7XX XXX XXX" /></Field>
           <Field label="Website" error={error?.field('website')}><input className={inputClass} type="url" {...text('website')} placeholder="https://" /></Field>
           <Field label="Street address" error={error?.field('address')}><input className={inputClass} {...text('address')} /></Field>
@@ -116,7 +116,7 @@ function ReceiptPreview({ profile }: { profile: BusinessProfile }) {
     <p className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.16em] text-slate-500"><Receipt size={14} /> RECEIPT PREVIEW</p>
     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 font-mono text-[12px] leading-relaxed text-slate-700 shadow-sm">
       <div className="text-center">
-        <img src="/favicon.png" alt="" className="mx-auto mb-2 size-10 object-contain" />
+        <img src="/hekima-mark.svg" alt="" className="mx-auto mb-2 size-10 object-contain" />
         <p className="font-sans text-sm font-bold text-slate-900">{profile.name || 'Business name'}</p>
         {profile.receipt_header && <p>{profile.receipt_header}</p>}
         {(profile.address || profile.city) && <p>{[profile.address, profile.city].filter(Boolean).join(', ')}</p>}
