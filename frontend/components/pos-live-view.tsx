@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, BookOpen, CheckCircle2, CreditCard, Minus, Plus, Search, ShoppingBag, ShoppingCart, Trash2, Wallet, X, ScanBarcode, RotateCcw, ReceiptText, Smartphone, Banknote } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, BookOpen, CheckCircle2, Minus, Plus, Search, ShoppingBag, ShoppingCart, Trash2, Wallet, X, ScanBarcode, ReceiptText } from 'lucide-react'
 import { api, errorMessage } from '../lib/api'
 
 type Product={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;available:number;category:string|null;subcategory:string|null}
