@@ -73,8 +73,8 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     lists.addRow(['Categories','Subcategories'])
     categories.forEach((c,i)=>{lists.getCell(i+2,1).value=c.name})
     allSubs.forEach((sub,i)=>{lists.getCell(i+2,2).value=sub.name})
-    wb.definedNames.add('CategoryOptions',`'Lists'!$A$2:$A$${categories.length+1}`)
-    wb.definedNames.add('SubcategoryOptions',`'Lists'!$B$2:$B$${allSubs.length+1}`)
+    wb.definedNames.add(`'Lists'!$A$2:$A$${categories.length+1}`,'CategoryOptions')
+    wb.definedNames.add(`'Lists'!$B$2:$B$${allSubs.length+1}`,'SubcategoryOptions')
     for(let row=2;row<=501;row++){
       ws.getCell(`A${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=CategoryOptions'],showErrorMessage:true,error:'Select a category from the list'}
       ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=SubcategoryOptions'],showErrorMessage:true,error:'Select a subcategory from the list'}
