@@ -69,15 +69,27 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     ws.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}}
     ws.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F766E'}}
     ws.columns=[{width:34},{width:32},{width:54},{width:20},{width:18},{width:18},{width:16}]
-    const allSubs=categories.flatMap(c=>c.subcategories.map(sub=>({category:c.name,name:sub.name})))
-    lists.addRow(['Categories','Subcategories'])
+    lists.getCell('A1').value='Categories'
     categories.forEach((c,i)=>{lists.getCell(i+2,1).value=c.name})
-    allSubs.forEach((sub,i)=>{lists.getCell(i+2,2).value=sub.name})
     wb.definedNames.add(`'Lists'!$A$2:$A$${categories.length+1}`,'CategoryOptions')
-    wb.definedNames.add(`'Lists'!$B$2:$B$${allSubs.length+1}`,'SubcategoryOptions')
+    // Each category gets a separate named range. The dependent dropdown
+    // uses a VLOOKUP to resolve the category name to its named range.
+    lists.getCell('B1').value='Category'
+    lists.getCell('C1').value='Dropdown range'
+    categories.forEach((c,i)=>{
+      const key=`HekimaSub_${i+1}`
+      lists.getCell(i+2,2).value=c.name
+      lists.getCell(i+2,3).value=key
+      const col=4+i
+      lists.getCell(1,col).value=c.name
+      c.subcategories.forEach((sub,j)=>{lists.getCell(j+2,col).value=sub.name})
+      const letter=lists.getColumn(col).letter
+      wb.definedNames.add(`'Lists'!$${letter}$2:$${letter}$${Math.max(2,c.subcategories.length+1)}`,key)
+    })
+    wb.definedNames.add(`'Lists'!$B$2:$C$${categories.length+1}`,'CategoryLookup')
     for(let row=2;row<=501;row++){
       ws.getCell(`A${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=CategoryOptions'],showErrorMessage:true,error:'Select a category from the list'}
-      ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=SubcategoryOptions'],showErrorMessage:true,error:'Select a subcategory from the list'}
+      ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:[`INDIRECT(IFERROR(VLOOKUP(A${row},CategoryLookup,2,FALSE),""))`],showErrorMessage:true,error:'Select a subcategory belonging to the chosen category'}
       ws.getCell(`G${row}`).dataValidation={type:'whole',operator:'greaterThan',formulae:[0],showErrorMessage:true,error:'Quantity must be greater than zero'}
     }
     lists.state='visible'
