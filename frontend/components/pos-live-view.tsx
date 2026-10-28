@@ -9,7 +9,7 @@ type Branch={id:number;name:string}
 type Item={product:Product;quantity:number}
 type Receipt={sale:{id:number;receipt_number:string;total:string;payment_method:string;amount_received:string;change_due:string;created_at:string};items:{title:string;sku:string;quantity:number;unit_price:string;line_total:string}[]}
 const money=(v:number)=>'KSh '+v.toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2})
-export function PosLiveView({notify}:{notify:(message:string)=>void}){
+export function PosLiveView({notify,userId}:{notify:(message:string)=>void;userId:number}){
  const [branches,setBranches]=useState<Branch[]>([])
  const [branch,setBranch]=useState('')
  const [query,setQuery]=useState('')
@@ -26,13 +26,38 @@ export function PosLiveView({notify}:{notify:(message:string)=>void}){
  const [key,setKey]=useState('')
  const [receipt,setReceipt]=useState<Receipt|null>(null)
  const [refresh,setRefresh]=useState(0)
- useEffect(()=>{api<Branch[]>('/pos/branches').then(rows=>{setBranches(rows);setBranch(old=>old||String(rows[0]?.id??''))}).catch(e=>setError(errorMessage(e)))},[])
+ const [restored,setRestored]=useState(false)
+ const [completed,setCompleted]=useState(false)
+ const storageKey=`hekima_pos_draft_v1_${userId}`
+ useEffect(()=>{
+   try {
+     const raw=localStorage.getItem(storageKey)
+     if(raw){
+       const draft=JSON.parse(raw) as {branch?:string;cart?:Item[];query?:string;category?:string;checkout?:boolean;payment?:'cash'|'mpesa'|'card';reference?:string;received?:string;key?:string}
+       if(typeof draft.branch==='string')setBranch(draft.branch)
+       if(Array.isArray(draft.cart))setCart(draft.cart.filter(i=>i?.product?.id&&Number.isInteger(i.quantity)&&i.quantity>0))
+       if(typeof draft.query==='string')setQuery(draft.query)
+       if(typeof draft.category==='string')setCategory(draft.category)
+       if(draft.payment==='cash'||draft.payment==='mpesa'||draft.payment==='card')setPayment(draft.payment)
+       if(typeof draft.reference==='string')setReference(draft.reference)
+       if(typeof draft.received==='string')setReceived(draft.received)
+       if(typeof draft.key==='string')setKey(draft.key)
+       if(draft.checkout===true&&draft.cart?.length)setCheckout(true)
+     }
+   }catch{ /* A malformed draft must not prevent opening POS. */ }
+   setRestored(true)
+   api<Branch[]>('/pos/branches').then(rows=>{setBranches(rows);setBranch(old=>rows.some(b=>String(b.id)===old)?old:String(rows[0]?.id??''))}).catch(e=>setError(errorMessage(e)))
+ },[storageKey])
+ useEffect(()=>{
+   if(!restored||completed)return
+   try{localStorage.setItem(storageKey,JSON.stringify({branch,cart,query,category,checkout,payment,reference,received,key}))}catch{ /* Browser storage may be unavailable. */ }
+ },[storageKey,restored,branch,cart,query,category,checkout,payment,reference,received,key])
  useEffect(()=>{if(!branch)return;let cancelled=false;setLoading(true);setError('');api<{data:Product[]}>('/pos/products',{query:{branch_id:branch,search:query}}).then(r=>{if(!cancelled)setProducts(r.data)}).catch(e=>{if(!cancelled)setError(errorMessage(e))}).finally(()=>{if(!cancelled)setLoading(false)});return()=>{cancelled=true}},[branch,query,refresh])
- useEffect(()=>{setCart([])},[branch])
+
  const categories=useMemo(()=>Array.from(new Set(products.map(p=>p.category).filter((x):x is string=>!!x))),[products])
  const filtered=useMemo(()=>products.filter(p=>!category||p.category===category),[products,category])
  const subtotal=cart.reduce((sum,i)=>sum+Number(i.product.selling_price)*i.quantity,0)
- function add(product:Product){setCart(items=>{let existing=items.find(i=>i.product.id===product.id);if(existing)return items.map(i=>i.product.id===product.id?{...i,quantity:Math.min(Number(product.available),i.quantity+1)}:i);return [...items,{product,quantity:1}]})}
+ function add(product:Product){setCompleted(false);setCart(items=>{let existing=items.find(i=>i.product.id===product.id);if(existing)return items.map(i=>i.product.id===product.id?{...i,quantity:Math.min(Number(product.available),i.quantity+1)}:i);return [...items,{product,quantity:1}]})}
  function quantity(id:number,delta:number){setCart(items=>items.flatMap(i=>i.product.id===id?(i.quantity+delta>0?[{...i,quantity:Math.min(Number(i.product.available),i.quantity+delta)}]:[]):[i]))}
  function openCheckout(){setReference('');setPayment('cash');setReceived(subtotal.toFixed(2));setKey(crypto.randomUUID());setCheckout(true)}
  async function complete(){
@@ -40,12 +65,12 @@ export function PosLiveView({notify}:{notify:(message:string)=>void}){
    setBusy(true);setError('')
    try{
      const r=await api<Receipt>('/pos/checkout',{method:'POST',body:{idempotency_key:key,branch_id:Number(branch),items:cart.map(i=>({book_id:i.product.id,quantity:i.quantity})),payment_method:payment,payment_reference:reference||null,amount_received:Number(received)}})
-     setReceipt(r);setCheckout(false);setCart([]);setRefresh(x=>x+1);notify('Sale completed · '+r.sale.receipt_number)
+     try{localStorage.removeItem(storageKey)}catch{};setCompleted(true);setReceipt(r);setCheckout(false);setCart([]);setKey('');setRefresh(x=>x+1);notify('Sale completed · '+r.sale.receipt_number)
    }catch(e){setError(errorMessage(e))}finally{setBusy(false)}
  }
  function printReceipt(){if(!receipt)return;const html=`<!doctype html><html><head><title>Receipt</title><style>body{font:13px monospace;width:280px;margin:20px auto}table{width:100%}td:last-child{text-align:right}@media print{body{margin:0}}</style></head><body><h2>HEKIMA BOOKSHOP</h2><p>${receipt.sale.receipt_number}<br>${receipt.sale.created_at}</p><hr><table>${receipt.items.map(i=>`<tr><td>${i.title.replaceAll('<','&lt;')} × ${i.quantity}</td><td>${i.line_total}</td></tr>`).join('')}</table><hr><h3>Total: KSh ${receipt.sale.total}</h3><p>Payment: ${receipt.sale.payment_method}<br>Received: ${receipt.sale.amount_received}<br>Change: ${receipt.sale.change_due}</p><p>Thank you for shopping with us.</p></body></html>`;const w=window.open('','_blank','width=380,height=650');if(w){w.document.write(html);w.document.close();w.focus();w.print()}}
  return <div className="pos-page">
-   <div className="page-heading compact"><div><div className="eyebrow">SALES TERMINAL · LIVE INVENTORY</div><h1 tabIndex={-1}>Point of Sale</h1><p>Serve customers quickly and keep your records accurate.</p></div><div className="register-actions"><select className="text-input" aria-label="Sales branch" value={branch} onChange={e=>setBranch(e.target.value)}>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select><div className="register-status"><span className="status-dot"/>Live catalogue</div></div></div>
+   <div className="page-heading compact"><div><div className="eyebrow">SALES TERMINAL · LIVE INVENTORY</div><h1 tabIndex={-1}>Point of Sale</h1><p>Serve customers quickly and keep your records accurate.</p></div><div className="register-actions"><select className="text-input" aria-label="Sales branch" value={branch} onChange={e=>{if(e.target.value!==branch){setCart([]);setCheckout(false);setBranch(e.target.value)}}}>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select><div className="register-status"><span className="status-dot"/>Live catalogue</div></div></div>
    {error&&<div role="alert" className="mx-6 mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
    <div className="pos-layout"><section className="product-panel card"><div className="pos-search"><Search size={18}/><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search by product, ISBN or SKU..."/><kbd>/</kbd></div>
    <div className="category-tabs"><button className={!category?'selected':''} onClick={()=>setCategory('')}>All products</button>{categories.map(c=><button key={c} className={category===c?'selected':''} onClick={()=>setCategory(c)}>{c}</button>)}</div>
