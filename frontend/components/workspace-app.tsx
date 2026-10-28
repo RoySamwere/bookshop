@@ -11,7 +11,7 @@ import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
 import { ProfileView } from './profile-view'
 import { ErrorState } from './ui-kit'
-import { ApiError, UNAUTHORIZED_EVENT, tokenStore, api } from '../lib/api'
+import { API_BASE, ApiError, UNAUTHORIZED_EVENT, tokenStore, api } from '../lib/api'
 import { getCurrentUser, hasPermission, homeFor, logout, type BookshopUser } from '../lib/auth'
 import { sessionLoginUrl } from '../lib/session'
 import {
@@ -245,16 +245,74 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
       setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
     catch(e){setUnitError(e instanceof Error?e.message:'Unable to save packaging')}
   }
-  function downloadCsv() {
-    const cells = (v: unknown) => '"' + String(v ?? '').replaceAll('"', '""') + '"'
-    const lines = [['title','sku','isbn','selling_price','cost_price','reorder_level'], ...books.map(b => [b.title,b.sku,b.isbn,b.selling_price,b.cost_price,b.reorder_level])].map(row => row.map(cells).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob([lines], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a'); link.href = url; link.download = 'hekima-catalog-page.csv'; link.click(); URL.revokeObjectURL(url)
+  const [importRows,setImportRows] = useState<Record<string,string>[]>([])
+  const [importError,setImportError] = useState('')
+  const [importing,setImporting] = useState(false)
+  const [exporting,setExporting] = useState(false)
+  const columns=['id','title','sku','isbn','brand','ruling_style','page_count','paper_size','binding_type','cost_price','selling_price','reorder_level','is_active','product_subcategory_id']
+  async function downloadCsv() {
+    setExporting(true);setError('')
+    try {
+      const response=await fetch(`${API_BASE}/books-export`,{headers:{Authorization:`Bearer ${tokenStore.get()??''}`,Accept:'text/csv'}})
+      if(!response.ok)throw new Error('Export failed. Check your session and permissions.')
+      const url=URL.createObjectURL(await response.blob())
+      const link=document.createElement('a');link.href=url;link.download='hekima-products-all.csv';link.click();URL.revokeObjectURL(url)
+      setToast('Full catalogue exported')
+    }catch(e){setError(e instanceof Error?e.message:'Export failed')}finally{setExporting(false)}
+  }
+  function parseCsv(text:string):string[][] {
+    const rows:string[][]=[];let row:string[]=[],field='',quoted=false
+    for(let i=0;i<text.length;i++){const c=text[i]
+      if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else quoted=!quoted}
+      else if(c===','&&!quoted){row.push(field);field=''}
+      else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(x=>x!==''))rows.push(row);row=[];field=''}
+      else field+=c
+    }
+    if(quoted)throw new Error('CSV contains an unclosed quoted field')
+    row.push(field);if(row.some(x=>x!==''))rows.push(row)
+    return rows
+  }
+  async function readImport(file:File|undefined){
+    setImportRows([]);setImportError('');if(!file)return
+    try{
+      if(file.size>10_000_000)throw new Error('CSV must be smaller than 10 MB')
+      const parsed=parseCsv((await file.text()).replace(/^\uFEFF/,''))
+      if(!parsed.length||columns.some((c,i)=>parsed[0][i]!==c)||parsed[0].length!==columns.length)throw new Error('Please upload the original full-catalogue CSV template with unchanged column headings.')
+      const rows=parsed.slice(1).map((r,i)=>{
+        if(r.length!==columns.length)throw new Error(`Row ${i+2}: wrong number of columns`)
+        return Object.fromEntries(columns.map((key,j)=>[key,r[j].replace(/^'(?=[=+@\-])/, '')]))
+      })
+      if(rows.some(r=>!/^\d+$/.test(r.id)))throw new Error('Every row must retain its numeric product ID.')
+      if(new Set(rows.map(r=>r.id)).size!==rows.length)throw new Error('Duplicate product IDs detected.')
+      if(rows.length===0)throw new Error('The file has no product rows.')
+      setImportRows(rows)
+    }catch(e){setImportError(e instanceof Error?e.message:'Could not read CSV')}
+  }
+  async function uploadImport(){
+    if(!importRows.length||importing)return
+    setImporting(true);setImportError('')
+    let done=0
+    try{
+      for(let i=0;i<importRows.length;i+=200){
+        const rows=importRows.slice(i,i+200).map(r=>({
+          id:Number(r.id),title:r.title,sku:r.sku,isbn:r.isbn||null,brand:r.brand||null,
+          ruling_style:r.ruling_style||null,page_count:r.page_count?Number(r.page_count):null,
+          paper_size:r.paper_size||null,binding_type:r.binding_type||null,
+          cost_price:Number(r.cost_price),selling_price:Number(r.selling_price),
+          reorder_level:Number(r.reorder_level),is_active:r.is_active==='1'||r.is_active.toLowerCase()==='true',
+          product_subcategory_id:r.product_subcategory_id?Number(r.product_subcategory_id):null
+        }))
+        await api('/books-import',{method:'POST',body:{rows}});done+=rows.length
+      }
+      setImportRows([]);await load();setToast(`${done} products updated successfully`)
+    }catch(e){setImportError(`${done} rows updated before error: ${e instanceof Error?e.message:'Import failed'}. Correct the file and retry carefully.`)}
+    finally{setImporting(false)}
   }
   return <div className="products-page">
-    <div className="page-heading compact"><div><div className="eyebrow">LIVE CATALOGUE · MYSQL</div><h1 tabIndex={-1}>Products & Books</h1><p>Browse and register real products stored in the Hekima database.</p></div><div className="heading-actions"><button className="secondary-button" onClick={downloadCsv}><Download size={16}/> Export current page</button><button className="primary-button" onClick={() => setShowForm(v => !v)}><Plus size={17}/> Add product</button></div></div>
+    <div className="page-heading compact"><div><div className="eyebrow">LIVE CATALOGUE · MYSQL</div><h1 tabIndex={-1}>Products & Books</h1><p>Browse and register real products stored in the Hekima database.</p></div><div className="heading-actions"><button className="secondary-button" disabled={exporting} onClick={()=>void downloadCsv()}><Download size={16}/> {exporting?"Exporting…":"Download all products (CSV)"}</button><button className="primary-button" onClick={() => setShowForm(v => !v)}><Plus size={17}/> Add product</button></div></div>
     <div className="catalog-stats"><div className="card catalog-stat"><span>Total products</span><strong>{count.toLocaleString('en-KE')}</strong><small>Live catalogue records</small></div><div className="card catalog-stat"><span>Showing</span><strong>{books.length}</strong><small>Page {page} of {lastPage}</small></div></div>
     {error && <div role="alert" className="card" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={() => void load()}>Retry</button></div>}
+    <section className="card" style={{padding:20,marginBottom:16}}><h2>Clean catalogue · Download, edit & upload</h2><p>Download all products as CSV, clean the rows in Excel, then upload the same file. Keep product IDs and column headers unchanged. Existing products are updated by ID; stock quantities and sales history are not touched.</p><label className="field-label">Upload cleaned CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readImport(e.target.files?.[0])}/></label>{importError&&<p role="alert" style={{color:'#b91c1c'}}>{importError}</p>}{importRows.length>0&&<div style={{display:'flex',alignItems:'center',gap:12,marginTop:12}}><span>{importRows.length.toLocaleString()} product rows ready to update</span><button className="primary-button" disabled={importing} onClick={()=>void uploadImport()}>{importing?'Uploading…':'Confirm & update products'}</button><button className="secondary-button" disabled={importing} onClick={()=>setImportRows([])}>Cancel</button></div>}</section>
     {showForm && <form className="card product-form" onSubmit={saveBook}><div className="card-heading"><h2>Add a product</h2><button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={17}/></button></div><div className="form-grid">
       {(['title','sku','isbn','selling_price','cost_price','reorder_level'] as const).map(field => <label className="field-label" key={field}>{field.replaceAll('_',' ')}<input className="text-input" required={field==='title'||field==='sku'||field==='selling_price'||field==='cost_price'} type={['selling_price','cost_price','reorder_level'].includes(field)?'number':'text'} min={['selling_price','cost_price','reorder_level'].includes(field)?'0':undefined} step={field==='reorder_level'?'1':undefined} value={form[field]} onChange={e => setForm(v => ({...v,[field]:e.target.value}))}/></label>)}
     </div><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving…':'Save product'}</button></form>}
