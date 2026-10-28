@@ -9,8 +9,32 @@ use Illuminate\Validation\Rule;
 class CatalogController extends Controller
 {
     public function books(Request $request) {
-        $request->validate(['search'=>'nullable|string|max:255','per_page'=>'nullable|integer|in:10,20,50,100,200']);
-        return DB::table('books')->when($request->boolean('active_only'), fn ($q) => $q->where('is_active', true))->when($request->query('search'), fn ($q, $s) => $q->where(fn ($q) => $q->where('title','like',"%{$s}%")->orWhere('isbn','like',"%{$s}%")->orWhere('sku','like',"%{$s}%")))->orderBy('title')->orderBy('id')->paginate((int) $request->input('per_page',20));
+        $request->validate([
+            'search'=>'nullable|string|max:255','per_page'=>'nullable|integer|in:10,20,50,100,200',
+            'category_id'=>'nullable|integer|exists:product_categories,id',
+            'subcategory_id'=>'nullable|integer|exists:product_subcategories,id',
+            'ruling_style'=>'nullable|string|max:100','page_count'=>'nullable|integer|min:1',
+            'paper_size'=>'nullable|string|max:30','binding_type'=>'nullable|string|max:100',
+        ]);
+        $query=DB::table('books as b')
+            ->leftJoin('product_subcategories as s','s.id','=','b.product_subcategory_id')
+            ->leftJoin('product_categories as c','c.id','=','s.product_category_id')
+            ->when($request->boolean('active_only'),fn($q)=>$q->where('b.is_active',true))
+            ->when($request->query('category_id'),fn($q,$v)=>$q->where('c.id',$v))
+            ->when($request->query('subcategory_id'),fn($q,$v)=>$q->where('s.id',$v));
+        foreach(['ruling_style','page_count','paper_size','binding_type'] as $field)
+            if($request->filled($field)) $query->where('b.'.$field,$request->input($field));
+        if($request->filled('search')){
+            $words=preg_split('/\\s+/',trim($request->input('search')));
+            foreach($words as $word) $query->where(fn($q)=>$q->where('b.title','like',"%{$word}%")->orWhere('b.sku','like',"%{$word}%")->orWhere('b.isbn','like',"%{$word}%"));
+        }
+        return $query->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
+    }
+    public function hierarchy() {
+        return DB::table('product_categories')->orderBy('name')->get()->map(function($category){
+            $category->subcategories=DB::table('product_subcategories')->where('product_category_id',$category->id)->orderBy('name')->get();
+            return $category;
+        });
     }
     public function storeBook(Request $request) {
         $data = $request->validate([
