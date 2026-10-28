@@ -254,8 +254,8 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
 
   const initials = currentUser.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
-  return <div className="pos-root flex h-dvh flex-col bg-[#eef1f6] text-[#162c4c]">
-    <header className="flex h-16 shrink-0 items-center gap-3 bg-[#13254a] px-3 text-white sm:px-5">
+  return <div className="pos-root flex h-dvh flex-col bg-[#f3f5f9] text-[#162c4c]">
+    <header className="flex h-[72px] shrink-0 items-center gap-3 border-b-4 border-[#9e2b3a] bg-[#13254a] px-3 text-white shadow-[0_8px_30px_-16px_rgba(19,37,74,.7)] sm:px-6">
       <BrandMark size={36} className="rounded-[10px]" />
       <div className="min-w-0">
         <p className="truncate text-[15px] font-bold leading-tight">{brand.name}</p>
@@ -271,12 +271,12 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
       </div>
 
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="hidden h-10 items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 md:flex">
+        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="hidden h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-left transition hover:bg-white/15 md:flex">
           <ReceiptText size={18} className="text-[#b9c6e0]" aria-hidden="true" />
           <span className="leading-tight"><span className="block text-[11.5px] text-[#b9c6e0]">Today at this branch</span>
             <span className="block text-[13.5px] font-bold tabular-nums">{todaySummary ? `${todaySummary.transactions} ${Number(todaySummary.transactions) === 1 ? 'sale' : 'sales'} · ${formatKes(toNumber(todaySummary.revenue))}` : '—'}</span></span>
         </button>}
-        <button type="button" onClick={() => setPanel('held')} className="relative flex h-10 items-center gap-2 rounded-lg px-2.5 text-[14px] font-semibold hover:bg-white/10" aria-label={`Held sales, ${held.length}`}>
+        <button type="button" onClick={() => setPanel('held')} className="relative flex h-11 items-center gap-2 rounded-xl px-3 text-[14px] font-semibold transition hover:bg-white/15" aria-label={`Held sales, ${held.length}`}>
           <PauseCircle size={19} aria-hidden="true" /><span className="hidden sm:inline">Held</span>
           {held.length > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-[#d4a52b] px-1.5 text-[12px] font-bold tabular-nums text-[#13254a]">{held.length}</span>}
         </button>
@@ -287,7 +287,7 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
           <span className="grid size-9 place-items-center rounded-full bg-white/12 text-[12.5px] font-bold">{initials}</span>
           <span className="leading-tight"><span className="block max-w-[9rem] truncate text-[13.5px] font-semibold">{currentUser.name}</span><span className="block text-[11.5px] text-[#b9c6e0]">{currentUser.role_label}</span></span>
         </div>
-        <button type="button" onClick={onExit} className="flex h-10 items-center gap-1.5 rounded-lg border border-white/20 px-3 text-[13.5px] font-semibold hover:bg-white/10">
+        <button type="button" onClick={onExit} className="flex h-11 items-center gap-1.5 rounded-xl border border-white/25 px-3 text-[13.5px] font-semibold transition hover:border-white/50 hover:bg-white/10">
           <LogOut size={16} aria-hidden="true" /><span className="hidden sm:inline">Exit till</span>
         </button>
       </div>
@@ -296,7 +296,7 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
     {branchError ? <div className="m-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-[14px] text-amber-900" role="alert">{branchError}</div>
       : <div className="flex min-h-0 flex-1">
         <PosCatalogue ref={catalogue} branchId={branchId} categories={categories} inCart={inCart} locked={stage === 'tender'} onAdd={add} />
-        {wide && <aside className="flex w-[420px] shrink-0 flex-col pr-5 pt-4 xl:w-[460px]">{ticket}</aside>}
+        {wide && <aside className="flex w-[420px] shrink-0 flex-col pr-5 pb-4 pt-4 xl:w-[460px]">{ticket}</aside>}
       </div>}
 
     {!wide && !branchError && <>
