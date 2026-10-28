@@ -111,6 +111,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   currentUser: BookshopUser; active: string; onNavigate: (section: string) => void
   onSignOut: () => Promise<void>; children: ReactNode
 }) {
+  const posMode = active === 'Point of Sale'
   const [collapsed, setCollapsed] = useState(false)
   const [mobile, setMobile] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -180,6 +181,8 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     })
   }
 
+  useEffect(() => { if (posMode) { setDrawerOpen(false); setSearchOpen(false); setNotificationsOpen(false); setAccountOpen(false) } }, [posMode])
+
   const results = visibleSections.filter(section => `${section.label} ${section.description}`.toLowerCase().includes(search.toLowerCase()))
 
   function navButton(section: typeof sections[number]) {
@@ -192,10 +195,10 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     </button>
   }
 
-  return <div className={`workspace-shell ${collapsed ? 'nav-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''} ${modalOpen ? 'overlay-open' : ''}`}>
+  return <div className={`workspace-shell ${posMode ? 'pos-focus-mode' : ''} ${collapsed ? 'nav-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''} ${modalOpen ? 'overlay-open' : ''}`}>
     <a className="skip-link" href="#workspace-content">Skip to content</a>
     {drawerOpen && <div className="sidebar-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
-    <aside id="app-navigation" className="app-sidebar" ref={drawer.panelRef} tabIndex={-1}
+    {!posMode && <aside id="app-navigation" className="app-sidebar" ref={drawer.panelRef} tabIndex={-1}
       role={mobile && drawerOpen ? 'dialog' : undefined} aria-modal={mobile && drawerOpen ? true : undefined}
       aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
       <div className="sidebar-brand">
@@ -218,10 +221,11 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>Collapse sidebar</span>
         </button>
       </div>
-    </aside>
+    </aside>}
 
-    <div className="workspace-main" ref={mainRef} inert={modalOpen}>
-      <header className="app-header">
+    <div className={`workspace-main ${posMode ? '!ml-0 !w-full !max-w-none' : ''}`} ref={mainRef} inert={modalOpen}>
+      {posMode && <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 sm:px-7"><div className="flex items-center gap-3"><BrandMark size={32} className="rounded-lg"/><div><strong className="block text-sm">Hekima Bookshop · POS</strong><span className="text-xs text-slate-500">Focused cashier mode</span></div></div><button type="button" className="secondary-button" onClick={() => navigate(canOpenSection(currentUser,'Dashboard') ? 'Dashboard' : firstSection(currentUser))}><ChevronLeft size={16}/> Back to Dashboard</button></div>}
+      {!posMode && <header className="app-header">
         <div className="header-leading">
           <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>
           <div className="header-breadcrumb"><span>{currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches[0]?.name || 'Workspace'}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>
@@ -261,7 +265,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
             </div>}
           </div>
         </div>
-      </header>
+      </header>}
       <main id="workspace-content" tabIndex={-1}>{children}</main>
     </div>
 
