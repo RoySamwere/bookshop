@@ -11,6 +11,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             SystemOwnerSeeder::class,
             BusinessFoundationSeeder::class,
+            HekimaCategorySeeder::class,
         ]);
     }
 }
