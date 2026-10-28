@@ -116,7 +116,7 @@ function ReceiptPreview({ profile }: { profile: BusinessProfile }) {
     <p className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.16em] text-slate-500"><Receipt size={14} /> RECEIPT PREVIEW</p>
     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 font-mono text-[12px] leading-relaxed text-slate-700 shadow-sm">
       <div className="text-center">
-        <img src="/hekima-mark.svg" alt="" className="mx-auto mb-2 size-10 object-contain" />
+        <img src="/favicon.png" alt="" className="mx-auto mb-2 size-10 object-contain" />
         <p className="font-sans text-sm font-bold text-slate-900">{profile.name || 'Business name'}</p>
         {profile.receipt_header && <p>{profile.receipt_header}</p>}
         {(profile.address || profile.city) && <p>{[profile.address, profile.city].filter(Boolean).join(', ')}</p>}

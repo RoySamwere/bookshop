@@ -7,7 +7,7 @@ import './public.css'
 export const metadata: Metadata = {
   title: { default: `${brand.name} | Opening soon`, template: `%s | ${brand.name}` },
   description: brand.description,
-  icons: { icon: '/hekima-mark.svg', shortcut: '/hekima-mark.svg', apple: '/hekima-mark.svg' },
+  icons: { icon: '/favicon.png', shortcut: '/favicon.png', apple: '/favicon.png' },
 }
 
 export const viewport: Viewport = {
