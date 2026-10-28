@@ -237,18 +237,23 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
 function AddReceiptProduct({ initialName, creating, onBusy, onCancel, onCreated }: { initialName: string; creating: boolean; onBusy: (busy: boolean) => void; onCancel: () => void; onCreated: (book: Book) => void }) {
   const [form, setForm] = useState({ title: initialName, sku: '', isbn: '', cost_price: '', selling_price: '', reorder_level: '10' })
   const [error, setError] = useState<ApiError | null>(null)
+  const [categories,setCategories]=useState<CategoryGroup[]>([])
+  const [categoryId,setCategoryId]=useState('')
+  const [subcategoryId,setSubcategoryId]=useState('')
+  useEffect(()=>{api<CategoryGroup[]>('/product-hierarchy').then(setCategories).catch(()=>{})},[])
   const fields = useRef<HTMLFieldSetElement>(null)
   const submitting = useRef(false)
 
   async function create() {
     if (submitting.current) return
+    if (!subcategoryId) { setError(new ApiError('Choose a category and subcategory before saving.',422));return }
     // Validate product fields without requiring the stock quantity yet.
     for (const input of fields.current?.querySelectorAll<HTMLInputElement>('input') ?? []) {
       if (!input.reportValidity()) return
     }
     submitting.current = true; onBusy(true); setError(null)
     try {
-      const product = await api<Book>('/books', { method: 'POST', body: { ...form, title: form.title.trim(), sku: form.sku.trim(), isbn: form.isbn.trim() || null, cost_price: Number(form.cost_price), selling_price: Number(form.selling_price), reorder_level: Number(form.reorder_level) } })
+      const product = await api<Book>('/books', { method: 'POST', body: { ...form, product_subcategory_id:Number(subcategoryId), title: form.title.trim(), sku: form.sku.trim(), isbn: form.isbn.trim() || null, cost_price: Number(form.cost_price), selling_price: Number(form.selling_price), reorder_level: Number(form.reorder_level) } })
       onCreated(product)
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; onBusy(false) }
@@ -258,6 +263,8 @@ function AddReceiptProduct({ initialName, creating, onBusy, onCancel, onCreated 
     <h3>Add a new product</h3><p>Save its catalogue details, then receive stock below.</p>
     <FormAlert message={error?.message ?? ''} />
     <fieldset ref={fields} disabled={creating} className="grid gap-4 sm:grid-cols-2">
+      <Field label="Category"><select className={inputClass} required value={categoryId} onChange={e=>{setCategoryId(e.target.value);setSubcategoryId('')}}><option value="">Select category</option>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="Subcategory"><select className={inputClass} required value={subcategoryId} onChange={e=>setSubcategoryId(e.target.value)} disabled={!categoryId}><option value="">Select subcategory</option>{categories.find(c=>String(c.id)===categoryId)?.subcategories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
       <Field label="Product name" className="sm:col-span-2" error={error?.field('title')}><input className={inputClass} required autoFocus maxLength={255} value={form.title} onChange={e => setForm(previous => ({ ...previous, title: e.target.value }))} /></Field>
       <Field label="SKU" error={error?.field('sku')}><input className={inputClass} required maxLength={100} value={form.sku} onChange={e => setForm(previous => ({ ...previous, sku: e.target.value }))} placeholder="Unique product code" /></Field>
       <Field label="ISBN (optional)" error={error?.field('isbn')}><input className={inputClass} maxLength={20} value={form.isbn} onChange={e => setForm(previous => ({ ...previous, isbn: e.target.value }))} /></Field>
