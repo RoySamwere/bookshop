@@ -41,6 +41,7 @@ class InventoryController extends Controller
             'rows'=>'required|array|min:1|max:100',
             'rows.*.title'=>'required|string|max:255',
             'rows.*.sku'=>'required|string|max:100',
+            'rows.*.product_subcategory_id'=>['required','integer',Rule::exists('product_subcategories','id')],
             'rows.*.cost_price'=>'required|numeric|min:0',
             'rows.*.selling_price'=>'required|numeric|min:0',
             'rows.*.quantity'=>'required|integer|min:1|max:1000000',
@@ -57,10 +58,15 @@ class InventoryController extends Controller
                 if(!$book){
                     $id=DB::table('books')->insertGetId([
                         'title'=>$row['title'],'sku'=>$row['sku'],
+                        'product_subcategory_id'=>$row['product_subcategory_id'],
                         'cost_price'=>$row['cost_price'],'selling_price'=>$row['selling_price'],
                         'reorder_level'=>10,'is_active'=>true,'created_at'=>now(),'updated_at'=>now()
                     ]);
-                }else{$id=$book->id;}
+                }else{
+                    if ((int)$book->product_subcategory_id !== (int)$row['product_subcategory_id'])
+                        throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'SKU '.$row['sku'].' belongs to another subcategory.']);
+                    $id=$book->id;
+                }
                 $service->change((int)$id,(int)$data['branch_id'],(int)$row['quantity'],'receipt',
                     $request->user()->id,'Bulk CSV import','Stock received from bulk CSV',null,
                     (int)$row['quantity'],1,(int)$data['supplier_id']);
