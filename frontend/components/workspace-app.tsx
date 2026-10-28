@@ -10,7 +10,7 @@ import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
 import { ProfileView } from './profile-view'
 import { ErrorState } from './ui-kit'
-import { ApiError, UNAUTHORIZED_EVENT, tokenStore } from '../lib/api'
+import { ApiError, UNAUTHORIZED_EVENT, tokenStore, api } from '../lib/api'
 import { getCurrentUser, hasPermission, homeFor, logout, type BookshopUser } from '../lib/auth'
 import {
   ArrowUpRight,
@@ -53,7 +53,7 @@ const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { minimumF
 
 // Modules below still run on sample data; they connect to live records in later phases.
 const PREVIEW_MODULES: Record<string, string> = {
-  'Dashboard': 'Phase 5', 'Point of Sale': 'Phase 3', 'Sales History': 'Phase 3', 'Products & Books': 'Phase 2',
+  'Dashboard': 'Phase 5', 'Point of Sale': 'Phase 3', 'Sales History': 'Phase 3', 
   'Inventory & Stock': 'Phase 2', 'Suppliers': 'Phase 2', 'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
 }
 
@@ -180,25 +180,59 @@ function Dashboard({ active, setActive, userName }: { active: string; setActive:
   return <OverviewDashboard userName={userName} products={products} sales={sales} onNavigate={setActive} />
 }
 function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) {
+  type BookRow = { id: number; title: string; sku: string; isbn: string | null; selling_price: string; cost_price: string; reorder_level: number }
+  const [books, setBooks] = useState<BookRow[]>([])
+  const [count, setCount] = useState(0)
+  const [page, setPage] = useState(1)
+  const [lastPage, setLastPage] = useState(1)
+  const [query, setQuery] = useState('')
+  const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [imported, setImported] = useState(false)
-  const [bookCount, setBookCount] = useState(products.length)
-  const demoRows = products.slice(0, 5)
-  function downloadTemplate() {
-    const csv = 'name,category,sku,isbn,selling_price,cost_price,opening_stock,reorder_level\nGrade 8 Social Studies,Textbooks,TB-G8-SST,9789966123456,950,680,30,8\n'
-    const link = document.createElement('a')
-    link.href = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`
-    link.download = 'hekima-products-template.csv'
-    link.click()
-    setToast('Bulk upload template downloaded')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ title: '', sku: '', isbn: '', selling_price: '', cost_price: '', reorder_level: '10' })
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = await api<{ data: BookRow[]; total: number; current_page: number; last_page: number }>('/books', { query: { page, search } })
+      setBooks(result.data)
+      setCount(result.total)
+      setLastPage(result.last_page)
+      setError('')
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load catalogue') }
+    finally { setLoading(false) }
+  }, [page, search])
+  useEffect(() => { void load() }, [load])
+  async function saveBook(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setError('')
+    try {
+      await api('/books', { method: 'POST', body: { ...form, isbn: form.isbn || null, selling_price: Number(form.selling_price), cost_price: Number(form.cost_price), reorder_level: Number(form.reorder_level) } })
+      setForm({ title: '', sku: '', isbn: '', selling_price: '', cost_price: '', reorder_level: '10' })
+      setShowForm(false); setPage(1); await load()
+      setToast('Product saved to the database')
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save product') }
+    finally { setSaving(false) }
   }
-  function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
-    if (!event.target.files?.length) return
-    setImported(true)
-    setBookCount((count) => count + 12)
-    setToast('12 products imported successfully')
+  function downloadCsv() {
+    const cells = (v: unknown) => '"' + String(v ?? '').replaceAll('"', '""') + '"'
+    const lines = [['title','sku','isbn','selling_price','cost_price','reorder_level'], ...books.map(b => [b.title,b.sku,b.isbn,b.selling_price,b.cost_price,b.reorder_level])].map(row => row.map(cells).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([lines], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a'); link.href = url; link.download = 'hekima-catalog-page.csv'; link.click(); URL.revokeObjectURL(url)
   }
-  return <div className="products-page"><div className="page-heading compact"><div><div className="eyebrow">CATALOGUE · PRODUCTS & BOOKS</div><h1 tabIndex={-1}>Products & Books</h1><p>Add items one by one or import your catalogue in bulk.</p></div><div className="heading-actions"><button className="secondary-button" onClick={downloadTemplate}><Download size={16} /> Excel template</button><button className="primary-button" onClick={() => setShowForm(!showForm)}><Plus size={17} /> Add product</button></div></div><div className="catalog-stats"><div className="card catalog-stat"><span>Total products</span><strong>{bookCount}</strong><small>Across all categories</small></div><div className="card catalog-stat"><span>Low stock</span><strong>12</strong><small>Needs restocking</small></div><div className="card catalog-stat"><span>Catalogue value</span><strong>KSh 2.84M</strong><small>At selling price</small></div></div>{showForm && <section className="card product-form"><div className="card-heading"><div><h2>Add a product</h2><p>Use the same columns as the bulk upload template.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={17} /></button></div><div className="form-grid"><label className="field-label">Product name<input className="text-input" placeholder="e.g. Grade 8 Social Studies" /></label><label className="field-label">Category<select className="text-input" defaultValue="Textbooks"><option>Textbooks</option><option>Revision Books</option><option>Exercise Books</option><option>Stationery</option><option>Novels & Literature</option></select></label><label className="field-label">SKU<input className="text-input" placeholder="TB-G8-SST" /></label><label className="field-label">ISBN (optional)<input className="text-input" placeholder="9789966123456" /></label><label className="field-label">Selling price<input className="text-input" type="number" placeholder="950" /></label><label className="field-label">Cost price<input className="text-input" type="number" placeholder="680" /></label><label className="field-label">Opening stock<input className="text-input" type="number" placeholder="30" /></label><label className="field-label">Reorder level<input className="text-input" type="number" placeholder="8" /></label></div><button className="primary-button" onClick={() => { setShowForm(false); setBookCount((count) => count + 1); setToast('Product added to catalogue') }}>Save product <ArrowUpRight size={16} /></button></section>}<section className="bulk-upload card"><div className="bulk-icon"><FileSpreadsheet size={22} /></div><div className="bulk-copy"><h2>Import products in bulk</h2><p>Upload an Excel or CSV file with product name, category, SKU, prices and opening stock.</p><div className="bulk-actions"><button className="secondary-button" onClick={downloadTemplate}><Download size={15} /> Download template</button><label className="primary-button upload-button"><Upload size={15} /> {imported ? 'Import another file' : 'Choose Excel file'}<input type="file" accept=".csv,.xlsx,.xls" onChange={handleImport} /></label></div></div><div className="bulk-format">.XLSX<br /><span>or .CSV</span></div></section><section className="card catalogue-card"><div className="card-heading"><div><h2>Catalogue preview</h2><p>Showing your latest products and books.</p></div><div className="catalogue-search"><Search size={15} /><input placeholder="Search catalogue" /></div></div><div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Stock</span></div>{demoRows.map((product) => <div className="catalogue-row" key={product.id}><span className="catalogue-product"><span className={`mini-art ${product.tone}`}><BookOpen size={14} /></span><strong>{product.name}</strong></span><span>{product.category}</span><span className="muted-text">{product.sku}</span><span>{money(product.price)}</span><span className={product.stock < 10 ? 'stock-low' : ''}>{product.stock}</span></div>)}</div><button className="text-button" onClick={() => setToast('All catalogue products are ready in the demo')}>View all {bookCount} products <ArrowUpRight size={14} /></button></section></div>
+  return <div className="products-page">
+    <div className="page-heading compact"><div><div className="eyebrow">LIVE CATALOGUE · MYSQL</div><h1 tabIndex={-1}>Products & Books</h1><p>Browse and register real products stored in the Hekima database.</p></div><div className="heading-actions"><button className="secondary-button" onClick={downloadCsv}><Download size={16}/> Export current page</button><button className="primary-button" onClick={() => setShowForm(v => !v)}><Plus size={17}/> Add product</button></div></div>
+    <div className="catalog-stats"><div className="card catalog-stat"><span>Total products</span><strong>{count.toLocaleString('en-KE')}</strong><small>Live catalogue records</small></div><div className="card catalog-stat"><span>Showing</span><strong>{books.length}</strong><small>Page {page} of {lastPage}</small></div></div>
+    {error && <div role="alert" className="card" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={() => void load()}>Retry</button></div>}
+    {showForm && <form className="card product-form" onSubmit={saveBook}><div className="card-heading"><h2>Add a product</h2><button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={17}/></button></div><div className="form-grid">
+      {(['title','sku','isbn','selling_price','cost_price','reorder_level'] as const).map(field => <label className="field-label" key={field}>{field.replaceAll('_',' ')}<input className="text-input" required={field==='title'||field==='sku'||field==='selling_price'||field==='cost_price'} type={['selling_price','cost_price','reorder_level'].includes(field)?'number':'text'} min={['selling_price','cost_price','reorder_level'].includes(field)?'0':undefined} step={field==='reorder_level'?'1':undefined} value={form[field]} onChange={e => setForm(v => ({...v,[field]:e.target.value}))}/></label>)}
+    </div><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving…':'Save product'}</button></form>}
+    <section className="card catalogue-card"><div className="card-heading"><div><h2>Products catalogue</h2><p>Data loaded from Laravel and MySQL. Stock is managed separately in Inventory.</p></div><form className="catalogue-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query) }}><Search size={15}/><input aria-label="Search catalogue" placeholder="Search title, ISBN or SKU" value={query} onChange={e => setQuery(e.target.value)}/><button type="submit" className="text-button">Search</button></form></div>
+      {loading?<p style={{padding:20}}>Loading catalogue…</p>:<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>ISBN</span><span>SKU</span><span>Price</span><span>Reorder level</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.isbn||'—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span>{book.reorder_level}</span></div>)}{books.length===0&&<p style={{padding:20}}>No products found. Run the demo catalogue seeder or add your first product.</p>}</div>}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>
+    </section>
+  </div>
 }
 
 function InventoryView({ setToast }: { setToast: (value: string) => void }) {
