@@ -13,17 +13,25 @@ class InventoryController extends Controller
         $request->validate(['branch_id'=>'nullable|integer|exists:branches,id', 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
         $branches=$user->role==='system_owner' ? null : $user->branches()->pluck('branches.id')->all();
-        $query = DB::table('inventory_balances as i')->join('books as b','b.id','=','i.book_id')
-            ->join('branches as br','br.id','=','i.branch_id')
-            ->when($branches!==null,fn($q)=>$q->whereIn('i.branch_id',$branches))
-            ->when($request->query('branch_id'),fn($q,$id)=>$q->where('i.branch_id',$id))
-            ->when($request->query('search'), fn($q,$search) => $q->where(fn($q) => $q->where('b.title','like',"%{$search}%")->orWhere('b.sku','like',"%{$search}%")->orWhere('b.isbn','like',"%{$search}%")));
-        $summary = (clone $query)->selectRaw('COALESCE(SUM(i.quantity), 0) as units, COALESCE(SUM(i.quantity * b.selling_price), 0) as value, COUNT(*) as stock_lines, COALESCE(SUM(CASE WHEN i.quantity - i.reserved > 0 AND i.quantity - i.reserved <= b.reorder_level THEN 1 ELSE 0 END), 0) as low, COALESCE(SUM(CASE WHEN i.quantity - i.reserved = 0 THEN 1 ELSE 0 END), 0) as out_of_stock')->first();
+        // Every catalogued product is visible in inventory, including zero-stock items.
+        // Only accessible branches are included; no synthetic inventory movements are created.
+        $query = DB::table('books as b')
+            ->crossJoin('branches as br')
+            ->leftJoin('inventory_balances as i', function($join) {
+                $join->on('i.book_id','=','b.id')->on('i.branch_id','=','br.id');
+            })
+            ->where('b.is_active',true)->where('br.is_active',true)
+            ->when($branches!==null,fn($q)=>$q->whereIn('br.id',$branches))
+            ->when($request->query('branch_id'),fn($q,$id)=>$q->where('br.id',$id))
+            ->when($request->query('search'),fn($q,$search)=>$q->where(fn($q)=>
+                $q->where('b.title','like',"%{$search}%")->orWhere('b.sku','like',"%{$search}%")
+                ->orWhere('b.isbn','like',"%{$search}%")));
+        $summary = (clone $query)->selectRaw('COALESCE(SUM(COALESCE(i.quantity,0)), 0) as units, COALESCE(SUM(COALESCE(i.quantity,0) * b.selling_price), 0) as value, COUNT(*) as stock_lines, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level THEN 1 ELSE 0 END), 0) as low, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0 THEN 1 ELSE 0 END), 0) as out_of_stock')->first();
         $result = $query
-            ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('i.quantity - i.reserved > 0 AND i.quantity - i.reserved <= b.reorder_level'))
-            ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('i.quantity - i.reserved = 0'))
-            ->select('i.*','b.title','b.sku','b.isbn','b.reorder_level','br.name as branch_name')
-            ->orderBy('b.title')->orderBy('i.id')->paginate((int) ($request->input('per_page') ?? 30));
+            ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level'))
+            ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0'))
+            ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, br.name as branch_name')
+            ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
     public function receive(Request $request, InventoryService $service) {
