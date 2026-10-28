@@ -31,6 +31,49 @@ class CatalogController extends Controller
         }
         return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
     }
+    public function exportBooks(Request $request) {
+        $columns=['id','title','sku','isbn','brand','ruling_style','page_count','paper_size','binding_type','cost_price','selling_price','reorder_level','is_active','product_subcategory_id'];
+        return response()->streamDownload(function() use ($columns) {
+            $out=fopen('php://output','w');
+            fputcsv($out,$columns);
+            DB::table('books')->orderBy('id')->chunk(500,function($rows)use($out,$columns){
+                foreach($rows as $row) {
+                    $values=array_map(fn($key)=>$row->$key,$columns);
+                    // Prevent spreadsheet formula execution when CSV is opened.
+                    foreach($values as &$value) if(is_string($value)&&preg_match('/^[=+@\\-\\t\\r]/',$value))$value="'".$value;
+                    unset($value);
+                    fputcsv($out,$values);
+                }
+            });
+            fclose($out);
+        },'hekima-products-all.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
+    }
+    public function importBooks(Request $request) {
+        $data=$request->validate([
+            'rows'=>'required|array|min:1|max:200',
+            'rows.*.id'=>'required|integer|distinct|exists:books,id',
+            'rows.*.title'=>'required|string|max:255',
+            'rows.*.sku'=>'required|string|max:100',
+            'rows.*.isbn'=>'nullable|string|max:20',
+            'rows.*.brand'=>'nullable|string|max:255',
+            'rows.*.ruling_style'=>'nullable|string|max:100',
+            'rows.*.page_count'=>'nullable|integer|min:1',
+            'rows.*.paper_size'=>'nullable|string|max:30',
+            'rows.*.binding_type'=>'nullable|string|max:100',
+            'rows.*.cost_price'=>'required|numeric|min:0',
+            'rows.*.selling_price'=>'required|numeric|min:0',
+            'rows.*.reorder_level'=>'required|integer|min:0',
+            'rows.*.is_active'=>'required|boolean',
+            'rows.*.product_subcategory_id'=>'nullable|integer|exists:product_subcategories,id',
+        ]);
+        DB::transaction(function()use($data){
+            foreach($data['rows'] as $row){
+                $id=$row['id'];unset($row['id']);
+                DB::table('books')->where('id',$id)->update(array_merge($row,['updated_at'=>now()]));
+            }
+        });
+        return response()->json(['updated'=>count($data['rows'])]);
+    }
     public function hierarchy() {
         return DB::table('product_categories')->orderBy('name')->get()->map(function($category){
             $category->subcategories=DB::table('product_subcategories')->where('product_category_id',$category->id)->orderBy('name')->get();
