@@ -8,6 +8,7 @@ import { OverviewDashboard } from './overview-dashboard'
 import { UsersView } from './users-view'
 import { InventoryView } from './inventory-view'
 import { PosLiveView } from './pos-live-view'
+import { SalesHistoryView } from './sales-history-view'
 import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
 import { ProfileView } from './profile-view'
@@ -56,7 +57,7 @@ const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { minimumF
 
 // Modules below still run on sample data; they connect to live records in later phases.
 const PREVIEW_MODULES: Record<string, string> = {
-  'Dashboard': 'Phase 5', 'Sales History': 'Phase 3', 
+  'Dashboard': 'Phase 5', 
   'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
 }
 
@@ -167,6 +168,7 @@ export function WorkspaceApp() {
     : active === 'Audit Log' ? <AuditView />
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
     : active === 'Point of Sale' ? <PosLiveView notify={notify} userId={currentUser.id} />
+    : active === 'Sales History' ? <SalesHistoryView />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
