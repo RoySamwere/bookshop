@@ -25,6 +25,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(30)
   const [result, setResult] = useState<StockPage | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -39,12 +40,12 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   useEffect(() => {
     let cancelled = false
     setLoading(true); setError('')
-    api<StockPage>('/inventory', { query: { branch_id: branch, status, search, page } })
+    api<StockPage>('/inventory', { query: { branch_id: branch, status, search, page, per_page: perPage } })
       .then(data => { if (!cancelled) setResult(data) })
       .catch(e => { if (!cancelled) setError(errorMessage(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [branch, status, search, page, reload])
+  }, [branch, status, search, page, perPage, reload])
 
   function exportPage() {
     if (!result) return
@@ -65,7 +66,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     </div>
     {!loading && !error && Number(summary?.low ?? 0) + Number(summary?.out_of_stock ?? 0) > 0 && <section className="card inventory-alert"><div className="alert-icon"><Bell size={17} /></div><div><strong>Stock attention needed</strong><p>{Number(summary?.low ?? 0) + Number(summary?.out_of_stock ?? 0)} product / branch balances need replenishment.</p></div><button className="secondary-button" onClick={() => { setStatus(Number(summary?.low ?? 0) ? 'low' : 'out'); setPage(1) }}>Review stock</button></section>}
     <section className="card inventory-table-card">
-      <div className="card-heading"><div><h2>Stock levels</h2><p>Live quantities by product and branch. Receive a product to create its first balance.</p></div><form className="inventory-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query.trim()) }}><Search size={16} /><input aria-label="Search stock" placeholder="Search title, SKU or ISBN…" maxLength={255} value={query} onChange={e => setQuery(e.target.value)} /><button type="submit" className="text-button">Search</button></form></div>
+      <div className="card-heading"><div><h2>Stock levels</h2><p>Live quantities by product and branch. Receive a product to create its first balance.</p></div><form className="inventory-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query.trim()) }}><Search size={16} /><input aria-label="Search stock" placeholder="Search title, SKU or ISBN…" maxLength={255} value={query} onChange={e => { setQuery(e.target.value); setPage(1); setSearch(e.target.value.trim()) }} /><button type="submit" className="text-button">Search</button></form></div>
       <div className="stock-filter-bar"><div className="inventory-tabs">{[{ value: '', label: 'All stock' }, { value: 'low', label: 'Low stock' }, { value: 'out', label: 'Out of stock' }].map(tab => <button type="button" key={tab.value} aria-pressed={status === tab.value} className={status === tab.value ? 'selected' : ''} onClick={() => { setStatus(tab.value); setPage(1) }}>{tab.label}{tab.value && <span>{tab.value === 'low' ? summary?.low ?? 0 : summary?.out_of_stock ?? 0}</span>}</button>)}</div><label className="stock-branch-filter">Branch<select value={branch} onChange={e => { setBranch(e.target.value); setPage(1) }}><option value="">All my branches</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.is_active ? '' : ' (inactive)'}</option>)}</select></label></div>
       {loading ? <LoadingState label="Loading inventory" /> : error ? <ErrorState message={error} onRetry={() => setReload(n => n + 1)} /> : !result?.data.length ? <EmptyState icon={<Boxes size={24} />} title="No stock balances found" body="Receive stock for an existing product to create a balance, or change your filters." /> : <>
         <div className="stock-list-scroll"><div className="inventory-list">{result.data.map((row, index) => {
@@ -73,7 +74,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
           const label = available === 0 ? 'Out of stock' : available <= row.reorder_level ? 'Low stock' : 'Healthy'
           return <div className="inventory-row" key={row.id}><div className={`inventory-book ${['teal', 'indigo', 'amber', 'violet', 'rose', 'sky'][index % 6]}`}><BookOpen size={18} /></div><div className="inventory-product"><strong title={row.title}>{row.title}</strong><span>{row.sku} · {row.branch_name}</span></div><div className="inventory-number"><strong>{row.quantity}</strong><span>on hand</span></div><div className="inventory-bar"><div><span>{available} available · {row.reserved} reserved</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, available / Math.max(1, row.reorder_level * 3) * 100)}%` }} /></i><span>Reorder at {row.reorder_level}</span></div></div><span className={`stock-status ${label.toLowerCase().replaceAll(' ', '-')}`}>{label}</span>{canManage && branches.some(b => b.id === row.branch_id && b.is_active) ? <button className="row-action" aria-label={`Restock ${row.title} at ${row.branch_name}`} onClick={() => setReceipt({ book: { id: row.book_id, title: row.title, sku: row.sku, is_active: true }, branchId: row.branch_id })}>Restock</button> : <span />}</div>
         })}</div></div>
-        <Pagination meta={result} onPage={setPage} />
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',padding:12}}><label>Items per page <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}>{[10,20,50,100,200].map(n=><option key={n} value={n}>{n}</option>)}</select></label><button type="button" className="secondary-button" disabled={loading||page>=result.last_page} onClick={()=>setPage(result.last_page)}>Last page »</button></div><Pagination meta={result} onPage={setPage} />
       </>}
     </section>
     {receipt && <ReceiveStockDialog initial={receipt} canCreateProduct={currentUser.permissions.includes('catalog.manage')} branches={branches.filter(b => b.is_active)} onClose={() => setReceipt(null)} onSaved={message => { setReceipt(null); setReload(n => n + 1); notify(message) }} />}
