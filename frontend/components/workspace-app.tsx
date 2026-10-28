@@ -187,176 +187,33 @@ function Dashboard({ active, setActive, userName }: { active: string; setActive:
   if (active !== 'Dashboard') return <section className="page-placeholder"><div className="empty-icon"><Tags size={24} /></div><h1 tabIndex={-1}>{active}</h1><p>This workspace is ready for your daily operations. Use the dashboard or point of sale to get started.</p><button className="primary-button" onClick={() => setActive('Point of Sale')}>Open Point of Sale <ArrowUpRight size={16} /></button></section>
   return <OverviewDashboard userName={userName} products={products} sales={sales} onNavigate={setActive} />
 }
-function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) {
-  type BookRow = { id: number; title: string; sku: string; isbn: string | null; selling_price: string; cost_price: string; reorder_level: number; category_name?: string; subcategory_name?: string }
-  const [books, setBooks] = useState<BookRow[]>([])
-  const [count, setCount] = useState(0)
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(20)
-  const [lastPage, setLastPage] = useState(1)
-  const [query, setQuery] = useState('')
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-  const [subcategory, setSubcategory] = useState('')
-  const [hierarchy, setHierarchy] = useState<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [unitBook, setUnitBook] = useState<BookRow|null>(null)
-  const [unitName, setUnitName] = useState('Pack of 10')
-  const [unitFactor, setUnitFactor] = useState('10')
-  const [units, setUnits] = useState<{id:number;name:string;pieces_per_unit:number}[]>([])
-  const [unitError, setUnitError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [form, setForm] = useState({ title: '', sku: '', isbn: '', selling_price: '', cost_price: '', reorder_level: '10' })
-  const load = useCallback(async () => {
+function ProductsBooksView() {
+  type BookRow = { id:number; title:string; sku:string; isbn:string|null; selling_price:string|number; category_name?:string|null; subcategory_name?:string|null; is_active?:boolean }
+  const [books,setBooks]=useState<BookRow[]>([])
+  const [count,setCount]=useState(0)
+  const [page,setPage]=useState(1)
+  const [lastPage,setLastPage]=useState(1)
+  const [query,setQuery]=useState('')
+  const [search,setSearch]=useState('')
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState('')
+  const load=useCallback(async()=>{
     setLoading(true)
-    try {
-      const result = await api<{ data: BookRow[]; total: number; current_page: number; last_page: number }>('/books', { query: { page, search, per_page: perPage, category_id: category, subcategory_id: subcategory } })
-      setBooks(result.data)
-      setCount(result.total)
-      setLastPage(result.last_page)
-      setError('')
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load catalogue') }
-    finally { setLoading(false) }
-  }, [page, search, perPage, category, subcategory])
-  useEffect(() => { void load() }, [load])
-  useEffect(() => { api<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>('/product-hierarchy').then(setHierarchy).catch(()=>undefined) }, [])
-  useEffect(() => { const timer = window.setTimeout(() => {setPage(1);setSearch(query.trim())}, 250); return () => window.clearTimeout(timer) }, [query])
-  async function saveBook(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true); setError('')
-    try {
-      await api('/books', { method: 'POST', body: { ...form, isbn: form.isbn || null, selling_price: Number(form.selling_price), cost_price: Number(form.cost_price), reorder_level: Number(form.reorder_level) } })
-      setForm({ title: '', sku: '', isbn: '', selling_price: '', cost_price: '', reorder_level: '10' })
-      setShowForm(false); setPage(1); await load()
-      setToast('Product saved to the database')
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save product') }
-    finally { setSaving(false) }
-  }
-  async function openUnits(book:BookRow) {
-    setUnitBook(book);setUnitError('');
-    try {setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${book.id}/units`))}
-    catch(e){setUnitError(e instanceof Error?e.message:'Unable to load packaging')}
-  }
-  async function addUnit(event:React.FormEvent) {
-    event.preventDefault();if(!unitBook)return;setUnitError('');
-    try {await api(`/books/${unitBook.id}/units`,{method:'POST',body:{name:unitName.trim(),pieces_per_unit:Number(unitFactor)}});
-      setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
-    catch(e){setUnitError(e instanceof Error?e.message:'Unable to save packaging')}
-  }
-  const [newRows,setNewRows] = useState<{title:string;sku:string;cost_price:number;selling_price:number;reorder_level:number}[]>([])
-  const [newImportError,setNewImportError] = useState('')
-  const [newImportBusy,setNewImportBusy] = useState(false)
-  function downloadNewTemplate(){
-    const csv='title,sku,cost_price,selling_price,reorder_level\r\n'
-    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
-    const link=document.createElement('a');link.href=url;link.download='hekima-new-products-template.csv';link.click();URL.revokeObjectURL(url)
-  }
-  async function readNewProducts(file:File|undefined){
-    setNewRows([]);setNewImportError('');if(!file)return
     try{
-      if(file.size>5_000_000)throw new Error('File exceeds 5 MB')
-      const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean)
-      if(lines.shift()?.trim()!=='title,sku,cost_price,selling_price,reorder_level')throw new Error('Use the downloaded template and keep its column headings.')
-      const parsed=lines.map((line,i)=>{
-        const cols=line.split(',').map(x=>x.trim().replace(/^"|"$/g,''))
-        if(cols.length!==5||!cols[0]||!cols[1]||cols.slice(2,4).some(x=>x===''||!Number.isFinite(Number(x))||Number(x)<0)||!Number.isInteger(Number(cols[4]))||Number(cols[4])<0)throw new Error(`Invalid values on CSV line ${i+2}. Use no commas inside product names.`)
-        return {title:cols[0],sku:cols[1],cost_price:Number(cols[2]),selling_price:Number(cols[3]),reorder_level:Number(cols[4])}
-      })
-      if(!parsed.length)throw new Error('Add at least one product to the CSV')
-      if(new Set(parsed.map(x=>x.sku.toLowerCase())).size!==parsed.length)throw new Error('Duplicate SKUs in the file')
-      setNewRows(parsed)
-    }catch(e){setNewImportError(e instanceof Error?e.message:'Cannot read CSV')}
-  }
-  async function uploadNewProducts(){
-    if(!newRows.length||newImportBusy)return
-    setNewImportBusy(true);setNewImportError('');let created=0
-    try{
-      for(let i=0;i<newRows.length;i+=200){
-        const result=await api<{created:number}>('/books-bulk-create',{method:'POST',body:{rows:newRows.slice(i,i+200)}})
-        created+=result.created
-      }
-      setNewRows([]);setPage(1);await load();setToast(`${created} new products registered in catalogue and inventory`)
-    }catch(e){setNewImportError(`${created} products created before error. ${e instanceof Error?e.message:'Upload failed'}`)}
-    finally{setNewImportBusy(false)}
-  }
-  const [importRows,setImportRows] = useState<Record<string,string>[]>([])
-  const [importError,setImportError] = useState('')
-  const [importing,setImporting] = useState(false)
-  const [exporting,setExporting] = useState(false)
-  const columns=['id','title','sku','isbn','brand','ruling_style','page_count','paper_size','binding_type','cost_price','selling_price','reorder_level','is_active','product_subcategory_id']
-  async function downloadCsv() {
-    setExporting(true);setError('')
-    try {
-      const response=await fetch(`${API_BASE}/books-export`,{headers:{Authorization:`Bearer ${tokenStore.get()??''}`,Accept:'text/csv'}})
-      if(!response.ok)throw new Error('Export failed. Check your session and permissions.')
-      const url=URL.createObjectURL(await response.blob())
-      const link=document.createElement('a');link.href=url;link.download='hekima-products-all.csv';link.click();URL.revokeObjectURL(url)
-      setToast('Full catalogue exported')
-    }catch(e){setError(e instanceof Error?e.message:'Export failed')}finally{setExporting(false)}
-  }
-  function parseCsv(text:string):string[][] {
-    const rows:string[][]=[];let row:string[]=[],field='',quoted=false
-    for(let i=0;i<text.length;i++){const c=text[i]
-      if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else quoted=!quoted}
-      else if(c===','&&!quoted){row.push(field);field=''}
-      else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(x=>x!==''))rows.push(row);row=[];field=''}
-      else field+=c
-    }
-    if(quoted)throw new Error('CSV contains an unclosed quoted field')
-    row.push(field);if(row.some(x=>x!==''))rows.push(row)
-    return rows
-  }
-  async function readImport(file:File|undefined){
-    setImportRows([]);setImportError('');if(!file)return
-    try{
-      if(file.size>10_000_000)throw new Error('CSV must be smaller than 10 MB')
-      const parsed=parseCsv((await file.text()).replace(/^\uFEFF/,''))
-      if(!parsed.length||columns.some((c,i)=>parsed[0][i]!==c)||parsed[0].length!==columns.length)throw new Error('Please upload the original full-catalogue CSV template with unchanged column headings.')
-      const rows=parsed.slice(1).map((r,i)=>{
-        if(r.length!==columns.length)throw new Error(`Row ${i+2}: wrong number of columns`)
-        return Object.fromEntries(columns.map((key,j)=>[key,r[j].replace(/^'(?=[=+@\-])/, '')]))
-      })
-      if(rows.some(r=>!/^\d+$/.test(r.id)))throw new Error('Every row must retain its numeric product ID.')
-      if(new Set(rows.map(r=>r.id)).size!==rows.length)throw new Error('Duplicate product IDs detected.')
-      if(rows.length===0)throw new Error('The file has no product rows.')
-      setImportRows(rows)
-    }catch(e){setImportError(e instanceof Error?e.message:'Could not read CSV')}
-  }
-  async function uploadImport(){
-    if(!importRows.length||importing)return
-    setImporting(true);setImportError('')
-    let done=0
-    try{
-      for(let i=0;i<importRows.length;i+=200){
-        const rows=importRows.slice(i,i+200).map(r=>({
-          id:Number(r.id),title:r.title,sku:r.sku,isbn:r.isbn||null,brand:r.brand||null,
-          ruling_style:r.ruling_style||null,page_count:r.page_count?Number(r.page_count):null,
-          paper_size:r.paper_size||null,binding_type:r.binding_type||null,
-          cost_price:Number(r.cost_price),selling_price:Number(r.selling_price),
-          reorder_level:Number(r.reorder_level),is_active:r.is_active==='1'||r.is_active.toLowerCase()==='true',
-          product_subcategory_id:r.product_subcategory_id?Number(r.product_subcategory_id):null
-        }))
-        await api('/books-import',{method:'POST',body:{rows}});done+=rows.length
-      }
-      setImportRows([]);await load();setToast(`${done} products updated successfully`)
-    }catch(e){setImportError(`${done} rows updated before error: ${e instanceof Error?e.message:'Import failed'}. Correct the file and retry carefully.`)}
-    finally{setImporting(false)}
-  }
+      const result=await api<{data:BookRow[];total:number;last_page:number}>('/books',{query:{page,per_page:30,search}})
+      setBooks(result.data);setCount(result.total);setLastPage(Math.max(1,result.last_page));setError('')
+    }catch(e){setError(e instanceof Error?e.message:'Unable to load products')}
+    finally{setLoading(false)}
+  },[page,search])
+  useEffect(()=>{void load()},[load])
+  useEffect(()=>{const t=window.setTimeout(()=>{setPage(1);setSearch(query.trim())},250);return()=>window.clearTimeout(t)},[query])
   return <div className="products-page">
-    <div className="page-heading compact"><div><div className="eyebrow">LIVE CATALOGUE · MYSQL</div><h1 tabIndex={-1}>Products & Books</h1><p>Browse and register real products stored in the Hekima database.</p></div><div className="heading-actions"><button className="secondary-button" disabled={exporting} onClick={()=>void downloadCsv()}><Download size={16}/> {exporting?"Exporting…":"Download all products (CSV)"}</button><button className="primary-button" onClick={() => setShowForm(v => !v)}><Plus size={17}/> Add product</button></div></div>
-    <div className="catalog-stats"><div className="card catalog-stat"><span>Total products</span><strong>{count.toLocaleString('en-KE')}</strong><small>Live catalogue records</small></div><div className="card catalog-stat"><span>Showing</span><strong>{books.length}</strong><small>Page {page} of {lastPage}</small></div></div>
-    {error && <div role="alert" className="card" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={() => void load()}>Retry</button></div>}
-    <section className="card" style={{padding:20,marginBottom:16}}><h2>Bulk add new products</h2><p>Download a simple CSV template, enter real products and upload. New products appear in Products & Books and Inventory & Stock with zero stock until received. Existing SKUs are rejected to prevent duplicates.</p><div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}><button type="button" className="secondary-button" onClick={downloadNewTemplate}><Download size={16}/> Download blank template</button><label className="field-label">Choose completed CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readNewProducts(e.target.files?.[0])}/></label></div>{newImportError&&<p role="alert" style={{color:'#b91c1c'}}>{newImportError}</p>}{newRows.length>0&&<div style={{display:'flex',gap:12,alignItems:'center',marginTop:12}}><span>{newRows.length} new products ready</span><button className="primary-button" disabled={newImportBusy} onClick={()=>void uploadNewProducts()}>{newImportBusy?'Uploading…':'Upload products'}</button></div>}</section>
-    <section className="card" style={{padding:20,marginBottom:16}}><h2>Clean catalogue · Download, edit & upload</h2><p>Download all products as CSV, clean the rows in Excel, then upload the same file. Keep product IDs and column headers unchanged. Existing products are updated by ID; stock quantities and sales history are not touched.</p><label className="field-label">Upload cleaned CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readImport(e.target.files?.[0])}/></label>{importError&&<p role="alert" style={{color:'#b91c1c'}}>{importError}</p>}{importRows.length>0&&<div style={{display:'flex',alignItems:'center',gap:12,marginTop:12}}><span>{importRows.length.toLocaleString()} product rows ready to update</span><button className="primary-button" disabled={importing} onClick={()=>void uploadImport()}>{importing?'Uploading…':'Confirm & update products'}</button><button className="secondary-button" disabled={importing} onClick={()=>setImportRows([])}>Cancel</button></div>}</section>
-    {showForm && <form className="card product-form" onSubmit={saveBook}><div className="card-heading"><h2>Add a product</h2><button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={17}/></button></div><div className="form-grid">
-      {(['title','sku','isbn','selling_price','cost_price','reorder_level'] as const).map(field => <label className="field-label" key={field}>{field.replaceAll('_',' ')}<input className="text-input" required={field==='title'||field==='sku'||field==='selling_price'||field==='cost_price'} type={['selling_price','cost_price','reorder_level'].includes(field)?'number':'text'} min={['selling_price','cost_price','reorder_level'].includes(field)?'0':undefined} step={field==='reorder_level'?'1':undefined} value={form[field]} onChange={e => setForm(v => ({...v,[field]:e.target.value}))}/></label>)}
-    </div><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving…':'Save product'}</button></form>}
-    {unitBook&&<section className="card" style={{padding:20,marginBottom:16}}><div className="card-heading"><h2>Packaging · {unitBook.title}</h2><button className="secondary-button" onClick={()=>setUnitBook(null)}>Close</button></div><p>Base stock unit: 1 piece. Packaging is converted automatically when receiving stock.</p>{unitError&&<p role="alert" style={{color:'#b91c1c'}}>{unitError}</p>}<ul>{units.map(u=><li key={u.id}>{u.name} = {u.pieces_per_unit} pieces</li>)}</ul><form onSubmit={addUnit} style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:12}}><label>Packaging name <input className="text-input" required maxLength={80} value={unitName} onChange={e=>setUnitName(e.target.value)}/></label><label>Pieces per package <input className="text-input" type="number" required min={2} max={100000} value={unitFactor} onChange={e=>setUnitFactor(e.target.value)}/></label><button className="primary-button" type="submit">Add packaging</button></form></section>}
-    <section className="card catalogue-card"><div className="card-heading"><div><h2>Products catalogue</h2><p>Data loaded from Laravel and MySQL. Stock is managed separately in Inventory.</p></div><form className="catalogue-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query) }}><Search size={15}/><input aria-label="Search catalogue" placeholder="Search all products: name, category, SKU, ISBN…" value={query} onChange={e => setQuery(e.target.value)}/><button type="button" className="text-button" onClick={()=>{setQuery("");setSearch("");setCategory("");setSubcategory("");setPage(1)}}>Clear</button></form></div><div style={{display:"flex",gap:12,padding:"0 16px 16px",flexWrap:"wrap"}}><label>Category <select value={category} onChange={e=>{setCategory(e.target.value);setSubcategory("");setPage(1)}}><option value="">All categories</option>{hierarchy.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Subcategory <select value={subcategory} onChange={e=>{setSubcategory(e.target.value);setPage(1)}}><option value="">All subcategories</option>{hierarchy.filter(c=>!category||String(c.id)===category).flatMap(c=>c.subcategories).map(sc=><option key={sc.id} value={sc.id}>{sc.name}</option>)}</select></label></div>
-      {loading?<p style={{padding:20}}>Loading catalogue…</p>:<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Units & packs</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.subcategory_name || book.category_name || '—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span><button className="text-button" onClick={()=>void openUnits(book)}>Packaging</button></span></div>)}{books.length===0&&<p style={{padding:20}}>No matching products. Try another name, category, SKU or ISBN.</p>}</div>}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><label>Items per page <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}>{[10,20,50,100,200].map(n=><option key={n} value={n}>{n}</option>)}</select></label><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(lastPage)}>Last »</button></div>
+    <div className="page-heading compact"><div><div className="eyebrow">SHOP CATALOGUE</div><h1 tabIndex={-1}>Products & Books</h1><p>Products available in your shop. Add products and receive quantities from Inventory & Stock.</p></div></div>
+    <section className="card catalogue-card">
+      <div className="card-heading"><div><h2>Product catalogue</h2><p>{count.toLocaleString('en-KE')} registered products</p></div><div className="catalogue-search"><Search size={15}/><input aria-label="Search products" placeholder="Search by name, SKU or ISBN…" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button className="text-button" type="button" onClick={()=>setQuery('')}>Clear</button>}</div></div>
+      {error&&<div role="alert" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={()=>void load()}>Retry</button></div>}
+      {loading?<p style={{padding:20}}>Loading products…</p>:!error&&books.length===0?<div style={{padding:24}}><h3>{search?'No matching products':'No products registered yet'}</h3><p>{search?'Try a different search.':'Open Inventory & Stock to upload products and their quantities.'}</p></div>:!error&&<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Status</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.subcategory_name||book.category_name||'—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span>{book.is_active===false?'Inactive':'Available'}</span></div>)}</div>}
+      {!error&&lastPage>1&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:16,gap:16}}><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
     </section>
   </div>
 }
