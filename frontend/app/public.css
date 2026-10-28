@@ -26,7 +26,8 @@
 .hk-wrap { width: min(100% - 32px, 1160px); margin-inline: auto; }
 .hk-skip { position: absolute; left: 16px; top: -60px; z-index: 50; background: var(--hk-gilt); color: var(--hk-navy-deep); padding: 10px 16px; border-radius: 8px; font-weight: 600; }
 .hk-skip:focus { top: 12px; }
-.hk-page :focus-visible, .hk-auth :focus-visible { outline: 3px solid var(--hk-gilt); outline-offset: 3px; border-radius: 4px; }
+/* Form fields draw their own focus ring; everything else gets the gilt outline. */
+.hk-page :focus-visible:not(input, select, textarea), .hk-auth :focus-visible:not(input, select, textarea) { outline: 3px solid var(--hk-gilt); outline-offset: 3px; border-radius: 4px; }
 
 /* Header */
 .hk-header { background: var(--hk-navy); color: #fff; }
@@ -131,9 +132,13 @@
 .hk-auth-story { margin: auto 0 40px; max-width: 26em; }
 .hk-auth-story h1 { font-family: var(--hk-display); font-weight: 400; font-size: clamp(32px, 3.3vw, 46px); line-height: 1.08; margin: 0 0 16px; text-wrap: balance; }
 .hk-auth-story p { margin: 0; color: #c6d0e5; line-height: 1.65; }
-.hk-auth-aside .hk-shelf { max-width: 360px; margin: 0; }
-.hk-shelf-compact .hk-shelf-books { height: 190px; padding: 0 4%; }
-.hk-shelf-compact .hk-shelf-ledge { margin-right: calc(-1 * clamp(28px, 5vw, 64px)); margin-left: calc(-1 * clamp(28px, 5vw, 64px)); }
+.hk-auth-aside .hk-shelf { width: auto; max-width: none; margin: 0 calc(-1 * clamp(28px, 5vw, 64px)); }
+.hk-shelf-compact .hk-shelf-books { height: 190px; max-width: calc(380px + clamp(28px, 5vw, 64px)); padding: 0 0 0 clamp(28px, 5vw, 64px); }
+.hk-shelf-compact .hk-shelf-ledge { margin: 0; }
+/* Shorter books on the sign-in panel: smaller lettering so every title fits its spine. */
+.hk-shelf-compact .hk-spine { overflow: hidden; padding: 10px 0 8px; }
+.hk-shelf-compact .hk-spine-title { font-size: 11px; letter-spacing: 0.12em; margin: 10px 0 6px; }
+.hk-shelf-compact .hk-spine-foot { font-size: 10px; margin-top: 6px; }
 .hk-auth-main { display: flex; flex-direction: column; padding: 28px clamp(20px, 5vw, 64px); }
 .hk-auth-topline { display: flex; justify-content: flex-end; gap: 16px; font-size: 14px; color: var(--hk-ink-soft); }
 .hk-auth-topline a { color: var(--hk-navy); font-weight: 600; }
