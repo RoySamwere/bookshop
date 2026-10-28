@@ -21,6 +21,20 @@ class InventoryTest extends TestCase
         ], $attributes));
     }
 
+    /** Stock receipts must name an active supplier. */
+    private function supplier(): int
+    {
+        return DB::table('suppliers')->insertGetId(['name' => 'Longhorn Publishers', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    /** New products must belong to a subcategory. */
+    private function subcategory(): int
+    {
+        $category = DB::table('product_categories')->insertGetId(['name' => 'Textbooks', 'created_at' => now(), 'updated_at' => now()]);
+
+        return DB::table('product_subcategories')->insertGetId(['product_category_id' => $category, 'name' => 'Secondary', 'created_at' => now(), 'updated_at' => now()]);
+    }
+
     public function test_inventory_accepts_the_default_thirty_item_page_size(): void
     {
         $branch = Branch::factory()->create();
@@ -43,11 +57,11 @@ class InventoryTest extends TestCase
         $this->actingAs($user, 'sanctum');
         $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(0, 'data');
 
-        $payload = ['title' => 'New Science Book', 'sku' => 'SCI-NEW', 'isbn' => null, 'cost_price' => 350, 'selling_price' => 500, 'reorder_level' => 10];
+        $payload = ['title' => 'New Science Book', 'sku' => 'SCI-NEW', 'isbn' => null, 'cost_price' => 350, 'selling_price' => 500, 'reorder_level' => 10, 'product_subcategory_id' => $this->subcategory()];
         $book = $this->postJson('/api/books', $payload)->assertCreated()->assertJsonPath('title', 'New Science Book')->json('id');
         $this->assertDatabaseCount('inventory_balances', 0);
         $this->postJson('/api/books', $payload)->assertUnprocessable()->assertJsonValidationErrors('sku');
-        $this->postJson('/api/inventory/receive', ['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 25])
+        $this->postJson('/api/inventory/receive', ['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 25, 'supplier_id' => $this->supplier()])
             ->assertCreated()->assertJsonPath('quantity', 25);
         $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $book);
         $this->assertDatabaseHas('inventory_movements', ['book_id' => $book, 'branch_id' => $branch->id, 'type' => 'receipt', 'quantity_change' => 25]);
@@ -58,15 +72,16 @@ class InventoryTest extends TestCase
         $branch = Branch::factory()->create();
         $user = User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]);
         $book = $this->book();
+        $supplier = $this->supplier();
         $this->actingAs($user, 'sanctum');
         $this->getJson('/api/branches?active_only=1')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $branch->id);
 
         $this->postJson('/api/inventory/receive', [
             'book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 12,
-            'reference' => 'DN-001', 'notes' => 'Opening stock',
+            'reference' => 'DN-001', 'notes' => 'Opening stock', 'supplier_id' => $supplier,
         ])->assertCreated()->assertJsonPath('quantity', 12);
         $this->postJson('/api/inventory/receive', [
-            'book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 3,
+            'book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 3, 'supplier_id' => $supplier,
         ])->assertCreated()->assertJsonPath('quantity', 15);
 
         $this->assertDatabaseCount('inventory_balances', 1);
@@ -100,7 +115,7 @@ class InventoryTest extends TestCase
     {
         $branch = Branch::factory()->create();
         $other = Branch::factory()->create();
-        $payload = ['book_id' => $this->book(), 'branch_id' => $other->id, 'quantity' => 10];
+        $payload = ['book_id' => $this->book(), 'branch_id' => $other->id, 'quantity' => 10, 'supplier_id' => $this->supplier()];
         $this->postJson('/api/inventory/receive', $payload)->assertUnauthorized();
         $this->actingAs(User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]), 'sanctum')
             ->postJson('/api/inventory/receive', $payload)->assertForbidden();
