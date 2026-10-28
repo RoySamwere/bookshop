@@ -166,7 +166,7 @@ export function WorkspaceApp() {
     : active === 'Settings' ? <SettingsView currentUser={currentUser} notify={notify} />
     : active === 'Audit Log' ? <AuditView />
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
-    : active === 'Point of Sale' ? <PosLiveView notify={notify} />
+    : active === 'Point of Sale' ? <PosLiveView notify={notify} userId={currentUser.id} />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
