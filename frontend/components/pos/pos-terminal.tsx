@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Keyboard, LogOut, PauseCircle, ReceiptText, ShoppingBag } from 'lucide-react'
+import { ChevronLeft, Keyboard, LogOut, PauseCircle, ReceiptText, ShoppingBag, LayoutDashboard, Boxes, Users, Settings2, Menu, Store, ChartNoAxesColumnIncreasing } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { ApiError, errorMessage } from '../../lib/api'
 import { hasPermission, type BookshopUser } from '../../lib/auth'
 import { brand } from '../../lib/brand'
@@ -35,6 +36,8 @@ const cartSignature = (cart: CartLine[]) => cart.map(line => `${line.product.id}
 
 /** The cashier's till: scan or tap products, take payment and hand over a receipt. */
 export function PosTerminal({ currentUser, notify, onExit }: { currentUser: BookshopUser; notify: (message: string) => void; onExit: () => void }) {
+  const router = useRouter()
+  const [navOpen, setNavOpen] = useState(false)
   const userId = currentUser.id
   const canSeeSales = hasPermission(currentUser, 'sales.view')
   const wide = useWideScreen()
@@ -254,40 +257,52 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
 
   const initials = currentUser.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
-  return <div className="pos-root flex h-dvh flex-col bg-[#f3f5f9] text-[#162c4c]">
-    <header className="flex h-[72px] shrink-0 items-center gap-3 border-b-4 border-[#9e2b3a] bg-[#13254a] px-3 text-white shadow-[0_8px_30px_-16px_rgba(19,37,74,.7)] sm:px-6">
-      <BrandMark size={36} className="rounded-[10px]" />
-      <div className="min-w-0">
-        <p className="truncate text-[15px] font-bold leading-tight">{brand.name}</p>
-        <label className="flex items-center gap-1 text-[12.5px] text-[#b9c6e0]">
-          <span className="sr-only sm:not-sr-only">Till at</span>
-          <select value={branch} onChange={event => setBranch(event.target.value)} disabled={cart.length > 0 || stage === 'tender' || branches.length < 2}
-            title={cart.length ? 'Finish or hold the current sale to switch branch' : undefined}
-            className="max-w-[11rem] cursor-pointer truncate rounded bg-transparent font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-[#d4a52b] disabled:cursor-default [&>option]:text-slate-900" aria-label="Branch">
-            {branches.length === 0 && <option value="">No branch</option>}
-            {branches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
-          </select>
-        </label>
-      </div>
+  const posNav = [
+    { label: 'Dashboard', icon: LayoutDashboard, permission: 'workspace.access' },
+    { label: 'Point of Sale', icon: Store, permission: 'pos.access' },
+    { label: 'Inventory', icon: Boxes, permission: 'inventory.view' },
+    { label: 'Sales History', icon: ReceiptText, permission: 'sales.view' },
+    { label: 'Customers', icon: Users, permission: 'customers.view' },
+    { label: 'Reports', icon: ChartNoAxesColumnIncreasing, permission: 'reports.view' },
+    { label: 'Settings', icon: Settings2, permission: 'settings.view' },
+  ].filter(item => item.label === 'Point of Sale' || hasPermission(currentUser, item.permission))
+  function goToSection(section: string) {
+    setNavOpen(false)
+    if (section !== 'Point of Sale') router.push('/dashboard?section=' + encodeURIComponent(section))
+  }
 
+  return <div className="pos-root flex h-dvh overflow-hidden bg-[#f4f7fc] text-[#162c4c]">
+    {navOpen && <button type="button" className="fixed inset-0 z-40 bg-[#13254a]/40 md:hidden" onClick={() => setNavOpen(false)} aria-label="Close navigation" />}
+    <aside className={`z-50 flex w-[76px] shrink-0 flex-col items-center border-r border-white/10 bg-[#142341] py-5 text-white shadow-lg max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:transition-transform ${navOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'} md:relative md:translate-x-0`} aria-label="POS navigation">
+      <div className="mb-7 flex size-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15"><BrandMark size={34} /></div>
+      <nav className="flex w-full flex-1 flex-col items-center gap-2 px-2" aria-label="Quick navigation">
+        {posNav.map(item => { const Icon = item.icon; const active = item.label === 'Point of Sale'; return <button key={item.label} type="button" title={item.label} aria-label={item.label} aria-current={active ? 'page' : undefined} onClick={() => goToSection(item.label)} className={`relative flex size-12 items-center justify-center rounded-xl transition ${active ? 'bg-[#176cf4] text-white shadow-lg' : 'text-[#b9c9e3] hover:bg-white/10 hover:text-white'}`}><Icon size={21} aria-hidden="true" />{active && <span className="absolute -left-2 h-7 w-1 rounded-r-full bg-[#e3b450]" />}</button> })}
+      </nav>
+      <button type="button" title="Exit till" aria-label="Exit till" onClick={onExit} className="mt-3 flex size-11 items-center justify-center rounded-xl text-[#b9c9e3] hover:bg-white/10 hover:text-white"><LogOut size={21}/></button>
+    </aside>
+    <div className="flex min-w-0 flex-1 flex-col">
+    <header className="flex h-[76px] shrink-0 items-center gap-3 border-b border-[#e5ebf5] bg-white px-3 text-[#13254a] shadow-sm sm:px-6">
+      <button type="button" onClick={() => setNavOpen(true)} className="grid size-10 shrink-0 place-items-center rounded-xl border border-slate-200 md:hidden" aria-label="Open navigation"><Menu size={21}/></button>
+      <div className="hidden shrink-0 items-center gap-3 sm:flex"><BrandMark size={38} className="rounded-lg" /><div><p className="truncate text-[17px] font-extrabold leading-tight">{brand.name}</p><p className="text-[11px] font-medium text-slate-500">Books · Knowledge · A Better You</p></div></div>
+      <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-[#f7f9fd] px-3 py-2 sm:ml-5"><Store size={17} className="shrink-0 text-[#176cf4]" /><label className="flex min-w-0 items-center gap-1 text-[12px] font-semibold"><span className="hidden text-slate-500 lg:inline">Branch</span><select value={branch} onChange={event => setBranch(event.target.value)} disabled={cart.length > 0 || stage === 'tender' || branches.length < 2} title={cart.length ? 'Finish or hold the current sale to switch branch' : undefined} className="max-w-[125px] cursor-pointer truncate bg-transparent text-[#13254a] outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-default sm:max-w-[180px]" aria-label="Branch">{branches.length === 0 && <option value="">No branch</option>}{branches.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label></div>
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="hidden h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-left transition hover:bg-white/15 md:flex">
-          <ReceiptText size={18} className="text-[#b9c6e0]" aria-hidden="true" />
-          <span className="leading-tight"><span className="block text-[11.5px] text-[#b9c6e0]">Today at this branch</span>
+        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="hidden h-11 items-center gap-2 rounded-xl border border-slate-200 bg-[#f7f9fd] px-3 text-left transition hover:bg-blue-50 md:flex">
+          <ReceiptText size={18} className="text-slate-500" aria-hidden="true" />
+          <span className="leading-tight"><span className="block text-[11.5px] text-slate-500">Today at this branch</span>
             <span className="block text-[13.5px] font-bold tabular-nums">{todaySummary ? `${todaySummary.transactions} ${Number(todaySummary.transactions) === 1 ? 'sale' : 'sales'} · ${formatKes(toNumber(todaySummary.revenue))}` : '—'}</span></span>
         </button>}
-        <button type="button" onClick={() => setPanel('held')} className="relative flex h-11 items-center gap-2 rounded-xl px-3 text-[14px] font-semibold transition hover:bg-white/15" aria-label={`Held sales, ${held.length}`}>
+        <button type="button" onClick={() => setPanel('held')} className="relative flex h-11 items-center gap-2 rounded-xl px-3 text-[14px] font-semibold transition hover:bg-blue-50" aria-label={`Held sales, ${held.length}`}>
           <PauseCircle size={19} aria-hidden="true" /><span className="hidden sm:inline">Held</span>
           {held.length > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-[#d4a52b] px-1.5 text-[12px] font-bold tabular-nums text-[#13254a]">{held.length}</span>}
         </button>
         {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="grid size-10 place-items-center rounded-lg hover:bg-white/10 md:hidden" aria-label="Today's sales"><ReceiptText size={19} /></button>}
         <button type="button" onClick={() => setPanel('shortcuts')} className="hidden size-10 place-items-center rounded-lg hover:bg-white/10 sm:grid" aria-label="Keyboard shortcuts" title="Keyboard shortcuts"><Keyboard size={19} /></button>
-        <div className="mx-1 hidden h-8 w-px bg-white/15 lg:block" aria-hidden="true" />
+        <div className="mx-1 hidden h-8 w-px bg-slate-200 lg:block" aria-hidden="true" />
         <div className="hidden items-center gap-2 lg:flex">
-          <span className="grid size-9 place-items-center rounded-full bg-white/12 text-[12.5px] font-bold">{initials}</span>
-          <span className="leading-tight"><span className="block max-w-[9rem] truncate text-[13.5px] font-semibold">{currentUser.name}</span><span className="block text-[11.5px] text-[#b9c6e0]">{currentUser.role_label}</span></span>
+          <span className="grid size-9 place-items-center rounded-full bg-[#e9f0ff] text-[12.5px] font-bold">{initials}</span>
+          <span className="leading-tight"><span className="block max-w-[9rem] truncate text-[13.5px] font-semibold">{currentUser.name}</span><span className="block text-[11.5px] text-slate-500">{currentUser.role_label}</span></span>
         </div>
-        <button type="button" onClick={onExit} className="flex h-11 items-center gap-1.5 rounded-xl border border-white/25 px-3 text-[13.5px] font-semibold transition hover:border-white/50 hover:bg-white/10">
+        <button type="button" onClick={onExit} className="flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold transition hover:border-white/50 hover:bg-white/10">
           <LogOut size={16} aria-hidden="true" /><span className="hidden sm:inline">Exit till</span>
         </button>
       </div>
@@ -319,5 +334,6 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
       onDiscard={sale => { setHeld(rows => rows.filter(row => row.id !== sale.id)); notify('Held sale discarded') }} />}
     {panel === 'today' && <TodayPanel sales={todaySales} summary={todaySummary} loading={todayLoading} error={todayError} onRetry={loadToday} onOpen={sale => void openPastReceipt(sale)} onClose={() => setPanel(null)} />}
     {panel === 'shortcuts' && <ShortcutsPanel onClose={() => setPanel(null)} />}
+    </div>
   </div>
 }
