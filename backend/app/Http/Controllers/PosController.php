@@ -14,6 +14,11 @@ class PosController extends Controller
         return $request->user()->role === 'system_owner' ? null : $request->user()->branches()->pluck('branches.id')->all();
     }
 
+    public function branchesForPos(Request $request) {
+        $allowed=$this->branches($request);
+        return DB::table('branches')->where('is_active',true)->when($allowed!==null,fn($q)=>$q->whereIn('id',$allowed))->select('id','name')->orderBy('name')->get();
+    }
+
     public function products(Request $request) {
         $data=$request->validate(['branch_id'=>'required|integer|exists:branches,id','search'=>'nullable|string|max:255']);
         $allowed=$this->branches($request);
