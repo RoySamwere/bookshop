@@ -200,6 +200,11 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
   const [subcategory, setSubcategory] = useState('')
   const [hierarchy, setHierarchy] = useState<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [unitBook, setUnitBook] = useState<BookRow|null>(null)
+  const [unitName, setUnitName] = useState('Pack of 10')
+  const [unitFactor, setUnitFactor] = useState('10')
+  const [units, setUnits] = useState<{id:number;name:string;pieces_per_unit:number}[]>([])
+  const [unitError, setUnitError] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -229,6 +234,17 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save product') }
     finally { setSaving(false) }
   }
+  async function openUnits(book:BookRow) {
+    setUnitBook(book);setUnitError('');
+    try {setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${book.id}/units`))}
+    catch(e){setUnitError(e instanceof Error?e.message:'Unable to load packaging')}
+  }
+  async function addUnit(event:React.FormEvent) {
+    event.preventDefault();if(!unitBook)return;setUnitError('');
+    try {await api(`/books/${unitBook.id}/units`,{method:'POST',body:{name:unitName.trim(),pieces_per_unit:Number(unitFactor)}});
+      setUnits(await api(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
+    catch(e){setUnitError(e instanceof Error?e.message:'Unable to save packaging')}
+  }
   function downloadCsv() {
     const cells = (v: unknown) => '"' + String(v ?? '').replaceAll('"', '""') + '"'
     const lines = [['title','sku','isbn','selling_price','cost_price','reorder_level'], ...books.map(b => [b.title,b.sku,b.isbn,b.selling_price,b.cost_price,b.reorder_level])].map(row => row.map(cells).join(',')).join('\n')
@@ -242,8 +258,9 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
     {showForm && <form className="card product-form" onSubmit={saveBook}><div className="card-heading"><h2>Add a product</h2><button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={17}/></button></div><div className="form-grid">
       {(['title','sku','isbn','selling_price','cost_price','reorder_level'] as const).map(field => <label className="field-label" key={field}>{field.replaceAll('_',' ')}<input className="text-input" required={field==='title'||field==='sku'||field==='selling_price'||field==='cost_price'} type={['selling_price','cost_price','reorder_level'].includes(field)?'number':'text'} min={['selling_price','cost_price','reorder_level'].includes(field)?'0':undefined} step={field==='reorder_level'?'1':undefined} value={form[field]} onChange={e => setForm(v => ({...v,[field]:e.target.value}))}/></label>)}
     </div><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving…':'Save product'}</button></form>}
+    {unitBook&&<section className="card" style={{padding:20,marginBottom:16}}><div className="card-heading"><h2>Packaging · {unitBook.title}</h2><button className="secondary-button" onClick={()=>setUnitBook(null)}>Close</button></div><p>Base stock unit: 1 piece. Packaging is converted automatically when receiving stock.</p>{unitError&&<p role="alert" style={{color:'#b91c1c'}}>{unitError}</p>}<ul>{units.map(u=><li key={u.id}>{u.name} = {u.pieces_per_unit} pieces</li>)}</ul><form onSubmit={addUnit} style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:12}}><label>Packaging name <input className="text-input" required maxLength={80} value={unitName} onChange={e=>setUnitName(e.target.value)}/></label><label>Pieces per package <input className="text-input" type="number" required min={2} max={100000} value={unitFactor} onChange={e=>setUnitFactor(e.target.value)}/></label><button className="primary-button" type="submit">Add packaging</button></form></section>}
     <section className="card catalogue-card"><div className="card-heading"><div><h2>Products catalogue</h2><p>Data loaded from Laravel and MySQL. Stock is managed separately in Inventory.</p></div><form className="catalogue-search" onSubmit={e => { e.preventDefault(); setPage(1); setSearch(query) }}><Search size={15}/><input aria-label="Search catalogue" placeholder="Search all products: name, category, SKU, ISBN…" value={query} onChange={e => setQuery(e.target.value)}/><button type="button" className="text-button" onClick={()=>{setQuery("");setSearch("");setCategory("");setSubcategory("");setPage(1)}}>Clear</button></form></div><div style={{display:"flex",gap:12,padding:"0 16px 16px",flexWrap:"wrap"}}><label>Category <select value={category} onChange={e=>{setCategory(e.target.value);setSubcategory("");setPage(1)}}><option value="">All categories</option>{hierarchy.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Subcategory <select value={subcategory} onChange={e=>{setSubcategory(e.target.value);setPage(1)}}><option value="">All subcategories</option>{hierarchy.filter(c=>!category||String(c.id)===category).flatMap(c=>c.subcategories).map(sc=><option key={sc.id} value={sc.id}>{sc.name}</option>)}</select></label></div>
-      {loading?<p style={{padding:20}}>Loading catalogue…</p>:<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Reorder level</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.subcategory_name || book.category_name || '—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span>{book.reorder_level}</span></div>)}{books.length===0&&<p style={{padding:20}}>No matching products. Try another name, category, SKU or ISBN.</p>}</div>}
+      {loading?<p style={{padding:20}}>Loading catalogue…</p>:<div className="catalogue-table"><div className="catalogue-row catalogue-head"><span>Product</span><span>Category</span><span>SKU</span><span>Price</span><span>Units & packs</span></div>{books.map(book=><div className="catalogue-row" key={book.id}><span className="catalogue-product"><span className="mini-art teal"><BookOpen size={14}/></span><strong>{book.title}</strong></span><span>{book.subcategory_name || book.category_name || '—'}</span><span className="muted-text">{book.sku}</span><span>{money(Number(book.selling_price))}</span><span><button className="text-button" onClick={()=>void openUnits(book)}>Packaging</button></span></div>)}{books.length===0&&<p style={{padding:20}}>No matching products. Try another name, category, SKU or ISBN.</p>}</div>}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:16,gap:12}}><label>Items per page <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}>{[10,20,50,100,200].map(n=><option key={n} value={n}>{n}</option>)}</select></label><button className="secondary-button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {lastPage}</span><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(p=>p+1)}>Next</button><button className="secondary-button" disabled={page>=lastPage||loading} onClick={()=>setPage(lastPage)}>Last »</button></div>
     </section>
   </div>
