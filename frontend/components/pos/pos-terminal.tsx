@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Keyboard, LogOut, PauseCircle, ReceiptText, ShoppingBag, LayoutDashboard, Boxes, Users, Settings2, Menu, Store, ChartNoAxesColumnIncreasing } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { ApiError, errorMessage } from '../../lib/api'
-import { hasPermission, type BookshopUser } from '../../lib/auth'
+import { hasPermission, type BookshopUser, type Permission } from '../../lib/auth'
 import { brand } from '../../lib/brand'
 import { formatKes, posApi, toNumber, type PaymentMethod, type PosBranch, type PosCategory, type PosDaySummary, type PosProduct, type PosReceipt, type PosSale } from '../../lib/pos-api'
 import { addToCart, available, cartTotal, cartUnits, draftStore, heldStore, newSaleKey, setQuantity, type CartLine, type HeldSale } from '../../lib/pos-store'
@@ -257,7 +257,7 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
 
   const initials = currentUser.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
-  const posNav = [
+  const posNav: { label: string; icon: typeof Store; permission: Permission }[] = [
     { label: 'Dashboard', icon: LayoutDashboard, permission: 'workspace.access' },
     { label: 'Point of Sale', icon: Store, permission: 'pos.access' },
     { label: 'Inventory', icon: Boxes, permission: 'inventory.view' },
