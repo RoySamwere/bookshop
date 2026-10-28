@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, ChevronDown, ChevronLeft,
-  ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Search, Settings,
+  ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Plus, Search, Settings,
   ShieldCheck, ShoppingCart, Truck, Users, WalletCards, X,
 } from 'lucide-react'
 import { hasPermission, roleLabel, type BookshopUser, type Permission } from '../lib/auth'
@@ -87,12 +87,12 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [today, setToday] = useState('')
-  const mainRef = useRef<HTMLElement>(null)
+  const mainRef = useRef<HTMLDivElement>(null)
   const drawer = useOverlay<HTMLElement>(drawerOpen, () => setDrawerOpen(false), true)
   const account = useOverlay<HTMLDivElement>(accountOpen, () => setAccountOpen(false))
   const notifications = useOverlay<HTMLDivElement>(notificationsOpen, () => setNotificationsOpen(false))
   const command = useOverlay<HTMLDivElement>(searchOpen, () => setSearchOpen(false), true)
-  const visibleSections = sections.filter(section => !('permission' in section) || hasPermission(currentUser, section.permission))
+  const visibleSections = sections.filter(section => !section.permission || hasPermission(currentUser, section.permission))
   const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const modalOpen = drawerOpen || searchOpen
 
@@ -107,6 +107,10 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     const timer = window.setInterval(updateDate, 60000)
     return () => { media.removeEventListener('change', resize); window.clearInterval(timer) }
   }, [])
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 })
+  }, [active])
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -185,8 +189,8 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
             <Search size={17} /><span>Find a workspace…</span><kbd>Ctrl K</kbd>
           </button>
           <time className="header-date">{today}</time>
-          <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><PlusIcon /><span>New sale</span></button>
-          <div className="header-popover-wrap">
+          <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><Plus size={17} /><span>New sale</span></button>
+          <div className="header-popover-wrap notification-wrap">
             <button ref={notifications.triggerRef} className={`header-icon ${notificationsOpen ? 'is-open' : ''}`} aria-label="Stock notifications" aria-expanded={notificationsOpen} aria-controls="stock-notifications" onClick={() => { setNotificationsOpen(previous => !previous); setAccountOpen(false) }}><Bell size={19} /><span className="notification-indicator" /></button>
             {notificationsOpen && <div ref={notifications.panelRef} id="stock-notifications" className="header-popover notification-popover">
               <div className="popover-title"><strong>Stock attention</strong><span>Demo catalogue</span></div>
@@ -233,8 +237,4 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       </div>
     </div>}
   </div>
-}
-
-function PlusIcon() {
-  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 }

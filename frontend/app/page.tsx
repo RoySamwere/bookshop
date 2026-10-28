@@ -1,43 +1,32 @@
 'use client'
 
+
+import BrandLoader from '../components/brand-loader'
 import { useEffect, useMemo, useState } from 'react'
 import { WorkspaceShell } from '../components/workspace-shell'
 import { OverviewDashboard } from '../components/overview-dashboard'
 import { login, logout, getCurrentUser, listUsers, createUser, deleteUser, updateUserRole, hasPermission, roleLabel, type BookshopUser, type SystemUser } from '../lib/auth'
 import {
-  ArrowDownRight,
   ArrowUpRight,
-  BarChart3,
   Bell,
   BookOpen,
-  Boxes,
   CalendarDays,
   ChevronDown,
-  CircleDollarSign,
   CreditCard,
-  FileText,
   FileSpreadsheet,
   Download,
   Upload,
-  LayoutDashboard,
-  LogOut,
   Mail,
-  Menu,
   MoreHorizontal,
-  Package,
   Plus,
   Search,
   Settings,
   ShieldCheck,
   ShoppingCart,
-  SlidersHorizontal,
-  Sparkles,
   Tags,
-  Truck,
   Users,
   UserPlus,
   UserRound,
-  WalletCards,
   X,
 } from 'lucide-react'
 
@@ -154,12 +143,12 @@ function LoginPage({ onLogin }: { onLogin: (user: BookshopUser) => void }) {
   }
   return <main className="login-screen">
     <section className="login-brand-panel">
-      <div className="login-brand"><img className="nifunze-full-logo" src="/nifunze-logo.png" alt="Nifunze Lessons" /></div>
+      <div className="login-brand"><img className="nifunze-full-logo" src="/logo.png" alt="Nifunze Lessons" /></div>
       <div className="login-story"><div className="eyebrow">MADE FOR KENYAN BOOKSELLERS</div><h1 tabIndex={-1}>Keep every shelf, sale, and school order moving.</h1><p>One calm workspace for M-Pesa sales, curriculum stock, suppliers, and your regular readers.</p><div className="login-points"><span><i /> KSh-ready checkout with M-Pesa</span><span><i /> KCSE and CBC catalogue tracking</span><span><i /> School account management</span></div></div>
       <small className="login-footer">Bookshop · Kenya</small>
     </section>
     <section className="login-form-panel"><div className="login-form-wrap">
-      <div className="mobile-login-logo"><div className="brand-mark"><img src="/nifunze-favicon.png" alt="" /></div><strong>Bookshop</strong></div>
+      <div className="mobile-login-logo"><div className="brand-mark"><img src="/favicon.png" alt="" /></div><strong>Bookshop</strong></div>
       <div className="eyebrow">WELCOME BACK</div><h2>Sign in to your shop</h2>
       <p className="login-muted">Sign in with your assigned account. Access follows your role.</p>
       <form onSubmit={submit}>
@@ -610,3 +599,4 @@ function UsersView({ currentUser, setToast }: { currentUser: BookshopUser; setTo
     </div>
   )
 }
+
