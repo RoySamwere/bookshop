@@ -58,28 +58,61 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   const [bulkError,setBulkError]=useState('')
   const [bulkBusy,setBulkBusy]=useState(false)
   useEffect(()=>{if(!bulkOpen)return;api<{data:{id:number;name:string}[]}>('/suppliers',{query:{per_page:100}}).then(x=>setBulkSuppliers(x.data)).catch(e=>setBulkError(errorMessage(e)))},[bulkOpen])
-  function bulkTemplate(){
-    const url=URL.createObjectURL(new Blob(['category,subcategory,title,sku,cost_price,selling_price,quantity\r\n'],{type:'text/csv;charset=utf-8'}))
-    const a=document.createElement('a');a.href=url;a.download='hekima-stock-upload.csv';a.click();URL.revokeObjectURL(url)
+  async function bulkTemplate(){
+    if(!categories.length){setBulkError('Categories are still loading. Please try again.');return}
+    const ExcelJS=(await import('exceljs')).default
+    const wb=new ExcelJS.Workbook()
+    const ws=wb.addWorksheet('Stock Upload')
+    const lists=wb.addWorksheet('Lists')
+    const headers=['Category','Subcategory','Product Name','SKU','Cost Price','Selling Price','Quantity']
+    ws.addRow(headers)
+    ws.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}}
+    ws.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F766E'}}
+    ws.columns=[{width:34},{width:32},{width:54},{width:20},{width:18},{width:18},{width:16}]
+    const allSubs=categories.flatMap(c=>c.subcategories.map(sub=>({category:c.name,name:sub.name})))
+    lists.addRow(['Categories','Subcategories'])
+    categories.forEach((c,i)=>{lists.getCell(i+2,1).value=c.name})
+    allSubs.forEach((sub,i)=>{lists.getCell(i+2,2).value=sub.name})
+    wb.definedNames.add('CategoryOptions',`'Lists'!$A$2:$A$${categories.length+1}`)
+    wb.definedNames.add('SubcategoryOptions',`'Lists'!$B$2:$B$${allSubs.length+1}`)
+    for(let row=2;row<=501;row++){
+      ws.getCell(`A${row}`).dataValidation={type:'list',allowBlank:false,formulae:['CategoryOptions'],showErrorMessage:true,error:'Select a category from the list'}
+      ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:['SubcategoryOptions'],showErrorMessage:true,error:'Select a subcategory from the list'}
+      ws.getCell(`G${row}`).dataValidation={type:'whole',operator:'greaterThan',formulae:[0],showErrorMessage:true,error:'Quantity must be greater than zero'}
+    }
+    lists.state='veryHidden'
+    ws.views=[{state:'frozen',ySplit:1}]
+    const buffer=await wb.xlsx.writeBuffer()
+    const url=URL.createObjectURL(new Blob([buffer as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}))
+    const link=document.createElement('a');link.href=url;link.download='hekima-stock-upload.xlsx';link.click();URL.revokeObjectURL(url)
   }
   async function readBulk(file:File|undefined){
     setBulkRows([]);setBulkError('');if(!file)return
     try{
-      if(file.size>5_000_000)throw new Error('CSV must be under 5 MB')
-      const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean)
-      if(lines.shift()?.trim().toLowerCase()!=='category,subcategory,title,sku,cost_price,selling_price,quantity')throw new Error('Use the updated stock upload template with category and subcategory.')
-      const rows=lines.map((line,i)=>{
-        const parts=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''))
-        if(parts.length!==7||!parts[0]||!parts[1]||!parts[2]||!parts[3]||parts.slice(4).some(v=>v===''||!Number.isFinite(Number(v))||Number(v)<0)||!Number.isInteger(Number(parts[6]))||Number(parts[6])<1)throw new Error(`Invalid row ${i+2}. Avoid commas in product names.`)
+      if(file.size>5_000_000)throw new Error('Excel file must be under 5 MB')
+      if(!/\\.xlsx$/i.test(file.name))throw new Error('Upload the completed .xlsx Excel template.')
+      const ExcelJS=(await import('exceljs')).default
+      const wb=new ExcelJS.Workbook()
+      await wb.xlsx.load(await file.arrayBuffer() as never)
+      const ws=wb.getWorksheet('Stock Upload')
+      if(!ws)throw new Error('Use the downloaded Hekima Excel template.')
+      const rows:{title:string;sku:string;cost_price:number;selling_price:number;quantity:number;product_subcategory_id:number}[]=[]
+      const value=(row:number,col:number)=>String(ws.getRow(row).getCell(col).text??'').trim()
+      for(let i=2;i<=ws.rowCount;i++){
+        const parts=Array.from({length:7},(_,j)=>value(i,j+1))
+        if(parts.every(v=>!v))continue
+        if(parts.some(v=>!v))throw new Error(`Row ${i}: complete all seven columns.`)
         const category=categories.find(c=>c.name.toLowerCase()===parts[0].toLowerCase())
         const subcategory=category?.subcategories.find(c=>c.name.toLowerCase()===parts[1].toLowerCase())
-        if(!subcategory)throw new Error(`Row ${i+2}: category / subcategory not found. Use the exact names shown in the guide.`)
-        return {title:parts[2],sku:parts[3],cost_price:Number(parts[4]),selling_price:Number(parts[5]),quantity:Number(parts[6]),product_subcategory_id:subcategory.id}
-      })
-      if(!rows.length)throw new Error('CSV has no products')
-      if(new Set(rows.map(x=>x.sku.toLowerCase())).size!==rows.length)throw new Error('Duplicate SKU in CSV')
+        if(!subcategory)throw new Error(`Row ${i}: subcategory does not belong to selected category.`)
+        const cost=Number(parts[4]),selling=Number(parts[5]),quantity=Number(parts[6])
+        if(!Number.isFinite(cost)||cost<0||!Number.isFinite(selling)||selling<0||!Number.isInteger(quantity)||quantity<1)throw new Error(`Row ${i}: invalid price or quantity.`)
+        rows.push({title:parts[2],sku:parts[3],cost_price:cost,selling_price:selling,quantity,product_subcategory_id:subcategory.id})
+      }
+      if(!rows.length)throw new Error('Excel workbook has no products.')
+      if(new Set(rows.map(x=>x.sku.toLowerCase())).size!==rows.length)throw new Error('Duplicate SKU in workbook.')
       setBulkRows(rows)
-    }catch(e){setBulkError(e instanceof Error?e.message:'Cannot read CSV')}
+    }catch(e){setBulkError(e instanceof Error?e.message:'Cannot read Excel workbook')}
   }
   async function uploadBulk(){
     if(!bulkRows.length||!bulkSupplier||!bulkBranch||bulkBusy)return
@@ -103,15 +136,15 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   const summary = result?.summary
   return <div className="inventory-page">
     <div className="page-heading compact"><div><div className="eyebrow">OPERATIONS · INVENTORY CONTROL</div><h1 tabIndex={-1}>Inventory & Stock</h1><p>Monitor stock levels, receive deliveries, and keep your shelves ready for customers.</p></div><div className="heading-actions"><button className={secondaryButton} onClick={exportPage} disabled={loading || !!error || !result?.data.length}><Download size={16} /> Export current page</button>{canManage && <button className={secondaryButton} onClick={()=>{setBulkOpen(true);setBulkBranch(branch||String(branches.find(b=>b.is_active)?.id??""))}}>Bulk upload stock CSV</button>}{canManage && <button className={primaryButton} onClick={() => setReceipt({ branchId: branch ? Number(branch) : undefined })} disabled={!branches.some(b => b.is_active)}><Plus size={17} /> Receive stock</button>}</div></div>
-    {bulkOpen&&<Modal variant="original" title="Bulk upload stock" description="Add products and stock quantities from a CSV file." icon={<PackagePlus size={21}/>} busy={bulkBusy} onClose={()=>setBulkOpen(false)}>
+    {bulkOpen&&<Modal variant="original" title="Bulk upload stock" description="Add products and stock quantities from an Excel workbook." icon={<PackagePlus size={21}/>} busy={bulkBusy} onClose={()=>setBulkOpen(false)}>
       <div className="max-h-[70vh] space-y-5 overflow-y-auto p-1">
-        <div className="rounded-xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-900"><strong>How it works</strong><p className="mt-1 text-teal-800">Download the template, enter products with quantities, then choose a branch and supplier. Existing SKUs receive more stock; new SKUs are added to your catalogue.</p></div>
-        <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={bulkTemplate}><Download size={16}/> Download CSV template</button>
+        <div className="rounded-xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-900"><strong>How it works</strong><p className="mt-1 text-teal-800">Download the Excel template, select categories and subcategories from dropdowns, enter products with quantities, then choose a branch and supplier. Existing SKUs receive more stock; new SKUs are added to your catalogue.</p></div>
+        <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={()=>void bulkTemplate()}><Download size={16}/> Download Excel template</button>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="space-y-1.5 text-sm font-semibold text-slate-700">Receiving branch<select className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" value={bulkBranch} onChange={e=>setBulkBranch(e.target.value)}><option value="">Select branch</option>{branches.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
           <label className="space-y-1.5 text-sm font-semibold text-slate-700">Supplier<select className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" value={bulkSupplier} onChange={e=>setBulkSupplier(e.target.value)}><option value="">Select supplier</option>{bulkSuppliers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         </div>
-        <label className="block space-y-2 text-sm font-semibold text-slate-700">Upload completed CSV<input className="block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-sm font-normal text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-teal-400" type="file" accept=".csv,text/csv" onChange={e=>void readBulk(e.target.files?.[0])}/></label>
+        <label className="block space-y-2 text-sm font-semibold text-slate-700">Upload completed Excel file<input className="block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-sm font-normal text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-teal-400" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e=>void readBulk(e.target.files?.[0])}/></label>
         {bulkError&&<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{bulkError}</div>}
         {bulkRows.length>0&&<div className="flex justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700"><span><strong>{bulkRows.length}</strong> products</span><span><strong>{bulkRows.reduce((n,r)=>n+r.quantity,0).toLocaleString()}</strong> units to receive</span></div>}
         <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4"><button type="button" className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50" disabled={bulkBusy} onClick={()=>setBulkOpen(false)}>Cancel</button><button type="button" className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50" disabled={!bulkRows.length||!bulkSupplier||!bulkBranch||bulkBusy} onClick={()=>void uploadBulk()}>{bulkBusy?'Uploading…':'Confirm stock upload'}</button></div>
