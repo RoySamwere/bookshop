@@ -11,6 +11,7 @@ const inputClass = 'text-input'
 const primaryButton = 'primary-button'
 const secondaryButton = 'secondary-button'
 
+type CategoryGroup = {id:number;name:string;subcategories:{id:number;name:string}[]}
 type StockRow = { id: number; book_id: number; branch_id: number; title: string; sku: string; isbn: string | null; quantity: number; reserved: number; reorder_level: number; branch_name: string }
 type Book = { id: number; title: string; sku: string; is_active: boolean; category_name?: string|null; subcategory_name?: string|null; brand?: string|null; page_count?: number|null; ruling_style?: string|null }
 type StockPage = { data: StockRow[]; current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null; summary: { units: number; value: number; stock_lines: number; low: number; out_of_stock: number } }
@@ -47,8 +48,10 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     return () => { cancelled = true }
   }, [branch, status, search, page, perPage, reload])
 
+  const [categories,setCategories]=useState<CategoryGroup[]>([])
+  useEffect(()=>{api<CategoryGroup[]>('/product-hierarchy').then(setCategories).catch(()=>{})},[])
   const [bulkOpen,setBulkOpen]=useState(false)
-  const [bulkRows,setBulkRows]=useState<{title:string;sku:string;cost_price:number;selling_price:number;quantity:number}[]>([])
+  const [bulkRows,setBulkRows]=useState<{title:string;sku:string;cost_price:number;selling_price:number;quantity:number;product_subcategory_id:number}[]>([])
   const [bulkSupplier,setBulkSupplier]=useState('')
   const [bulkBranch,setBulkBranch]=useState('')
   const [bulkSuppliers,setBulkSuppliers]=useState<{id:number;name:string}[]>([])
@@ -56,7 +59,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   const [bulkBusy,setBulkBusy]=useState(false)
   useEffect(()=>{if(!bulkOpen)return;api<{data:{id:number;name:string}[]}>('/suppliers',{query:{per_page:100}}).then(x=>setBulkSuppliers(x.data)).catch(e=>setBulkError(errorMessage(e)))},[bulkOpen])
   function bulkTemplate(){
-    const url=URL.createObjectURL(new Blob(['title,sku,cost_price,selling_price,quantity\r\n'],{type:'text/csv;charset=utf-8'}))
+    const url=URL.createObjectURL(new Blob(['category,subcategory,title,sku,cost_price,selling_price,quantity\r\n'],{type:'text/csv;charset=utf-8'}))
     const a=document.createElement('a');a.href=url;a.download='hekima-stock-upload.csv';a.click();URL.revokeObjectURL(url)
   }
   async function readBulk(file:File|undefined){
@@ -64,11 +67,14 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     try{
       if(file.size>5_000_000)throw new Error('CSV must be under 5 MB')
       const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean)
-      if(lines.shift()?.trim()!=='title,sku,cost_price,selling_price,quantity')throw new Error('Use the downloaded stock upload template.')
+      if(lines.shift()?.trim().toLowerCase()!=='category,subcategory,title,sku,cost_price,selling_price,quantity')throw new Error('Use the updated stock upload template with category and subcategory.')
       const rows=lines.map((line,i)=>{
         const parts=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''))
-        if(parts.length!==5||!parts[0]||!parts[1]||parts.slice(2).some(v=>v===''||!Number.isFinite(Number(v))||Number(v)<0)||!Number.isInteger(Number(parts[4]))||Number(parts[4])<1)throw new Error(`Invalid row ${i+2}. Avoid commas in product names.`)
-        return {title:parts[0],sku:parts[1],cost_price:Number(parts[2]),selling_price:Number(parts[3]),quantity:Number(parts[4])}
+        if(parts.length!==7||!parts[0]||!parts[1]||!parts[2]||!parts[3]||parts.slice(4).some(v=>v===''||!Number.isFinite(Number(v))||Number(v)<0)||!Number.isInteger(Number(parts[6]))||Number(parts[6])<1)throw new Error(`Invalid row ${i+2}. Avoid commas in product names.`)
+        const category=categories.find(c=>c.name.toLowerCase()===parts[0].toLowerCase())
+        const subcategory=category?.subcategories.find(c=>c.name.toLowerCase()===parts[1].toLowerCase())
+        if(!subcategory)throw new Error(`Row ${i+2}: category / subcategory not found. Use the exact names shown in the guide.`)
+        return {title:parts[2],sku:parts[3],cost_price:Number(parts[4]),selling_price:Number(parts[5]),quantity:Number(parts[6]),product_subcategory_id:subcategory.id}
       })
       if(!rows.length)throw new Error('CSV has no products')
       if(new Set(rows.map(x=>x.sku.toLowerCase())).size!==rows.length)throw new Error('Duplicate SKU in CSV')
@@ -100,6 +106,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     {bulkOpen&&<Modal variant="original" title="Bulk upload stock" description="Add products and stock quantities from a CSV file." icon={<PackagePlus size={21}/>} busy={bulkBusy} onClose={()=>setBulkOpen(false)}>
       <div className="max-h-[70vh] space-y-5 overflow-y-auto p-1">
         <div className="rounded-xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-900"><strong>How it works</strong><p className="mt-1 text-teal-800">Download the template, enter products with quantities, then choose a branch and supplier. Existing SKUs receive more stock; new SKUs are added to your catalogue.</p></div>
+        <details className="rounded-xl border border-slate-200 p-3 text-sm"><summary className="cursor-pointer font-semibold text-slate-700">View available categories and subcategories</summary><div className="mt-3 grid gap-2 sm:grid-cols-2">{categories.map(c=><div key={c.id}><strong className="text-slate-900">{c.name}</strong><p className="text-xs text-slate-500">{c.subcategories.map(x=>x.name).join(' · ')}</p></div>)}</div></details>
         <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={bulkTemplate}><Download size={16}/> Download CSV template</button>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="space-y-1.5 text-sm font-semibold text-slate-700">Receiving branch<select className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" value={bulkBranch} onChange={e=>setBulkBranch(e.target.value)}><option value="">Select branch</option>{branches.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
