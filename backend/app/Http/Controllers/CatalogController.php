@@ -1,0 +1,68 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+
+class CatalogController extends Controller
+{
+    public function books(Request $request) {
+        return DB::table('books')->when($request->query('search'), fn ($q, $s) => $q->where(fn ($q) => $q->where('title','like',"%{$s}%")->orWhere('isbn','like',"%{$s}%")->orWhere('sku','like',"%{$s}%")))->orderBy('title')->paginate(20);
+    }
+    public function storeBook(Request $request) {
+        $data = $request->validate([
+            'title'=>'required|string|max:255','subtitle'=>'nullable|string|max:255','isbn'=>'nullable|string|max:20|unique:books,isbn',
+            'sku'=>'required|string|max:100|unique:books,sku','book_category_id'=>'nullable|exists:book_categories,id',
+            'publisher_id'=>'nullable|exists:publishers,id','edition'=>'nullable|string|max:100','language'=>'nullable|string|max:100',
+            'curriculum'=>'nullable|string|max:100','grade'=>'nullable|string|max:100','description'=>'nullable|string',
+            'cover_url'=>'nullable|url|max:2048','cost_price'=>'required|numeric|min:0','selling_price'=>'required|numeric|min:0',
+            'reorder_level'=>'integer|min:0','is_active'=>'boolean','author_ids'=>'array','author_ids.*'=>'integer|exists:authors,id'
+        ]);
+        $authors = $data['author_ids'] ?? []; unset($data['author_ids']);
+        $id = DB::transaction(function () use ($data,$authors) {
+            $id = DB::table('books')->insertGetId(array_merge($data,['created_at'=>now(),'updated_at'=>now()]));
+            foreach (array_unique($authors) as $author) DB::table('author_book')->insert(['book_id'=>$id,'author_id'=>$author]);
+            return $id;
+        });
+        return response()->json(DB::table('books')->find($id),201);
+    }
+    public function updateBook(Request $request, int $book) {
+        abort_unless(DB::table('books')->where('id',$book)->exists(),404);
+        $data=$request->validate([
+            'title'=>'sometimes|required|string|max:255','subtitle'=>'nullable|string|max:255',
+            'isbn'=>['nullable','string','max:20',Rule::unique('books','isbn')->ignore($book)],
+            'sku'=>['sometimes','required','string','max:100',Rule::unique('books','sku')->ignore($book)],
+            'book_category_id'=>'nullable|exists:book_categories,id','publisher_id'=>'nullable|exists:publishers,id',
+            'edition'=>'nullable|string|max:100','language'=>'nullable|string|max:100','curriculum'=>'nullable|string|max:100',
+            'grade'=>'nullable|string|max:100','description'=>'nullable|string','cover_url'=>'nullable|url|max:2048',
+            'cost_price'=>'numeric|min:0','selling_price'=>'numeric|min:0','reorder_level'=>'integer|min:0','is_active'=>'boolean',
+            'author_ids'=>'array','author_ids.*'=>'integer|exists:authors,id'
+        ]);
+        $authors=$data['author_ids']??null;unset($data['author_ids']);
+        DB::transaction(function () use ($book,$data,$authors) {
+            if($data) DB::table('books')->where('id',$book)->update(array_merge($data,['updated_at'=>now()]));
+            if($authors!==null) { DB::table('author_book')->where('book_id',$book)->delete(); foreach(array_unique($authors) as $author) DB::table('author_book')->insert(['book_id'=>$book,'author_id'=>$author]); }
+        });
+        return DB::table('books')->find($book);
+    }
+    public function lookup(string $table) {
+        abort_unless(in_array($table,['authors','publishers','book_categories'],true),404);
+        return DB::table($table)->orderBy('name')->get();
+    }
+    public function createLookup(Request $request,string $table) {
+        abort_unless(in_array($table,['authors','publishers','book_categories'],true),404);
+        $data=$request->validate(['name'=>['required','string','max:255',Rule::unique($table,'name')]]);
+        $id=DB::table($table)->insertGetId(array_merge($data,['created_at'=>now(),'updated_at'=>now()]));
+        return response()->json(DB::table($table)->find($id),201);
+    }
+    public function suppliers(Request $request) {
+        return DB::table('suppliers')->when($request->query('search'),fn($q,$s)=>$q->where('name','like',"%{$s}%"))->orderBy('name')->paginate(20);
+    }
+    public function storeSupplier(Request $request) {
+        $data=$request->validate(['name'=>'required|string|max:255','contact_person'=>'nullable|string|max:255','email'=>'nullable|email','phone'=>'nullable|string|max:50','address'=>'nullable|string','tax_pin'=>'nullable|string|max:50']);
+        $id=DB::table('suppliers')->insertGetId(array_merge($data,['created_at'=>now(),'updated_at'=>now()]));
+        return response()->json(DB::table('suppliers')->find($id),201);
+    }
+}
