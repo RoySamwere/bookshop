@@ -76,11 +76,11 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     wb.definedNames.add('CategoryOptions',`'Lists'!$A$2:$A$${categories.length+1}`)
     wb.definedNames.add('SubcategoryOptions',`'Lists'!$B$2:$B$${allSubs.length+1}`)
     for(let row=2;row<=501;row++){
-      ws.getCell(`A${row}`).dataValidation={type:'list',allowBlank:false,formulae:['CategoryOptions'],showErrorMessage:true,error:'Select a category from the list'}
-      ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:['SubcategoryOptions'],showErrorMessage:true,error:'Select a subcategory from the list'}
+      ws.getCell(`A${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=CategoryOptions'],showErrorMessage:true,error:'Select a category from the list'}
+      ws.getCell(`B${row}`).dataValidation={type:'list',allowBlank:false,formulae:['=SubcategoryOptions'],showErrorMessage:true,error:'Select a subcategory from the list'}
       ws.getCell(`G${row}`).dataValidation={type:'whole',operator:'greaterThan',formulae:[0],showErrorMessage:true,error:'Quantity must be greater than zero'}
     }
-    lists.state='veryHidden'
+    lists.state='visible'
     ws.views=[{state:'frozen',ySplit:1}]
     const buffer=await wb.xlsx.writeBuffer()
     const url=URL.createObjectURL(new Blob([buffer as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}))
