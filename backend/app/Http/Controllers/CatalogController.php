@@ -10,7 +10,7 @@ class CatalogController extends Controller
 {
     public function books(Request $request) {
         $request->validate([
-            'search'=>'nullable|string|max:255','per_page'=>'nullable|integer|in:10,20,50,100,200',
+            'search'=>'nullable|string|max:255','per_page'=>'nullable|integer|in:10,20,30,50,100,200',
             'category_id'=>'nullable|integer|exists:product_categories,id',
             'subcategory_id'=>'nullable|integer|exists:product_subcategories,id',
             'ruling_style'=>'nullable|string|max:100','page_count'=>'nullable|integer|min:1',
