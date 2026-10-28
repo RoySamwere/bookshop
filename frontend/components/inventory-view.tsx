@@ -47,6 +47,46 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
     return () => { cancelled = true }
   }, [branch, status, search, page, perPage, reload])
 
+  const [bulkOpen,setBulkOpen]=useState(false)
+  const [bulkRows,setBulkRows]=useState<{title:string;sku:string;cost_price:number;selling_price:number;quantity:number}[]>([])
+  const [bulkSupplier,setBulkSupplier]=useState('')
+  const [bulkBranch,setBulkBranch]=useState('')
+  const [bulkSuppliers,setBulkSuppliers]=useState<{id:number;name:string}[]>([])
+  const [bulkError,setBulkError]=useState('')
+  const [bulkBusy,setBulkBusy]=useState(false)
+  useEffect(()=>{if(!bulkOpen)return;api<{data:{id:number;name:string}[]}>('/suppliers',{query:{per_page:100}}).then(x=>setBulkSuppliers(x.data)).catch(e=>setBulkError(errorMessage(e)))},[bulkOpen])
+  function bulkTemplate(){
+    const url=URL.createObjectURL(new Blob(['title,sku,cost_price,selling_price,quantity\r\n'],{type:'text/csv;charset=utf-8'}))
+    const a=document.createElement('a');a.href=url;a.download='hekima-stock-upload.csv';a.click();URL.revokeObjectURL(url)
+  }
+  async function readBulk(file:File|undefined){
+    setBulkRows([]);setBulkError('');if(!file)return
+    try{
+      if(file.size>5_000_000)throw new Error('CSV must be under 5 MB')
+      const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean)
+      if(lines.shift()?.trim()!=='title,sku,cost_price,selling_price,quantity')throw new Error('Use the downloaded stock upload template.')
+      const rows=lines.map((line,i)=>{
+        const parts=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''))
+        if(parts.length!==5||!parts[0]||!parts[1]||parts.slice(2).some(v=>v===''||!Number.isFinite(Number(v))||Number(v)<0)||!Number.isInteger(Number(parts[4]))||Number(parts[4])<1)throw new Error(`Invalid row ${i+2}. Avoid commas in product names.`)
+        return {title:parts[0],sku:parts[1],cost_price:Number(parts[2]),selling_price:Number(parts[3]),quantity:Number(parts[4])}
+      })
+      if(!rows.length)throw new Error('CSV has no products')
+      if(new Set(rows.map(x=>x.sku.toLowerCase())).size!==rows.length)throw new Error('Duplicate SKU in CSV')
+      setBulkRows(rows)
+    }catch(e){setBulkError(e instanceof Error?e.message:'Cannot read CSV')}
+  }
+  async function uploadBulk(){
+    if(!bulkRows.length||!bulkSupplier||!bulkBranch||bulkBusy)return
+    setBulkBusy(true);setBulkError('');let received=0
+    try{
+      for(let i=0;i<bulkRows.length;i+=100){
+        const result=await api<{received:number}>('/inventory/bulk-receive',{method:'POST',body:{branch_id:Number(bulkBranch),supplier_id:Number(bulkSupplier),rows:bulkRows.slice(i,i+100)}})
+        received+=result.received
+      }
+      setBulkRows([]);setBulkOpen(false);setReload(x=>x+1);notify(`${received} products received and saved to Products & Books and Inventory`)
+    }catch(e){setBulkError(`${received} rows already received. ${errorMessage(e)}`)}
+    finally{setBulkBusy(false)}
+  }
   function exportPage() {
     if (!result) return
     const cell = (value: unknown) => `"${String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`
@@ -56,7 +96,8 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   }
   const summary = result?.summary
   return <div className="inventory-page">
-    <div className="page-heading compact"><div><div className="eyebrow">OPERATIONS · INVENTORY CONTROL</div><h1 tabIndex={-1}>Inventory & Stock</h1><p>Monitor stock levels, receive deliveries, and keep your shelves ready for customers.</p></div><div className="heading-actions"><button className={secondaryButton} onClick={exportPage} disabled={loading || !!error || !result?.data.length}><Download size={16} /> Export current page</button>{canManage && <button className={primaryButton} onClick={() => setReceipt({ branchId: branch ? Number(branch) : undefined })} disabled={!branches.some(b => b.is_active)}><Plus size={17} /> Receive stock</button>}</div></div>
+    <div className="page-heading compact"><div><div className="eyebrow">OPERATIONS · INVENTORY CONTROL</div><h1 tabIndex={-1}>Inventory & Stock</h1><p>Monitor stock levels, receive deliveries, and keep your shelves ready for customers.</p></div><div className="heading-actions"><button className={secondaryButton} onClick={exportPage} disabled={loading || !!error || !result?.data.length}><Download size={16} /> Export current page</button>{canManage && <button className={secondaryButton} onClick={()=>{setBulkOpen(true);setBulkBranch(branch||String(branches.find(b=>b.is_active)?.id??""))}}>Bulk upload stock CSV</button>}{canManage && <button className={primaryButton} onClick={() => setReceipt({ branchId: branch ? Number(branch) : undefined })} disabled={!branches.some(b => b.is_active)}><Plus size={17} /> Receive stock</button>}</div></div>
+    {bulkOpen&&<section className="card" style={{padding:20,marginBottom:20}}><h2>Bulk upload products with quantities</h2><p>Upload actual products and quantities. Existing SKUs receive additional stock; new SKUs are registered in Products & Books automatically. Select a branch and supplier for the stock receipt.</p><button className="secondary-button" type="button" onClick={bulkTemplate}><Download size={16}/> Download CSV template</button><div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:14}}><label>Receiving branch <select value={bulkBranch} onChange={e=>setBulkBranch(e.target.value)}><option value="">Select branch</option>{branches.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><label>Supplier <select value={bulkSupplier} onChange={e=>setBulkSupplier(e.target.value)}><option value="">Select supplier</option>{bulkSuppliers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Completed CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readBulk(e.target.files?.[0])}/></label></div>{bulkError&&<p role="alert" style={{color:'#b91c1c'}}>{bulkError}</p>}{bulkRows.length>0&&<p>{bulkRows.length} products · {bulkRows.reduce((n,r)=>n+r.quantity,0)} units to receive</p>}<div style={{display:'flex',gap:12,marginTop:12}}><button className="primary-button" disabled={!bulkRows.length||!bulkSupplier||!bulkBranch||bulkBusy} onClick={()=>void uploadBulk()}>{bulkBusy?'Receiving…':'Confirm stock upload'}</button><button className="secondary-button" disabled={bulkBusy} onClick={()=>setBulkOpen(false)}>Cancel</button></div></section>}
     {branchError && <div className="mb-5"><ErrorState message={branchError} onRetry={() => void loadBranches()} /></div>}
     <div className="inventory-stats">
       <div className="card catalog-stat"><span>Inventory value</span><strong>{loading || error ? '—' : money(summary?.value ?? 0)}</strong><small>At selling price</small></div>
