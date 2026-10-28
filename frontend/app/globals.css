@@ -70,3 +70,10 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .nifunze-full-logo { width:min(250px,75%); height:auto; object-fit:contain; }
 .login-brand { min-height:80px; }
 .login-brand .nifunze-full-logo { filter:drop-shadow(0 4px 12px #0002); }
+
+/* Inline Nifunze fish loader used by page, panel and button loading states. */
+.fish-inline { display:inline-grid; place-items:center; color:#087df5; }
+.fish-inline svg { width:100%; height:100%; animation:fish-swim 1.9s ease-in-out infinite; }
+.fish-inline-md { width:54px; height:34px; }
+.fish-inline-sm { width:26px; height:16px; }
+@media (prefers-reduced-motion:reduce) { .fish-inline svg { animation:none; } }

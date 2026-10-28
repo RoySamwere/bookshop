@@ -2,9 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
+use App\Models\User;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -12,37 +17,123 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        $user = \App\Models\User::where('email', $credentials['email'])->first();
+        $user = User::where('email', $credentials['email'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            AuditLog::record('auth.login_failed', 'Failed sign-in attempt', $user, ['email' => $credentials['email']], $user);
             throw ValidationException::withMessages(['email' => ['The email or password is incorrect.']]);
         }
 
-        if (! $user->canAccessWorkspace()) {
+        if (! $user->is_active) {
+            return response()->json(['message' => 'Your account has been deactivated. Contact your administrator.'], 403);
+        }
+
+        if (! $user->canSignIn()) {
             return response()->json(['message' => 'Your account is not authorised to sign in.'], 403);
         }
 
-        $token = $user->createToken('bookshop-web')->plainTextToken;
+        $token = $user->createToken('bookshop-web', ['*'], $this->tokenExpiry())->plainTextToken;
+        $user->forceFill(['last_login_at' => now()])->save();
+        AuditLog::record('auth.login', "{$user->name} signed in", $user, actor: $user);
 
         return response()->json([
-            'token' => $token,
-            'user'  => $user->authData(),
+            'message' => 'Signed in successfully.',
+            'data' => ['token' => $token, 'user' => $user->authData()],
         ]);
     }
 
     public function me(Request $request): JsonResponse
     {
-        return response()->json(['user' => $request->user()->authData()]);
+        return response()->json(['data' => $request->user()->authData()]);
     }
 
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()?->delete();
+        AuditLog::record('auth.logout', "{$request->user()->name} signed out", $request->user());
 
         return response()->json(['message' => 'Signed out successfully.']);
+    }
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\s-]{7,30}$/'],
+        ], ['phone.regex' => 'Enter a valid phone number.']);
+
+        $user->fill($data)->save();
+        AuditLog::record('auth.profile_updated', "{$user->name} updated their profile", $user, ['fields' => array_keys($data)]);
+
+        return response()->json(['message' => 'Profile updated.', 'data' => $user->authData()]);
+    }
+
+    public function changePassword(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $request->validate([
+            'current_password' => ['required', 'current_password:sanctum'],
+            'password' => ['required', 'confirmed', 'different:current_password', PasswordRule::min(8)],
+        ], ['current_password.current_password' => 'Your current password is incorrect.']);
+
+        $user->password = $request->input('password');
+        $user->save();
+        // Keep this session; sign out every other device.
+        $user->tokens()->whereKeyNot($user->currentAccessToken()->id)->delete();
+        AuditLog::record('auth.password_changed', "{$user->name} changed their password", $user);
+
+        return response()->json(['message' => 'Password changed. Other devices have been signed out.']);
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate(['email' => ['required', 'email']]);
+        $user = User::where('email', $request->input('email'))->first();
+
+        if ($user?->canSignIn()) {
+            Password::sendResetLink(['email' => $user->email]);
+            AuditLog::record('auth.password_reset_requested', "Password reset requested for {$user->email}", $user, actor: $user);
+        }
+
+        // Same response whether or not the account exists, so emails cannot be discovered.
+        return response()->json(['message' => 'If that email belongs to an active account, a reset link has been sent.']);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password) {
+                $user->password = $password;
+                $user->save();
+                $user->tokens()->delete();
+                event(new PasswordReset($user));
+                AuditLog::record('auth.password_reset', "{$user->name} reset their password", $user, actor: $user);
+            },
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages(['email' => [__($status)]]);
+        }
+
+        return response()->json(['message' => 'Your password has been reset. You can now sign in.']);
+    }
+
+    private function tokenExpiry(): ?\DateTimeInterface
+    {
+        $minutes = (int) config('sanctum.expiration');
+
+        return $minutes > 0 ? now()->addMinutes($minutes) : null;
     }
 }

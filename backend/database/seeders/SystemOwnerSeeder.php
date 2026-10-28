@@ -37,6 +37,7 @@ class SystemOwnerSeeder extends Seeder
 
         $user->name = $name;
         $user->role = 'system_owner';
+        $user->is_active = true;
         $user->email_verified_at ??= now();
         $user->save();
     }

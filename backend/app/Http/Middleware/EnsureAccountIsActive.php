@@ -6,11 +6,16 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class EnsureWorkspaceAccess
+class EnsureAccountIsActive
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user()?->canAccessWorkspace()) {
+        $user = $request->user();
+
+        if (! $user?->canSignIn()) {
+            // Tokens of deactivated or unknown-role accounts stop working immediately.
+            $user?->currentAccessToken()?->delete();
+
             return response()->json(['message' => 'Your account is not authorised to access the system.'], 403);
         }
 

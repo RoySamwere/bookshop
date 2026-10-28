@@ -30,7 +30,15 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'role' => 'cashier',
+            'is_active' => true,
         ];
+    }
+
+    /** Staff account working in the given branches. */
+    public function inBranches(\App\Models\Branch ...$branches): static
+    {
+        return $this->afterCreating(fn ($user) => $user->branches()->attach(collect($branches)->pluck('id')));
     }
 
     /**

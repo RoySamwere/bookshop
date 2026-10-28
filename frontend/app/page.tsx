@@ -1,32 +1,33 @@
 'use client'
 
-
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import BrandLoader from '../components/brand-loader'
-import { useEffect, useMemo, useState } from 'react'
-import { WorkspaceShell } from '../components/workspace-shell'
+import { WorkspaceShell, PROFILE_SECTION, canOpenSection, firstSection } from '../components/workspace-shell'
 import { OverviewDashboard } from '../components/overview-dashboard'
-import { login, logout, getCurrentUser, listUsers, createUser, deleteUser, updateUserRole, hasPermission, roleLabel, type BookshopUser, type SystemUser } from '../lib/auth'
+import { LoginPage, type ResetLink } from '../components/auth-screens'
+import { UsersView } from '../components/users-view'
+import { SettingsView } from '../components/settings-view'
+import { AuditView } from '../components/audit-view'
+import { CustomerHome, ProfileView } from '../components/profile-view'
+import { ErrorState } from '../components/ui-kit'
+import { ApiError, UNAUTHORIZED_EVENT, tokenStore } from '../lib/api'
+import { getCurrentUser, hasPermission, logout, type BookshopUser } from '../lib/auth'
 import {
   ArrowUpRight,
   Bell,
   BookOpen,
-  CalendarDays,
   ChevronDown,
   CreditCard,
   FileSpreadsheet,
   Download,
+  Info,
   Upload,
-  Mail,
   MoreHorizontal,
   Plus,
   Search,
-  Settings,
-  ShieldCheck,
   ShoppingCart,
   Tags,
   Users,
-  UserPlus,
-  UserRound,
   X,
 } from 'lucide-react'
 
@@ -50,6 +51,25 @@ const sales = [
 
 const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+// Modules below still run on sample data; they connect to live records in later phases.
+const PREVIEW_MODULES: Record<string, string> = {
+  'Dashboard': 'Phase 5', 'Point of Sale': 'Phase 3', 'Sales History': 'Phase 3', 'Products & Books': 'Phase 2',
+  'Inventory & Stock': 'Phase 2', 'Suppliers': 'Phase 2', 'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
+}
+
+function PreviewNotice({ section }: { section: string }) {
+  return <div className="mx-[34px] mt-5 flex items-start gap-2.5 rounded-xl border border-pink-200 bg-pink-50/70 px-4 py-3 text-[13px] text-[#8a3a6a] max-sm:mx-4" role="note">
+    <Info size={16} className="mt-0.5 shrink-0" /><span><strong>Preview with sample data.</strong> {section} connects to live shop records in {PREVIEW_MODULES[section]}; changes here are not saved.</span>
+  </div>
+}
+
+function readResetLink(): ResetLink | null {
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('reset_token')
+  const email = params.get('email')
+  return token && email ? { token, email } : null
+}
+
 export default function Page() {
   const [active, setActive] = useState('Dashboard')
   const [query, setQuery] = useState('')
@@ -59,27 +79,59 @@ export default function Page() {
   const [toast, setToast] = useState('')
   const [currentUser, setCurrentUser] = useState<BookshopUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
-  useEffect(() => {
-    const token = sessionStorage.getItem('bookshop_token')
-    if (!token) { setAuthLoading(false); return }
-    getCurrentUser(token).then(user => { if (hasPermission(user, 'workspace.access')) setCurrentUser(user); else sessionStorage.removeItem('bookshop_token') }).catch(() => sessionStorage.removeItem('bookshop_token')).finally(() => setAuthLoading(false))
+  const [bootError, setBootError] = useState('')
+  const [resetLink, setResetLink] = useState<ResetLink | null>(null)
+
+  const notify = useCallback((message: string) => {
+    setToast(message)
+    window.setTimeout(() => setToast(current => current === message ? '' : current), 3500)
   }, [])
+
+  const enterWorkspace = useCallback((user: BookshopUser) => {
+    setCurrentUser(user)
+    setActive(previous => canOpenSection(user, previous) ? previous : firstSection(user))
+  }, [])
+
+  const restoreSession = useCallback(() => {
+    setBootError('')
+    if (!tokenStore.get()) { setAuthLoading(false); return }
+    setAuthLoading(true)
+    getCurrentUser()
+      .then(enterWorkspace)
+      .catch((error: unknown) => {
+        // Network failures keep the token so a retry can restore the session.
+        if (error instanceof ApiError && error.status === 0) setBootError(error.message)
+        else tokenStore.clear()
+      })
+      .finally(() => setAuthLoading(false))
+  }, [enterWorkspace])
+
+  useEffect(() => {
+    setResetLink(readResetLink())
+    restoreSession()
+    function expired() {
+      setCurrentUser(null)
+      notify('Your session has ended. Please sign in again.')
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, expired)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, expired)
+  }, [restoreSession, notify])
+
   async function signOut() {
-    const token = sessionStorage.getItem('bookshop_token')
-    sessionStorage.removeItem('bookshop_token')
     setCurrentUser(null)
     setActive('Dashboard')
     setCart([])
     setShowCheckout(false)
-    if (token) await logout(token).catch(() => undefined)
+    await logout().catch(() => undefined)
   }
-  const canManageUsers = currentUser ? hasPermission(currentUser, 'users.manage') : false
-  const canManageSettings = currentUser ? hasPermission(currentUser, 'settings.manage') : false
-  const canAccessSection = (section: string) => section === 'Users' ? canManageUsers : section === 'Settings' ? canManageSettings : true
+
+  function clearResetLink() {
+    setResetLink(null)
+    window.history.replaceState(null, '', window.location.pathname)
+  }
 
   function navigateTo(section: string) {
-    if (!canAccessSection(section)) return
-    setActive(section)
+    if (currentUser && canOpenSection(currentUser, section)) setActive(section)
   }
 
   const filteredProducts = useMemo(() => products.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(query.toLowerCase())), [query])
@@ -94,8 +146,7 @@ export default function Page() {
       if (found) return current.map((item) => item.product.id === product.id ? { ...item, quantity: Math.min(item.quantity + 1, product.stock) } : item)
       return [...current, { product, quantity: 1 }]
     })
-    setToast(`${product.name} added to cart`)
-    setTimeout(() => setToast(''), 2200)
+    notify(`${product.name} added to cart`)
   }
 
   function updateQuantity(id: number, delta: number) {
@@ -107,58 +158,40 @@ export default function Page() {
   }
 
   if (authLoading) return <BrandLoader />
-  if (!currentUser) return <LoginPage onLogin={(user) => setCurrentUser(user)} />
+  if (bootError) return <main className="brand-loading-screen"><div className="w-full max-w-md rounded-2xl bg-white shadow-sm"><ErrorState message={bootError} onRetry={restoreSession} /></div></main>
+  if (!currentUser) return <>
+    <LoginPage onLogin={enterWorkspace} resetLink={resetLink} onResetHandled={clearResetLink} />
+    {toast && <div className="toast" role="status">{toast}</div>}
+  </>
+
+  const toastNode = toast && <div className="toast" role="status"><span className="toast-check">✓</span>{toast}</div>
+  if (!hasPermission(currentUser, 'workspace.access')) return <>
+    <CustomerHome currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} onSignOut={() => void signOut()} />
+    {toastNode}
+  </>
+
+  const view = !canOpenSection(currentUser, active)
+    ? <section className="page-placeholder"><h1 tabIndex={-1}>Access restricted</h1><p>Your role does not include access to this section.</p></section>
+    : active === 'Users' ? <UsersView currentUser={currentUser} notify={notify} />
+    : active === 'Settings' ? <SettingsView currentUser={currentUser} notify={notify} />
+    : active === 'Audit Log' ? <AuditView />
+    : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
+    : active === 'Point of Sale' ? <POSView filteredProducts={filteredProducts} query={query} setQuery={setQuery} cart={cart} addToCart={addToCart} updateQuantity={updateQuantity} subtotal={subtotal} tax={tax} total={total} setCart={setCart} setShowCheckout={setShowCheckout} />
+    : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
+    : active === 'Inventory & Stock' ? <InventoryView setToast={notify} />
+    : active === 'Customers' ? <CustomersView setToast={notify} />
+    : active === 'Suppliers' ? <SuppliersView setToast={notify} />
+    : <Dashboard active={active} setActive={navigateTo} userName={currentUser.name} />
 
   return (
     <WorkspaceShell currentUser={currentUser} active={active} onNavigate={navigateTo} onSignOut={signOut}>
-        {!canAccessSection(active) ? <section className="page-placeholder"><h1 tabIndex={-1}>Access restricted</h1><p>Your role does not include access to this section.</p></section> : active === 'Point of Sale' ? <POSView filteredProducts={filteredProducts} query={query} setQuery={setQuery} cart={cart} addToCart={addToCart} updateQuantity={updateQuantity} subtotal={subtotal} tax={tax} total={total} setCart={setCart} setShowCheckout={setShowCheckout} /> : active === 'Products & Books' ? <ProductsBooksView setToast={setToast} /> : active === 'Inventory & Stock' ? <InventoryView setToast={setToast} /> : active === 'Customers' ? <CustomersView setToast={setToast} /> : active === 'Suppliers' ? <SuppliersView setToast={setToast} /> : active === 'Users' ? <UsersView currentUser={currentUser} setToast={setToast} /> : <Dashboard active={active} setActive={navigateTo} userName={currentUser.name} />}
+      {PREVIEW_MODULES[active] && canOpenSection(currentUser, active) && <PreviewNotice section={active} />}
+      {view}
 
-
-      {showCheckout && <div className="modal-backdrop"><div className="checkout-modal" role="dialog" aria-modal="true" aria-label="Complete sale"><div className="modal-header"><div><div className="eyebrow">CHECKOUT</div><h2>Complete sale</h2></div><button className="icon-button" onClick={() => setShowCheckout(false)}><X size={18} /></button></div><div className="checkout-total"><span>Total due</span><strong>{money(total)}</strong></div><div className="payment-tabs">{['Cash', 'M-Pesa', 'Card', 'Bank transfer'].map((method) => <button key={method} className={payment === method ? 'selected' : ''} onClick={() => setPayment(method)}>{method}</button>)}</div><label className="field-label">{payment === 'M-Pesa' ? 'M-Pesa transaction code' : 'Payment reference'}<input className="text-input" placeholder={payment === 'M-Pesa' ? 'e.g. QKL7H2M1' : 'Optional reference'} /></label><label className="field-label">Amount received<input className="text-input" defaultValue={total.toFixed(2)} /></label><div className="change-row"><span>Change due</span><strong>{money(0)}</strong></div><button className="primary-button full" onClick={() => { setShowCheckout(false); setCart([]); setToast('Sale completed · Receipt #NS-10483') }}>Confirm payment <ArrowUpRight size={16} /></button><p className="secure-note">Demo payment · No external gateway connected</p></div></div>}
-      {toast && <div className="toast" role="status"><span className="toast-check">✓</span>{toast}</div>}
+      {showCheckout && <div className="modal-backdrop"><div className="checkout-modal" role="dialog" aria-modal="true" aria-label="Complete sale"><div className="modal-header"><div><div className="eyebrow">CHECKOUT</div><h2>Complete sale</h2></div><button className="icon-button" onClick={() => setShowCheckout(false)}><X size={18} /></button></div><div className="checkout-total"><span>Total due</span><strong>{money(total)}</strong></div><div className="payment-tabs">{['Cash', 'M-Pesa', 'Card', 'Bank transfer'].map((method) => <button key={method} className={payment === method ? 'selected' : ''} onClick={() => setPayment(method)}>{method}</button>)}</div><label className="field-label">{payment === 'M-Pesa' ? 'M-Pesa transaction code' : 'Payment reference'}<input className="text-input" placeholder={payment === 'M-Pesa' ? 'e.g. QKL7H2M1' : 'Optional reference'} /></label><label className="field-label">Amount received<input className="text-input" defaultValue={total.toFixed(2)} /></label><div className="change-row"><span>Change due</span><strong>{money(0)}</strong></div><button className="primary-button full" onClick={() => { setShowCheckout(false); setCart([]); notify('Sale completed · Receipt #NS-10483') }}>Confirm payment <ArrowUpRight size={16} /></button><p className="secure-note">Demo payment · No external gateway connected</p></div></div>}
+      {toastNode}
     </WorkspaceShell>
   )
-}
-
-function LoginPage({ onLogin }: { onLogin: (user: BookshopUser) => void }) {
-  const [showPassword, setShowPassword] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setPending(true)
-    setError('')
-    try {
-      const result = await login(email, password)
-      if (!hasPermission(result.user, 'workspace.access')) throw new Error('Your account is not authorised to access the system.')
-      sessionStorage.setItem('bookshop_token', result.token)
-      onLogin(result.user)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to sign in.')
-    } finally {
-      setPending(false)
-    }
-  }
-  return <main className="login-screen">
-    <section className="login-brand-panel">
-      <div className="login-brand"><img className="nifunze-full-logo" src="/logo.png" alt="Nifunze Lessons" /></div>
-      <div className="login-story"><div className="eyebrow">MADE FOR KENYAN BOOKSELLERS</div><h1 tabIndex={-1}>Keep every shelf, sale, and school order moving.</h1><p>One calm workspace for M-Pesa sales, curriculum stock, suppliers, and your regular readers.</p><div className="login-points"><span><i /> KSh-ready checkout with M-Pesa</span><span><i /> KCSE and CBC catalogue tracking</span><span><i /> School account management</span></div></div>
-      <small className="login-footer">Bookshop · Kenya</small>
-    </section>
-    <section className="login-form-panel"><div className="login-form-wrap">
-      <div className="mobile-login-logo"><div className="brand-mark"><img src="/favicon.png" alt="" /></div><strong>Bookshop</strong></div>
-      <div className="eyebrow">WELCOME BACK</div><h2>Sign in to your shop</h2>
-      <p className="login-muted">Sign in with your assigned account. Access follows your role.</p>
-      <form onSubmit={submit}>
-        <label className="field-label">Work email<input className="text-input" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-        <label className="field-label">Password<div className="password-field"><input className="text-input" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /><button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button></div></label>
-        {error && <p role="alert" style={{color:'#b91c1c',marginBottom:12}}>{error}</p>}
-        <button className="primary-button full" type="submit" disabled={pending}>{pending ? 'Signing in...' : 'Sign in to Bookshop'} <ArrowUpRight size={16} /></button>
-      </form>
-    </div></section>
-  </main>
 }
 
 function Dashboard({ active, setActive, userName }: { active: string; setActive: (value: string) => void; userName: string }) {
@@ -232,371 +265,4 @@ function SuppliersView({ setToast }: { setToast: (value: string) => void }) {
 }
 
 function POSView({ filteredProducts, query, setQuery, cart, addToCart, updateQuantity, subtotal, tax, total, setCart, setShowCheckout }: any) { return <div className="pos-page"><div className="page-heading compact"><div><div className="eyebrow">SALES TERMINAL · REGISTER 01</div><h1 tabIndex={-1}>Point of Sale</h1><p>Serve customers quickly and keep your records accurate.</p></div><div className="register-actions"><button className="secondary-button" onClick={() => { const demoItems = products.filter((product) => [1, 3, 4].includes(product.id)).map((product, index) => ({ product, quantity: index === 0 ? 1 : index === 1 ? 2 : 3 })); setCart(demoItems); }}>Load demo sale</button><div className="register-status"><span className="status-dot" /> Register open</div></div></div><div className="pos-layout"><section className="product-panel card"><div className="pos-search"><Search size={18} /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by product, ISBN or SKU..." /><kbd>/</kbd></div><div className="category-tabs"><button className="selected">All products</button><button>Textbooks</button><button>Stationery</button><button>Exercise books</button><button>Revision</button></div><div className="product-grid">{filteredProducts.map((product: typeof products[number]) => <button className="product-card" key={product.id} onClick={() => addToCart(product)} disabled={product.stock === 0}><div className={`product-art ${product.tone}`}><BookOpen size={24} /><span>{product.category === 'Stationery' ? 'STATIONERY' : product.category.toUpperCase()}</span></div><div className="product-info"><strong>{product.name}</strong><span>{product.sku} · {product.stock === 0 ? 'Out of stock' : `${product.stock} in stock`}</span><b>{money(product.price)}</b></div><Plus className="add-icon" size={17} /></button>)}</div></section><aside className="cart-panel card"><div className="cart-heading"><div><h2>Current sale</h2><span>{cart.reduce((s: number, i: any) => s + i.quantity, 0)} items</span></div>{cart.length > 0 && <button className="clear-button" onClick={() => setCart([])}>Clear</button>}</div><div className="customer-select"><Users size={16} /><span>Walk-in customer</span><ChevronDown size={15} /></div><div className="cart-items">{cart.length === 0 ? <div className="cart-empty"><ShoppingCart size={27} /><strong>Your cart is empty</strong><span>Select a product to start a sale</span></div> : cart.map((item: any) => <div className="cart-item" key={item.product.id}><div className={`mini-art ${item.product.tone}`}><BookOpen size={15} /></div><div className="cart-item-info"><strong>{item.product.name}</strong><span>{money(item.product.price)} each</span><div className="qty"><button onClick={() => updateQuantity(item.product.id, -1)}>−</button><b>{item.quantity}</b><button onClick={() => updateQuantity(item.product.id, 1)}>+</button></div></div><strong>{money(item.product.price * item.quantity)}</strong></div>)}</div><div className="totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div><div><span>Tax <small>(16%)</small></span><b>{money(tax)}</b></div><div className="total-line"><span>Total due</span><strong>{money(total)}</strong></div></div><button className="primary-button full checkout-button" disabled={!cart.length} onClick={() => setShowCheckout(true)}>Charge {money(total)} <ArrowUpRight size={17} /></button><div className="payment-hint"><CreditCard size={15} /> Payment collected at checkout</div></aside></div></div> }
-
-
-// ─── Users Management ───────────────────────────────────────────────────────
-
-function UsersView({ currentUser, setToast }: { currentUser: BookshopUser; setToast: (msg: string) => void }) {
-  const isOwner = hasPermission(currentUser, 'users.assign_roles')
-
-  const [users, setUsers] = useState<SystemUser[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [userSearch, setUserSearch] = useState('')
-  const [formError, setFormError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [updatingId, setUpdatingId] = useState<number | null>(null)
-
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
-  const [role, setRole] = useState(isOwner ? 'admin' : 'user')
-
-  // Roles this caller is allowed to assign
-  const allowedRoles = currentUser.assignable_roles
-
-  function resetForm() {
-    setName(''); setEmail(''); setPassword(''); setPasswordConfirm('')
-    setRole(isOwner ? 'admin' : 'user')
-    setFormError('')
-  }
-
-  function closeForm() {
-    setShowForm(false)
-    resetForm()
-  }
-
-  function loadUsers() {
-    const token = sessionStorage.getItem('bookshop_token')
-    if (!token) return
-    setLoading(true)
-    listUsers(token)
-      .then(setUsers)
-      .catch((e: Error) => setToast(e.message))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => { loadUsers() }, [])
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (password !== passwordConfirm) { setFormError('Passwords do not match.'); return }
-    const token = sessionStorage.getItem('bookshop_token')
-    if (!token) return
-    setSubmitting(true); setFormError('')
-    try {
-      const created = await createUser(token, { name, email, password, password_confirmation: passwordConfirm, role })
-      setUsers(prev => [created, ...prev])
-      setToast(`${created.name} created successfully.`)
-      setShowForm(false); resetForm()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to create user.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleDelete(id: number, userName: string) {
-    if (!confirm(`Delete ${userName}? This cannot be undone.`)) return
-    const token = sessionStorage.getItem('bookshop_token')
-    if (!token) return
-    setDeletingId(id)
-    try {
-      await deleteUser(token, id)
-      setUsers(prev => prev.filter(u => u.id !== id))
-      setToast(`${userName} was deleted.`)
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Failed to delete user.')
-    } finally {
-      setDeletingId(null)
-    }
-  }
-
-  async function handleRoleChange(user: SystemUser, nextRole: string) {
-    if (nextRole === user.role || !confirm(`Change ${user.name}'s role to ${roleLabel(nextRole)}? They will need to sign in again.`)) return
-    const token = sessionStorage.getItem('bookshop_token')
-    if (!token) return
-    setUpdatingId(user.id)
-    try {
-      const updated = await updateUserRole(token, user.id, nextRole)
-      setUsers(previous => previous.map(item => item.id === user.id ? updated : item))
-      setToast(`${user.name}'s access updated.`)
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Failed to update role.')
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-  const filteredUsers = users.filter(user =>
-    `${user.name} ${user.email} ${roleLabel(user.role)}`.toLowerCase().includes(userSearch.toLowerCase()),
-  )
-
-  return (
-    <div className="products-page">
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[0.16em] text-slate-500">
-            <span className="grid size-7 place-items-center rounded-lg bg-teal-50 text-teal-700"><Users size={15} /></span>
-            WORKSPACE <span className="text-slate-300">/</span> TEAM
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Users</h1>
-          <p className="mt-2 max-w-xl text-sm text-slate-500">
-            {isOwner
-              ? 'Manage your bookshop team and keep access in the right hands.'
-              : 'Manage the user accounts you have created for your bookshop.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 sm:flex">
-            <span className="size-2 rounded-full bg-emerald-500" /> Team access
-          </span>
-          <button
-            className="inline-flex items-center gap-2 rounded-xl bg-[#243b80] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b2b58] focus:outline-none focus:ring-4 focus:ring-blue-100"
-            onClick={() => { resetForm(); setShowForm(true) }}
-          >
-            <UserPlus size={17} /> Add user
-          </button>
-        </div>
-      </div>
-
-      <section className="card mb-5 p-5" aria-label="User access rights">
-        <h2 className="font-semibold text-slate-900">Roles and access rights</h2>
-        <p className="mt-2 text-sm text-slate-500">All assigned roles can sign in and use shop operations. Account administration follows these rules.</p>
-        <div className="table-wrap mt-3">
-          <table className="data-table">
-            <thead><tr><th>Role</th><th>Shop workspace</th><th>User accounts</th><th>Assign roles</th></tr></thead>
-            <tbody>
-              <tr><td>System Owner</td><td>Full access</td><td>All non-owner accounts</td><td>Administrator or User</td></tr>
-              <tr><td>Administrator</td><td>Full access</td><td>Create and remove own users</td><td>User only on creation</td></tr>
-              <tr><td>User / Staff</td><td>Shop operations</td><td>No account administration</td><td>No</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className={`mb-5 grid gap-4 ${isOwner ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Team members</p>
-              <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{users.length}</p>
-            </div>
-            <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-700"><Users size={19} /></span>
-          </div>
-          <p className="mt-3 text-xs text-slate-400">Your account is not included</p>
-        </div>
-        {isOwner && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">Administrators</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{users.filter(u => u.role === 'admin').length}</p>
-              </div>
-              <span className="grid size-10 place-items-center rounded-xl bg-violet-50 text-violet-700"><ShieldCheck size={19} /></span>
-            </div>
-            <p className="mt-3 text-xs text-slate-400">Can manage standard users</p>
-          </div>
-        )}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Standard users</p>
-              <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{users.filter(u => u.role === 'user').length}</p>
-            </div>
-            <span className="grid size-10 place-items-center rounded-xl bg-teal-50 text-teal-700"><UserRound size={19} /></span>
-          </div>
-          <p className="mt-3 text-xs text-slate-400">Standard workspace access</p>
-        </div>
-      </div>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-slate-900">Team directory</h2>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{users.length}</span>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              {isOwner ? 'Everyone with access to your bookshop workspace.' : 'Users you have added to your workspace.'}
-            </p>
-          </div>
-          <label className="flex h-10 w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-400 transition focus-within:border-blue-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-50 sm:max-w-xs">
-            <Search size={16} />
-            <input
-              className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-              type="search"
-              value={userSearch}
-              onChange={e => setUserSearch(e.target.value)}
-              placeholder="Search name, email or role"
-              aria-label="Search users"
-            />
-          </label>
-        </div>
-
-        {loading ? (
-          <div className="flex flex-col items-center px-6 py-16 text-center" role="status">
-            <span className="mb-3 size-8 animate-spin rounded-full border-2 border-slate-200 border-t-blue-700" />
-            <p className="text-sm font-medium text-slate-700">Loading your team</p>
-            <p className="mt-1 text-xs text-slate-400">This will only take a moment.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left">
-              <thead className="bg-slate-50/80">
-                <tr className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
-                  <th scope="col" className="px-6 py-3.5">Team member</th>
-                  <th scope="col" className="px-5 py-3.5">Role</th>
-                  <th scope="col" className="px-5 py-3.5">Date added</th>
-                  <th scope="col" className="px-5 py-3.5 text-right">Manage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredUsers.map(u => {
-                  const initials = u.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
-                  const roleTone = u.role === 'admin'
-                    ? 'bg-violet-50 text-violet-700 ring-violet-600/10'
-                    : u.role === 'system_owner'
-                      ? 'bg-amber-50 text-amber-700 ring-amber-600/10'
-                      : 'bg-teal-50 text-teal-700 ring-teal-600/10'
-
-                  return (
-                    <tr key={u.id} className="transition-colors hover:bg-slate-50/70">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blue-100 to-teal-100 text-xs font-bold text-[#243b80]">
-                            {initials || <UserRound size={17} />}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-800">{u.name}</p>
-                            <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-400"><Mail size={12} />{u.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        {isOwner && u.role !== 'system_owner' ? <select
-                          aria-label={`Role for ${u.name}`}
-                          className="text-input"
-                          value={u.role}
-                          disabled={updatingId === u.id || deletingId === u.id}
-                          onChange={event => { void handleRoleChange(u, event.target.value) }}
-                        >
-                          {u.role === 'staff' && <option value="staff">Staff</option>}
-                          {allowedRoles.map(value => <option key={value} value={value}>{roleLabel(value)}</option>)}
-                        </select> : <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${roleTone}`}>
-                          <span className="size-1.5 rounded-full bg-current" />{roleLabel(u.role)}
-                        </span>}
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-500">
-                        <span className="inline-flex items-center gap-2"><CalendarDays size={14} className="text-slate-400" />
-                          {new Date(u.created_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-rose-100"
-                          disabled={deletingId === u.id || updatingId === u.id || u.role === 'system_owner'}
-                          onClick={() => handleDelete(u.id, u.name)}
-                          aria-label={`Delete ${u.name}`}
-                        >
-                          {deletingId === u.id ? 'Deleting…' : 'Remove'}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {filteredUsers.length === 0 && (
-              <div className="flex flex-col items-center px-6 py-14 text-center">
-                <span className="mb-3 grid size-12 place-items-center rounded-2xl bg-slate-100 text-slate-400"><Users size={22} /></span>
-                <p className="text-sm font-semibold text-slate-700">{users.length ? 'No matching users' : 'No team members yet'}</p>
-                <p className="mt-1 max-w-sm text-xs text-slate-400">
-                  {users.length ? 'Try another name, email address, or role.' : 'Add your first user to start building your team.'}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-        {!loading && users.length > 0 && (
-          <div className="border-t border-slate-100 px-6 py-3 text-xs text-slate-400">
-            Showing {filteredUsers.length} of {users.length} {users.length === 1 ? 'member' : 'members'}
-          </div>
-        )}
-      </section>
-
-      {showForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-sm"
-          onMouseDown={event => { if (event.target === event.currentTarget && !submitting) closeForm() }}
-        >
-          <section
-            className="my-auto w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/20"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-user-title"
-          >
-            <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5 sm:px-7">
-              <div>
-                <span className="mb-3 grid size-10 place-items-center rounded-xl bg-blue-50 text-[#243b80]"><UserPlus size={19} /></span>
-                <h2 id="add-user-title" className="text-xl font-bold tracking-tight text-slate-900">Add a team member</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {isOwner ? 'Create an account and choose their level of access.' : 'Create a standard user account for your team.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-4 focus:ring-slate-100"
-                onClick={closeForm}
-                disabled={submitting}
-                aria-label="Close add user dialog"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={handleCreate} className="px-6 py-6 sm:px-7">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Full name
-                  <input className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Jane Muthoni" required autoFocus />
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Email address
-                  <input className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" required />
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Password
-                  <input className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" required minLength={8} />
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Confirm password
-                  <input className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50" type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} placeholder="Enter password again" required minLength={8} />
-                </label>
-                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Role
-                  <select className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50" value={role} onChange={e => setRole(e.target.value)}>
-                    {allowedRoles.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-                  </select>
-                  <span className="mt-2 block text-xs text-slate-400">
-                    {role === 'admin' ? 'Admins can sign in and create standard user accounts.' : 'Users can sign in with standard workspace access.'}
-                  </span>
-                </label>
-              </div>
-              {formError && <p role="alert" className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700">{formError}</p>}
-              <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-                <button type="button" className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100" onClick={closeForm} disabled={submitting}>
-                  Cancel
-                </button>
-                <button type="submit" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#243b80] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b2b58] focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={submitting}>
-                  {submitting ? 'Creating account…' : 'Create user'} {!submitting && <ArrowUpRight size={16} />}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-    </div>
-  )
-}
 

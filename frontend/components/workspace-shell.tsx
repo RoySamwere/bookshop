@@ -1,26 +1,56 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, ChevronDown, ChevronLeft,
-  ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Plus, Search, Settings,
-  ShieldCheck, ShoppingCart, Truck, Users, WalletCards, X,
+  ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, CheckCheck, ChevronDown, ChevronLeft,
+  ChevronRight, FileText, History, LayoutDashboard, LogOut, Menu, Plus, Search, Settings,
+  ShieldCheck, ShoppingCart, Truck, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
 import { hasPermission, roleLabel, type BookshopUser, type Permission } from '../lib/auth'
+import { notificationsApi, type AppNotification } from '../lib/workspace-api'
+import { formatDate } from './ui-kit'
+
+export const PROFILE_SECTION = 'My Profile'
 
 const sections = [
-  { label: 'Dashboard', description: 'Your shop at a glance', icon: LayoutDashboard },
-  { label: 'Point of Sale', description: 'Create a sale and collect payment', icon: ShoppingCart },
-  { label: 'Sales History', description: 'Receipts and transactions', icon: FileText },
-  { label: 'Products & Books', description: 'Browse and manage your catalogue', icon: BookOpen },
-  { label: 'Inventory & Stock', description: 'Stock levels and replenishment', icon: Boxes },
-  { label: 'Suppliers', description: 'Your suppliers and publishing partners', icon: Truck },
-  { label: 'Customers', description: 'Your customer directory', icon: Users },
-  { label: 'Reports & Analytics', description: 'Sales and performance insights', icon: BarChart3 },
-  { label: 'Expenses', description: 'Shop expenses', icon: WalletCards, group: 'workspace' },
-  { label: 'Users', description: 'Team accounts and access rights', icon: Users, group: 'workspace', permission: 'users.manage' },
-  { label: 'Settings', description: 'Workspace settings', icon: Settings, group: 'workspace', permission: 'settings.manage' },
+  { label: 'Dashboard', description: 'Your shop at a glance', icon: LayoutDashboard, permission: 'dashboard.view' },
+  { label: 'Point of Sale', description: 'Create a sale and collect payment', icon: ShoppingCart, permission: 'pos.access' },
+  { label: 'Sales History', description: 'Receipts and transactions', icon: FileText, permission: 'sales.view' },
+  { label: 'Products & Books', description: 'Browse and manage your catalogue', icon: BookOpen, permission: 'catalog.view' },
+  { label: 'Inventory & Stock', description: 'Stock levels and replenishment', icon: Boxes, permission: 'inventory.view' },
+  { label: 'Suppliers', description: 'Your suppliers and publishing partners', icon: Truck, permission: 'suppliers.view' },
+  { label: 'Customers', description: 'Your customer directory', icon: Users, permission: 'customers.view' },
+  { label: 'Reports & Analytics', description: 'Sales and performance insights', icon: BarChart3, permission: 'reports.view' },
+  { label: 'Expenses', description: 'Shop expenses', icon: WalletCards, group: 'workspace', permission: 'expenses.manage' },
+  { label: 'Users', description: 'Team accounts and access rights', icon: Users, group: 'workspace', permission: 'users.view' },
+  { label: 'Audit Log', description: 'Sign-ins and account changes', icon: History, group: 'workspace', permission: 'audit.view' },
+  { label: 'Settings', description: 'Business, branches, tax and receipts', icon: Settings, group: 'workspace', permission: 'settings.view' },
+  { label: PROFILE_SECTION, description: 'Your details and password', icon: UserRound, group: 'account' },
 ] satisfies { label: string; description: string; icon: typeof BookOpen; group?: string; permission?: Permission }[]
+
+/** Whether the user may open a section; the server enforces the same rules on its data. */
+export function canOpenSection(user: BookshopUser, label: string) {
+  const section = sections.find(item => item.label === label)
+  if (!section) return false
+  return !('permission' in section) || !section.permission || hasPermission(user, section.permission)
+}
+
+export function firstSection(user: BookshopUser) {
+  return sections.find(section => canOpenSection(user, section.label))?.label || PROFILE_SECTION
+}
+
+// Polls unread notifications so the bell stays current without a page reload.
+function useNotifications() {
+  const [items, setItems] = useState<AppNotification[]>([])
+  const [unread, setUnread] = useState(0)
+  const refresh = useCallback(() => notificationsApi.list().then(result => { setItems(result.data); setUnread(result.meta.unread) }).catch(() => undefined), [])
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(refresh, 60000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
+  return { items, unread, refresh }
+}
 
 // Shared dismissal and focus behavior for the drawer, search, and popovers.
 function useOverlay<T extends HTMLElement>(open: boolean, close: () => void, modal = false) {
@@ -92,9 +122,17 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const account = useOverlay<HTMLDivElement>(accountOpen, () => setAccountOpen(false))
   const notifications = useOverlay<HTMLDivElement>(notificationsOpen, () => setNotificationsOpen(false))
   const command = useOverlay<HTMLDivElement>(searchOpen, () => setSearchOpen(false), true)
-  const visibleSections = sections.filter(section => !section.permission || hasPermission(currentUser, section.permission))
+  const visibleSections = sections.filter(section => canOpenSection(currentUser, section.label))
   const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const modalOpen = drawerOpen || searchOpen
+  const branchLabel = currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches.map(branch => branch.name).join(' · ') || 'No branch assigned'
+  const alerts = useNotifications()
+
+  async function openNotification(item: AppNotification) {
+    if (!item.read_at) await notificationsApi.markRead(item.id).catch(() => undefined)
+    void alerts.refresh()
+    if (item.section && canOpenSection(currentUser, item.section)) navigate(item.section)
+  }
 
   useEffect(() => {
     try { setCollapsed(localStorage.getItem('bookshop_sidebar_v1') === 'collapsed') } catch { /* Storage may be disabled. */ }
@@ -159,16 +197,18 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       role={mobile && drawerOpen ? 'dialog' : undefined} aria-modal={mobile && drawerOpen ? true : undefined}
       aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
       <div className="sidebar-brand">
-        <div className="brand-mark"><BookOpen size={22} aria-hidden="true" /></div>
+        <div className="brand-mark"><img src="/favicon.png" alt="" /></div>
         <div className="sidebar-brand-copy"><strong>Nifunze<span>Bookshop workspace</span></strong></div>
         <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
       </div>
       <div className="sidebar-scroll">
-        <div className="shop-indicator"><span className="status-dot" /><span>Main shop</span><span className="shop-status">Online</span></div>
-        <div className="sidebar-group-label">OPERATIONS</div>
-        <nav className="sidebar-links" aria-label="Shop operations">{visibleSections.filter(section => !('group' in section)).map(navButton)}</nav>
+        <div className="shop-indicator" title={branchLabel}><span className="status-dot" /><span className="truncate">{branchLabel}</span><span className="shop-status">Online</span></div>
+        {visibleSections.some(section => !('group' in section)) && <>
+          <div className="sidebar-group-label">OPERATIONS</div>
+          <nav className="sidebar-links" aria-label="Shop operations">{visibleSections.filter(section => !('group' in section)).map(navButton)}</nav>
+        </>}
         <div className="sidebar-group-label workspace-group">WORKSPACE</div>
-        <nav className="sidebar-links" aria-label="Workspace">{visibleSections.filter(section => 'group' in section).map(navButton)}</nav>
+        <nav className="sidebar-links" aria-label="Workspace">{visibleSections.filter(section => 'group' in section && section.group === 'workspace').map(navButton)}</nav>
       </div>
       <div className="sidebar-footer">
         <div className="sidebar-identity"><span className="user-avatar">{initials}</span><div><strong>{currentUser.name}</strong><span>{roleLabel(currentUser.role)}</span></div><ShieldCheck size={17} aria-hidden="true" /></div>
@@ -182,20 +222,27 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       <header className="app-header">
         <div className="header-leading">
           <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>
-          <div className="header-breadcrumb"><span>Main shop</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>
+          <div className="header-breadcrumb"><span>{currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches[0]?.name || 'Workspace'}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>
         </div>
         <div className="header-actions">
           <button ref={command.triggerRef} className="workspace-search" aria-label="Search workspace" aria-haspopup="dialog" aria-expanded={searchOpen} aria-keyshortcuts="Control+k Meta+k" onClick={() => { setSearch(''); setSearchOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}>
             <Search size={17} /><span>Find a workspace…</span><kbd>Ctrl K</kbd>
           </button>
           <time className="header-date">{today}</time>
-          <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><Plus size={17} /><span>New sale</span></button>
+          {hasPermission(currentUser, 'pos.access') && <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><Plus size={17} /><span>New sale</span></button>}
           <div className="header-popover-wrap notification-wrap">
-            <button ref={notifications.triggerRef} className={`header-icon ${notificationsOpen ? 'is-open' : ''}`} aria-label="Stock notifications" aria-expanded={notificationsOpen} aria-controls="stock-notifications" onClick={() => { setNotificationsOpen(previous => !previous); setAccountOpen(false) }}><Bell size={19} /><span className="notification-indicator" /></button>
-            {notificationsOpen && <div ref={notifications.panelRef} id="stock-notifications" className="header-popover notification-popover">
-              <div className="popover-title"><strong>Stock attention</strong><span>Demo catalogue</span></div>
-              <div className="notification-content"><span className="notification-symbol"><Boxes size={22} /></span><div><strong>3 products need a review</strong><p>Two items are running low and one is out of stock.</p></div></div>
-              <button className="popover-link" onClick={() => navigate('Inventory & Stock')}>Review inventory <ArrowUpRight size={16} /></button>
+            <button ref={notifications.triggerRef} className={`header-icon ${notificationsOpen ? 'is-open' : ''}`} aria-label={`Notifications${alerts.unread ? `, ${alerts.unread} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="workspace-notifications"
+              onClick={() => { setNotificationsOpen(previous => !previous); setAccountOpen(false); void alerts.refresh() }}><Bell size={19} />{alerts.unread > 0 && <span className="notification-indicator" />}</button>
+            {notificationsOpen && <div ref={notifications.panelRef} id="workspace-notifications" className="header-popover notification-popover">
+              <div className="popover-title"><strong>Notifications</strong><span>{alerts.unread ? `${alerts.unread} unread` : 'You are all caught up'}</span></div>
+              <div className="max-h-80 overflow-y-auto">
+                {alerts.items.length === 0 ? <div className="notification-content"><span className="notification-symbol"><Bell size={20} /></span><div><strong>No notifications yet</strong><p>Account and team updates will appear here.</p></div></div>
+                  : alerts.items.map(item => <button key={item.id} className={`flex w-full gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-slate-50 ${item.read_at ? 'opacity-70' : ''}`} onClick={() => void openNotification(item)}>
+                    <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.read_at ? 'bg-slate-200' : item.level === 'warning' ? 'bg-amber-500' : 'bg-[#087df5]'}`} />
+                    <span className="min-w-0"><strong className="block text-[13px] text-slate-800">{item.title}</strong><span className="mt-0.5 block text-xs text-slate-500">{item.body}</span><small className="mt-1 block text-[11px] text-slate-400">{formatDate(item.created_at, true)}</small></span>
+                  </button>)}
+              </div>
+              {alerts.unread > 0 && <button className="popover-link" onClick={() => { void notificationsApi.markAllRead().then(alerts.refresh) }}>Mark all as read <CheckCheck size={16} /></button>}
             </div>}
           </div>
           <div className="header-divider" />
@@ -204,9 +251,10 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
               <span className="user-avatar">{initials}</span><span className="profile-trigger-copy"><strong>{currentUser.name}</strong><small>{roleLabel(currentUser.role)}</small></span><ChevronDown size={15} className="profile-chevron" />
             </button>
             {accountOpen && <div ref={account.panelRef} id="account-options" className="header-popover profile-popover">
-              <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · Main shop</small></div>
-              {hasPermission(currentUser, 'users.manage') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
-              {hasPermission(currentUser, 'settings.manage') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}
+              <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · {branchLabel}</small></div>
+              <button className="popover-action" onClick={() => navigate(PROFILE_SECTION)}><UserRound size={17} /> My profile and password</button>
+              {hasPermission(currentUser, 'users.view') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
+              {hasPermission(currentUser, 'settings.view') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}
               <button className="popover-action signout-action" onClick={() => { setAccountOpen(false); void onSignOut() }}><LogOut size={17} /> Sign out</button>
             </div>}
           </div>

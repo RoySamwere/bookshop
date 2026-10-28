@@ -2,119 +2,175 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\UserRequest;
+use App\Http\Resources\UserResource;
+use App\Models\AuditLog;
 use App\Models\User;
+use App\Notifications\AccountNotification;
+use App\Support\Roles;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
-    /**
-     * List users visible to the authenticated caller.
-     *
-     * system_owner → sees every user except themselves
-     * admin        → sees only users they created
-     */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request): AnonymousResourceCollection
     {
-        $caller = $request->user();
-
-        if ($caller->role === 'system_owner') {
-            $users = User::where('id', '!=', $caller->id)
-                ->orderBy('created_at', 'desc')
-                ->get(['id', 'name', 'email', 'role', 'created_at']);
-        } elseif ($caller->role === 'admin') {
-            $users = User::where('created_by', $caller->id)
-                ->whereIn('role', ['user', 'staff'])
-                ->orderBy('created_at', 'desc')
-                ->get(['id', 'name', 'email', 'role', 'created_at']);
-        } else {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
-        return response()->json(['users' => $users]);
-    }
-
-    /**
-     * Create a new user.
-     */
-    public function store(Request $request): JsonResponse
-    {
-        $caller = $request->user();
-        $allowed = $caller->assignableRoles();
-
-        if (empty($allowed)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
-        $data = $request->validate([
-            'name'     => ['required', 'string', 'max:255'],
-            'email'    => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'role'     => ['required', Rule::in($allowed)],
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'role' => ['nullable', Rule::in(Roles::all())],
+            'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'branch_id' => ['nullable', 'integer'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ]);
 
-        $user = new User([
-            'name'       => $data['name'],
-            'email'      => $data['email'],
-            'password'   => $data['password'],   // cast auto-hashes
-            'role'       => $data['role'],
-        ]);
-        $user->created_by = $caller->id;
-        $user->save();
+        $visible = User::query()->visibleTo($request->user());
+        $counts = [
+            'active' => (clone $visible)->where('is_active', true)->count(),
+            'inactive' => (clone $visible)->where('is_active', false)->count(),
+        ];
 
-        return response()->json([
-            'message' => 'User created successfully.',
-            'user'    => $user->only(['id', 'name', 'email', 'role', 'created_at']),
-        ], 201);
+        $users = $visible->with('branches')
+            ->when($filters['search'] ?? null, fn (Builder $query, string $search) => $query->where(
+                fn (Builder $match) => $match->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%"),
+            ))
+            ->when($filters['role'] ?? null, fn (Builder $query, string $role) => $query->where('role', $role))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status) => $query->where('is_active', $status === 'active'))
+            ->when($filters['branch_id'] ?? null, fn (Builder $query, int $branchId) => $query->whereHas(
+                'branches', fn (Builder $branch) => $branch->whereKey($branchId),
+            ))
+            ->latest()->paginate($filters['per_page'] ?? 25)->withQueryString();
+
+        return UserResource::collection($users)->additional(['counts' => $counts]);
     }
 
-    public function updateRole(Request $request, User $user): JsonResponse
+    public function show(Request $request, User $user): UserResource
+    {
+        abort_unless(User::query()->visibleTo($request->user())->whereKey($user->id)->exists(), 404);
+
+        return new UserResource($user->load('branches'));
+    }
+
+    public function store(UserRequest $request): JsonResponse
     {
         $caller = $request->user();
+        $user = DB::transaction(function () use ($request, $caller) {
+            $user = new User($request->safe()->only(['name', 'email', 'phone', 'password', 'role']));
+            $user->is_active = $request->boolean('is_active', true);
+            $user->created_by = $caller->id;
+            $user->email_verified_at = now();
+            $user->save();
+            $user->branches()->sync($request->branchIds() ?? []);
 
-        if ($caller->role !== 'system_owner') {
-            return response()->json(['message' => 'Only the system owner can change roles.'], 403);
+            return $user;
+        });
+
+        AuditLog::record('user.created', "Created {$user->name} as ".Roles::label($user->role), $user, [
+            'role' => $user->role, 'branch_ids' => $user->branches()->pluck('branches.id')->all(),
+        ]);
+        if (! $caller->isOwner()) {
+            $this->notifyOwners('New team member', "{$caller->name} added {$user->name} as ".Roles::label($user->role).'.');
         }
 
-        if (! $caller->canManageUser($user)) {
-            return response()->json(['message' => 'Your own account and system owner roles are protected.'], 422);
+        return (new UserResource($user->load('branches')))
+            ->additional(['message' => "{$user->name} was created successfully."])
+            ->response()->setStatusCode(201);
+    }
+
+    public function update(UserRequest $request, User $user): UserResource
+    {
+        $before = ['role' => $user->role, 'branch_ids' => $user->branches()->pluck('branches.id')->sort()->values()->all()];
+
+        DB::transaction(function () use ($request, $user) {
+            $user->fill($request->safe()->only(['name', 'email', 'phone', 'role']))->save();
+            if (($branchIds = $request->branchIds()) !== null) {
+                // Keep branches outside the caller's reach that the caller could not have submitted.
+                $outside = array_diff($user->branches()->pluck('branches.id')->all(), $request->user()->branchIds());
+                $user->branches()->sync($user->role === Roles::CUSTOMER ? [] : array_unique([...$outside, ...$branchIds]));
+            }
+        });
+
+        $after = ['role' => $user->role, 'branch_ids' => $user->branches()->pluck('branches.id')->sort()->values()->all()];
+        $changes = array_keys($user->getChanges());
+        AuditLog::record('user.updated', "Updated {$user->name}'s account", $user, ['changed' => $changes, 'before' => $before, 'after' => $after]);
+
+        if ($before['role'] !== $after['role']) {
+            // New access rights take effect on the next sign-in.
+            $user->tokens()->delete();
+            AuditLog::record('user.role_changed', "Changed {$user->name}'s role to ".Roles::label($user->role), $user, ['from' => $before['role'], 'to' => $user->role]);
+            $user->notify(new AccountNotification('Your role changed', 'You are now '.Roles::label($user->role).'. Sign in again to continue.', 'warning'));
+        } elseif ($before['branch_ids'] !== $after['branch_ids']) {
+            $user->notify(new AccountNotification('Branch access updated', 'The branches you can work in have changed.', 'info'));
         }
 
-        $data = $request->validate(['role' => ['required', Rule::in($caller->assignableRoles())]]);
-        $user->role = $data['role'];
+        return (new UserResource($user->load('branches')))->additional(['message' => "{$user->name}'s account was updated."]);
+    }
+
+    public function updateStatus(Request $request, User $user): UserResource
+    {
+        $this->authorizeManagement($request, $user);
+        $data = $request->validate(['is_active' => ['required', 'boolean']]);
+
+        $user->is_active = $data['is_active'];
         $user->save();
-        // Force a fresh sign-in after access rights change.
+        if (! $user->is_active) {
+            $user->tokens()->delete();
+        }
+        AuditLog::record($user->is_active ? 'user.activated' : 'user.deactivated', ($user->is_active ? 'Activated ' : 'Deactivated ')."{$user->name}'s account", $user);
+
+        return (new UserResource($user->load('branches')))->additional([
+            'message' => $user->is_active ? "{$user->name} can sign in again." : "{$user->name} has been deactivated and signed out.",
+        ]);
+    }
+
+    public function resetPassword(Request $request, User $user): JsonResponse
+    {
+        $this->authorizeManagement($request, $user);
+        $data = $request->validate(['password' => ['required', 'confirmed', Password::min(8)]]);
+
+        $user->password = $data['password'];
+        $user->save();
         $user->tokens()->delete();
+        AuditLog::record('user.password_reset', "Reset {$user->name}'s password", $user);
+        $user->notify(new AccountNotification('Password reset', "{$request->user()->name} reset your password. Change it after you sign in.", 'warning'));
 
-        return response()->json(['user' => $user->only(['id', 'name', 'email', 'role', 'created_at'])]);
+        return response()->json(['message' => "{$user->name}'s password was reset and their sessions were signed out."]);
     }
 
-    /**
-     * Delete a user.
-     *
-     * system_owner → can delete any non-system_owner
-     * admin        → can delete only users they created
-     */
     public function destroy(Request $request, User $user): JsonResponse
     {
-        $caller = $request->user();
-
-        if ($user->id === $caller->id) {
+        if ($user->id === $request->user()->id) {
             return response()->json(['message' => 'You cannot delete your own account.'], 422);
         }
-
-        if ($user->role === 'system_owner') {
+        if ($user->isOwner()) {
             return response()->json(['message' => 'System owner accounts cannot be deleted.'], 422);
         }
+        $this->authorizeManagement($request, $user);
 
-        if (! $caller->canManageUser($user)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
+        AuditLog::record('user.deleted', "Deleted {$user->name}'s account", $user, ['email' => $user->email, 'role' => $user->role]);
         $user->tokens()->delete();
         $user->delete();
 
-        return response()->json(['message' => 'User deleted.']);
+        return response()->json(['message' => "{$user->name} was deleted."]);
+    }
+
+    private function authorizeManagement(Request $request, User $user): void
+    {
+        $caller = $request->user();
+        if ($caller->id === $user->id || $user->isOwner()) {
+            abort(422, 'Your own account and system owner accounts are protected.');
+        }
+        abort_unless($caller->canManageUser($user), 403, 'You cannot manage this account.');
+    }
+
+    private function notifyOwners(string $title, string $body): void
+    {
+        User::where('role', Roles::SYSTEM_OWNER)->where('is_active', true)->get()
+            ->each(fn (User $owner) => $owner->notify(new AccountNotification($title, $body, 'info', 'Users')));
     }
 }
