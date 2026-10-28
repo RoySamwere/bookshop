@@ -43,6 +43,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     Route::middleware('permission:workspace.access')->group(function () {
+        Route::get('/product-hierarchy', [CatalogController::class, 'hierarchy'])->middleware('permission:catalog.view');
         Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
         Route::get('/catalog/{table}', [CatalogController::class, 'lookup'])->middleware('permission:catalog.view');
         Route::post('/books', [CatalogController::class, 'storeBook'])->middleware('permission:catalog.manage');
