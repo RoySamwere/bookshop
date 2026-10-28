@@ -60,6 +60,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
         Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
         Route::get('/inventory/movements', [InventoryController::class, 'movements'])->middleware('permission:inventory.view');
+        Route::post('/inventory/bulk-receive', [InventoryController::class, 'bulkReceive'])->middleware('permission:inventory.manage');
         Route::post('/inventory/receive', [InventoryController::class, 'receive'])->middleware('permission:inventory.manage');
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])->middleware('permission:inventory.manage');
         Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])->middleware('permission:inventory.manage');
