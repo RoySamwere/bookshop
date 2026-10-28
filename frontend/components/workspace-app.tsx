@@ -245,6 +245,42 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
       setUnits(await api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${unitBook.id}/units`));setToast('Packaging saved')}
     catch(e){setUnitError(e instanceof Error?e.message:'Unable to save packaging')}
   }
+  const [newRows,setNewRows] = useState<{title:string;sku:string;cost_price:number;selling_price:number;reorder_level:number}[]>([])
+  const [newImportError,setNewImportError] = useState('')
+  const [newImportBusy,setNewImportBusy] = useState(false)
+  function downloadNewTemplate(){
+    const csv='title,sku,cost_price,selling_price,reorder_level\r\n'
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
+    const link=document.createElement('a');link.href=url;link.download='hekima-new-products-template.csv';link.click();URL.revokeObjectURL(url)
+  }
+  async function readNewProducts(file:File|undefined){
+    setNewRows([]);setNewImportError('');if(!file)return
+    try{
+      if(file.size>5_000_000)throw new Error('File exceeds 5 MB')
+      const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean)
+      if(lines.shift()?.trim()!=='title,sku,cost_price,selling_price,reorder_level')throw new Error('Use the downloaded template and keep its column headings.')
+      const parsed=lines.map((line,i)=>{
+        const cols=line.split(',').map(x=>x.trim().replace(/^"|"$/g,''))
+        if(cols.length!==5||!cols[0]||!cols[1]||cols.slice(2,4).some(x=>x===''||!Number.isFinite(Number(x))||Number(x)<0)||!Number.isInteger(Number(cols[4]))||Number(cols[4])<0)throw new Error(`Invalid values on CSV line ${i+2}. Use no commas inside product names.`)
+        return {title:cols[0],sku:cols[1],cost_price:Number(cols[2]),selling_price:Number(cols[3]),reorder_level:Number(cols[4])}
+      })
+      if(!parsed.length)throw new Error('Add at least one product to the CSV')
+      if(new Set(parsed.map(x=>x.sku.toLowerCase())).size!==parsed.length)throw new Error('Duplicate SKUs in the file')
+      setNewRows(parsed)
+    }catch(e){setNewImportError(e instanceof Error?e.message:'Cannot read CSV')}
+  }
+  async function uploadNewProducts(){
+    if(!newRows.length||newImportBusy)return
+    setNewImportBusy(true);setNewImportError('');let created=0
+    try{
+      for(let i=0;i<newRows.length;i+=200){
+        const result=await api<{created:number}>('/books-bulk-create',{method:'POST',body:{rows:newRows.slice(i,i+200)}})
+        created+=result.created
+      }
+      setNewRows([]);setPage(1);await load();setToast(`${created} new products registered in catalogue and inventory`)
+    }catch(e){setNewImportError(`${created} products created before error. ${e instanceof Error?e.message:'Upload failed'}`)}
+    finally{setNewImportBusy(false)}
+  }
   const [importRows,setImportRows] = useState<Record<string,string>[]>([])
   const [importError,setImportError] = useState('')
   const [importing,setImporting] = useState(false)
@@ -312,6 +348,7 @@ function ProductsBooksView({ setToast }: { setToast: (value: string) => void }) 
     <div className="page-heading compact"><div><div className="eyebrow">LIVE CATALOGUE · MYSQL</div><h1 tabIndex={-1}>Products & Books</h1><p>Browse and register real products stored in the Hekima database.</p></div><div className="heading-actions"><button className="secondary-button" disabled={exporting} onClick={()=>void downloadCsv()}><Download size={16}/> {exporting?"Exporting…":"Download all products (CSV)"}</button><button className="primary-button" onClick={() => setShowForm(v => !v)}><Plus size={17}/> Add product</button></div></div>
     <div className="catalog-stats"><div className="card catalog-stat"><span>Total products</span><strong>{count.toLocaleString('en-KE')}</strong><small>Live catalogue records</small></div><div className="card catalog-stat"><span>Showing</span><strong>{books.length}</strong><small>Page {page} of {lastPage}</small></div></div>
     {error && <div role="alert" className="card" style={{padding:16,color:'#b91c1c'}}>{error} <button className="text-button" onClick={() => void load()}>Retry</button></div>}
+    <section className="card" style={{padding:20,marginBottom:16}}><h2>Bulk add new products</h2><p>Download a simple CSV template, enter real products and upload. New products appear in Products & Books and Inventory & Stock with zero stock until received. Existing SKUs are rejected to prevent duplicates.</p><div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}><button type="button" className="secondary-button" onClick={downloadNewTemplate}><Download size={16}/> Download blank template</button><label className="field-label">Choose completed CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readNewProducts(e.target.files?.[0])}/></label></div>{newImportError&&<p role="alert" style={{color:'#b91c1c'}}>{newImportError}</p>}{newRows.length>0&&<div style={{display:'flex',gap:12,alignItems:'center',marginTop:12}}><span>{newRows.length} new products ready</span><button className="primary-button" disabled={newImportBusy} onClick={()=>void uploadNewProducts()}>{newImportBusy?'Uploading…':'Upload products'}</button></div>}</section>
     <section className="card" style={{padding:20,marginBottom:16}}><h2>Clean catalogue · Download, edit & upload</h2><p>Download all products as CSV, clean the rows in Excel, then upload the same file. Keep product IDs and column headers unchanged. Existing products are updated by ID; stock quantities and sales history are not touched.</p><label className="field-label">Upload cleaned CSV <input className="text-input" type="file" accept=".csv,text/csv" onChange={e=>void readImport(e.target.files?.[0])}/></label>{importError&&<p role="alert" style={{color:'#b91c1c'}}>{importError}</p>}{importRows.length>0&&<div style={{display:'flex',alignItems:'center',gap:12,marginTop:12}}><span>{importRows.length.toLocaleString()} product rows ready to update</span><button className="primary-button" disabled={importing} onClick={()=>void uploadImport()}>{importing?'Uploading…':'Confirm & update products'}</button><button className="secondary-button" disabled={importing} onClick={()=>setImportRows([])}>Cancel</button></div>}</section>
     {showForm && <form className="card product-form" onSubmit={saveBook}><div className="card-heading"><h2>Add a product</h2><button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={17}/></button></div><div className="form-grid">
       {(['title','sku','isbn','selling_price','cost_price','reorder_level'] as const).map(field => <label className="field-label" key={field}>{field.replaceAll('_',' ')}<input className="text-input" required={field==='title'||field==='sku'||field==='selling_price'||field==='cost_price'} type={['selling_price','cost_price','reorder_level'].includes(field)?'number':'text'} min={['selling_price','cost_price','reorder_level'].includes(field)?'0':undefined} step={field==='reorder_level'?'1':undefined} value={form[field]} onChange={e => setForm(v => ({...v,[field]:e.target.value}))}/></label>)}
