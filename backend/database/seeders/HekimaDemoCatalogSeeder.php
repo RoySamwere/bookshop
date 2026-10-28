@@ -21,9 +21,9 @@ class HekimaDemoCatalogSeeder extends Seeder
         $rows = [];
         $add = function(string $title,string $category,int $price,int $n) use (&$rows,$categoryIds,$now) {
             $rows[] = [
-                'title'=>$title,'sku'=>'HEK-DEMO-'.str_pad((string)$n,5,'0',STR_PAD_LEFT),
+                'title'=>preg_replace('/^Demo /', '', str_replace(' (Demo)', '', $title)),'sku'=>'HEK-DEMO-'.str_pad((string)$n,5,'0',STR_PAD_LEFT),
                 'isbn'=>null,'book_category_id'=>$categoryIds[$category],
-                'description'=>'DEMO CATALOGUE RECORD — illustrative item; confirm actual title, publisher, ISBN and price before sale.',
+                'description'=>'Initial catalogue entry; verify actual ISBN, publisher and pricing before selling.',
                 'cost_price'=>round($price * 0.72,2),'selling_price'=>$price,'reorder_level'=>10,
                 'is_active'=>true,'created_at'=>$now,'updated_at'=>$now,
             ];
@@ -43,9 +43,30 @@ class HekimaDemoCatalogSeeder extends Seeder
         foreach($brands as $brand) foreach($colors as $color) foreach($packSizes as $pack) {
             $n++;$add("{$brand} {$color} {$pack} (Demo)",'Pens & Writing',30+($n%14)*15,$n);
         }
-        // Exactly 2,000 distinct demo SKUs.
+
+        $rulings = ['Single Line','Double Line','Four Line','Square Ruled','Plain','Graph Ruled','Music Stave','Margin Ruled'];
+        $pages = [32,48,64,80,96,120,160,200];
+        $sizes = ['A4','A5','B5','A6'];
+        $bindings = ['Saddle Stitched','Perfect Bound','Spiral Bound','Case Bound'];
+        $exercise = [];
+        foreach ($rulings as $ruling) foreach ($pages as $volume) foreach ($sizes as $size) foreach ($bindings as $binding) {
+            $exercise[] = [
+                'title'=>"Exercise Book {$ruling} {$volume} Pages {$size} {$binding}",
+                'sku'=>'HEK-EX-'.str_pad((string)(count($exercise)+1),4,'0',STR_PAD_LEFT),
+                'isbn'=>null, 'book_category_id'=>$categoryIds['Exercise Books'],
+                'description'=>"Ruling: {$ruling}; Pages: {$volume}; Size: {$size}; Binding: {$binding}. Verify actual specifications with supplier.",
+                'cost_price'=>0, 'selling_price'=>0, 'reorder_level'=>10, 'is_active'=>false,
+                'created_at'=>$now, 'updated_at'=>$now,
+            ];
+        }
+        DB::table('books')->where('sku','like','HEK-DEMO-%')->where('title','like','Demo %')
+            ->update(['title'=>DB::raw("SUBSTRING(title, 6)"),'updated_at'=>$now]);
+        DB::table('books')->where('sku','like','HEK-DEMO-%')->where('title','like','% (Demo)')
+            ->update(['title'=>DB::raw("REPLACE(title, ' (Demo)', '')"),'updated_at'=>$now]);
+        foreach (array_chunk($exercise, 200) as $chunk) DB::table('books')->insertOrIgnore($chunk);
+
         foreach(array_chunk($rows,200) as $chunk) DB::table('books')->insertOrIgnore($chunk);
-        $this->command?->info('Hekima demo catalogue: 2,000 synthetic SKUs available (repeat runs skip existing SKUs).');
+        $this->command?->info('Hekima catalogue: 2,000 original SKUs and 1,024 exercise-book variants; repeat runs skip existing SKUs.');
         $this->command?->warn('No inventory quantities were fabricated. Use goods receiving or authorized opening-stock adjustments to create auditable stock.');
     }
 }
