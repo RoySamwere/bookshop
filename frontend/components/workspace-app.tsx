@@ -187,7 +187,7 @@ function Dashboard({ active, setActive, userName }: { active: string; setActive:
   if (active !== 'Dashboard') return <section className="page-placeholder"><div className="empty-icon"><Tags size={24} /></div><h1 tabIndex={-1}>{active}</h1><p>This workspace is ready for your daily operations. Use the dashboard or point of sale to get started.</p><button className="primary-button" onClick={() => setActive('Point of Sale')}>Open Point of Sale <ArrowUpRight size={16} /></button></section>
   return <OverviewDashboard userName={userName} products={products} sales={sales} onNavigate={setActive} />
 }
-function ProductsBooksView() {
+function ProductsBooksView({ setToast: _setToast }: { setToast: (message: string) => void }) {
   type BookRow={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;category_name?:string|null;subcategory_name?:string|null;is_active?:boolean}
   const [books,setBooks]=useState<BookRow[]>([])
   const [count,setCount]=useState(0)
