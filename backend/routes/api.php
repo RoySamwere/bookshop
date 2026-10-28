@@ -10,6 +10,7 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LaunchSubscriberController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProcurementController;
+use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductUnitController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\RoleController;
@@ -44,6 +45,10 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     Route::middleware('permission:workspace.access')->group(function () {
+        Route::get('/pos/products', [PosController::class, 'products'])->middleware('permission:pos.access');
+        Route::post('/pos/checkout', [PosController::class, 'checkout'])->middleware('permission:pos.access');
+        Route::get('/pos/sales', [PosController::class, 'sales'])->middleware('permission:sales.view');
+        Route::get('/pos/sales/{sale}', [PosController::class, 'show'])->middleware('permission:sales.view');
         Route::get('/product-hierarchy', [CatalogController::class, 'hierarchy'])->middleware('permission:catalog.view');
         Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
         Route::get('/books-export', [CatalogController::class, 'exportBooks'])->middleware('permission:catalog.view');
