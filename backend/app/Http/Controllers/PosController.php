@@ -20,7 +20,13 @@ class PosController extends Controller
     }
 
     public function products(Request $request) {
-        $data=$request->validate(['branch_id'=>'required|integer|exists:branches,id','search'=>'nullable|string|max:255']);
+        $data=$request->validate([
+            'branch_id'=>'required|integer|exists:branches,id',
+            'search'=>'nullable|string|max:255',
+            // Optional: narrow the till to one product category (from /product-hierarchy).
+            'category_id'=>'nullable|integer|exists:product_categories,id',
+        ]);
+        $search=isset($data['search'])?trim($data['search']):null;
         $allowed=$this->branches($request);
         abort_if($allowed!==null && !in_array((int)$data['branch_id'],$allowed,true),403,'Branch access denied.');
         return DB::table('books as b')->leftJoin('inventory_balances as i',function($join)use($data){
@@ -28,11 +34,14 @@ class PosController extends Controller
         })->leftJoin('product_subcategories as sub','sub.id','=','b.product_subcategory_id')
         ->leftJoin('product_categories as cat','cat.id','=','sub.product_category_id')
         ->where('b.is_active',true)
-        ->when($data['search']??null,function($q,$search){$q->where(function($q)use($search){
+        ->when($search,function($q,$search){$q->where(function($q)use($search){
             $q->where('b.title','like',"%{$search}%")->orWhere('b.sku','like',"%{$search}%")->orWhere('b.isbn','like',"%{$search}%");
         });})
-        ->select('b.id','b.title','b.sku','b.isbn','b.selling_price','sub.name as subcategory','cat.name as category')
-        ->selectRaw('GREATEST(0,COALESCE(i.quantity,0)-COALESCE(i.reserved,0)) as available')
+        ->when($data['category_id']??null,fn($q,$category)=>$q->where('cat.id',$category))
+        ->select('b.id','b.title','b.sku','b.isbn','b.selling_price','sub.name as subcategory','cat.name as category','cat.id as category_id')
+        ->selectRaw('CASE WHEN COALESCE(i.quantity,0)>COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0)-COALESCE(i.reserved,0) ELSE 0 END as available')
+        // A scanned barcode (exact SKU or ISBN) is always the first result.
+        ->when($search,fn($q,$search)=>$q->orderByRaw('CASE WHEN b.sku = ? OR b.isbn = ? THEN 0 ELSE 1 END',[$search,$search]))
         ->orderBy('b.title')->paginate(30);
     }
 
@@ -114,8 +123,13 @@ class PosController extends Controller
             DB::table('pos_sales')->where('id',$saleId)->update(['receipt_number'=>$receipt]);
             foreach($items as $item){
                 DB::table('pos_sale_items')->insert(array_merge($item,['sale_id'=>$saleId,'created_at'=>now(),'updated_at'=>now()]));
-                $inventory->change((int)$item['book_id'],(int)$data['branch_id'],-(int)$item['quantity'],
-                    'sale',$request->user()->id,$receipt,'POS sale');
+                try {
+                    $inventory->change((int)$item['book_id'],(int)$data['branch_id'],-(int)$item['quantity'],
+                        'sale',$request->user()->id,$receipt,'POS sale');
+                } catch (ValidationException $shortage) {
+                    // Name the product so the cashier knows which line to change; the whole sale rolls back.
+                    throw ValidationException::withMessages(['items'=>"Not enough stock for \"{$item['title']}\" at this branch."]);
+                }
             }
             return response()->json($this->receipt($saleId),201);
         },3);

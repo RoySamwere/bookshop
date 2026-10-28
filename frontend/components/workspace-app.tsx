@@ -7,7 +7,7 @@ import { WorkspaceShell, PROFILE_SECTION, canOpenSection, firstSection } from '.
 import { OverviewDashboard } from './overview-dashboard'
 import { UsersView } from './users-view'
 import { InventoryView } from './inventory-view'
-import { PosLiveView } from './pos-live-view'
+import { PosTerminal } from './pos/pos-terminal'
 import { SalesHistoryView } from './sales-history-view'
 import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
@@ -167,7 +167,7 @@ export function WorkspaceApp() {
     : active === 'Settings' ? <SettingsView currentUser={currentUser} notify={notify} />
     : active === 'Audit Log' ? <AuditView />
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
-    : active === 'Point of Sale' ? <PosLiveView notify={notify} userId={currentUser.id} />
+    : active === 'Point of Sale' ? <PosTerminal currentUser={currentUser} notify={notify} onExit={() => navigateTo(canOpenSection(currentUser, 'Dashboard') ? 'Dashboard' : firstSection(currentUser))} />
     : active === 'Sales History' ? <SalesHistoryView />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />

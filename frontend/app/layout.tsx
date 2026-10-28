@@ -4,6 +4,7 @@ import { SessionManager } from '../components/session-manager'
 import './globals.css'
 import './workspace.css'
 import './public.css'
+import './pos.css'
 
 export const metadata: Metadata = {
   title: { default: `${brand.name} | Opening soon`, template: `%s | ${brand.name}` },

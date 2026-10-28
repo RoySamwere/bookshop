@@ -224,7 +224,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     </aside>}
 
     <div className={`workspace-main ${posMode ? '!ml-0 !w-full !max-w-none' : ''}`} ref={mainRef} inert={modalOpen}>
-      {posMode && <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 sm:px-7"><div className="flex items-center gap-3"><BrandMark size={32} className="rounded-lg"/><div><strong className="block text-sm">Hekima Bookshop · POS</strong><span className="text-xs text-slate-500">Focused cashier mode</span></div></div><button type="button" className="secondary-button" onClick={() => navigate(canOpenSection(currentUser,'Dashboard') ? 'Dashboard' : firstSection(currentUser))}><ChevronLeft size={16}/> Back to Dashboard</button></div>}
+      {/* The till draws its own top bar (brand, branch, held sales, exit). */}
       {!posMode && <header className="app-header">
         <div className="header-leading">
           <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>

@@ -1,0 +1,38 @@
+/* Point of Sale: the paper ticket and its torn edge, plus the side-panel entrance. */
+.pos-ticket {
+  box-shadow: 0 1px 2px rgba(19, 37, 74, .06), 0 12px 32px -18px rgba(19, 37, 74, .35);
+  margin-bottom: 14px;
+}
+/* Torn tear-off edge: a row of small triangles in the paper colour below the ticket. */
+.pos-ticket::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -10px;
+  height: 10px;
+  background:
+    linear-gradient(135deg, #fff 50%, transparent 50%) 0 0 / 14px 10px repeat-x,
+    linear-gradient(225deg, #fff 50%, transparent 50%) 0 0 / 14px 10px repeat-x;
+  filter: drop-shadow(0 3px 2px rgba(19, 37, 74, .08));
+  pointer-events: none;
+}
+.pos-drawer { animation: pos-drawer-in .22s cubic-bezier(.2, .8, .2, 1); }
+@keyframes pos-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pos-root :focus-visible { outline-offset: 2px; }
+/* Fields inside a framed box show the frame's ring, not a second outline. */
+.pos-root .pos-framed input:focus-visible, .pos-root input.pos-framed:focus-visible { outline: none; }
+/* Category rail: fade the right edge so it reads as scrollable. */
+.pos-rail { mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent); }
+.pos-rail.at-end { mask-image: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pos-drawer { animation: none; }
+  .pos-root * { transition-duration: 0s !important; }
+}
+/* Focus mode removes the sidebar, so the frame becomes a single full-width column. */
+.workspace-shell.pos-focus-mode { grid-template-columns: minmax(0, 1fr); }
+/* Till messages appear over the product area, never over the ticket's buttons. */
+.pos-focus-mode .toast { right: auto; left: 24px; bottom: 24px; }
+@media (max-width: 1023px) {
+  .pos-focus-mode .toast { left: 12px; right: 12px; top: 74px; bottom: auto; justify-content: center; }
+}
