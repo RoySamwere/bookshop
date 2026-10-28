@@ -135,7 +135,7 @@ export function TenderView({ cart, method, received, reference, busy, error, onM
       <button type="button" onClick={onBack} disabled={busy} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">
         <ArrowLeft size={16} /> Back to sale
       </button>
-      <span className="ml-auto pr-2 text-[13px] tabular-nums text-slate-500">{cartUnits(cart)} items</span>
+      <span className="ml-auto pr-2 text-[13px] tabular-nums text-slate-500">{cartUnits(cart)} {cartUnits(cart) === 1 ? 'item' : 'items'}</span>
     </header>
 
     <form className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6 pt-5" onSubmit={event => { event.preventDefault(); if (valid && !busy) onComplete() }}>

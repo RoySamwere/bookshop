@@ -42,7 +42,7 @@ export function HeldSalesPanel({ held, branchName, onResume, onDiscard, onClose 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-semibold text-[#162c4c]">{sale.label}</p>
-            <p className="mt-0.5 text-[13px] tabular-nums text-slate-500">{cartUnits(sale.cart)} items · held {new Date(sale.createdAt).toLocaleTimeString('en-KE', { hour: 'numeric', minute: '2-digit' })} · {branchName(sale.branch)}</p>
+            <p className="mt-0.5 text-[13px] tabular-nums text-slate-500">{cartUnits(sale.cart)} {cartUnits(sale.cart) === 1 ? 'item' : 'items'} · held {new Date(sale.createdAt).toLocaleTimeString('en-KE', { hour: 'numeric', minute: '2-digit' })} · {branchName(sale.branch)}</p>
           </div>
           <p className="shrink-0 text-[15px] font-bold tabular-nums text-[#13254a]">{formatKes(cartTotal(sale.cart))}</p>
         </div>

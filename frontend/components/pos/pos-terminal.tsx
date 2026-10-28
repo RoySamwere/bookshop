@@ -257,7 +257,7 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
 
   const initials = currentUser.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
-  const posNav: { label: string; icon: typeof Store; permission: Permission }[] = [
+  const navItems: { label: string; icon: typeof Store; permission: Permission }[] = [
     { label: 'Dashboard', icon: LayoutDashboard, permission: 'workspace.access' },
     { label: 'Point of Sale', icon: Store, permission: 'pos.access' },
     { label: 'Inventory', icon: Boxes, permission: 'inventory.view' },
@@ -265,7 +265,8 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
     { label: 'Customers', icon: Users, permission: 'customers.view' },
     { label: 'Reports', icon: ChartNoAxesColumnIncreasing, permission: 'reports.view' },
     { label: 'Settings', icon: Settings2, permission: 'settings.view' },
-  ].filter(item => item.label === 'Point of Sale' || hasPermission(currentUser, item.permission))
+  ]
+  const posNav = navItems.filter(item => item.label === 'Point of Sale' || hasPermission(currentUser, item.permission))
   function goToSection(section: string) {
     setNavOpen(false)
     if (section !== 'Point of Sale') router.push('/dashboard?section=' + encodeURIComponent(section))
@@ -295,14 +296,14 @@ export function PosTerminal({ currentUser, notify, onExit }: { currentUser: Book
           <PauseCircle size={19} aria-hidden="true" /><span className="hidden sm:inline">Held</span>
           {held.length > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-[#d4a52b] px-1.5 text-[12px] font-bold tabular-nums text-[#13254a]">{held.length}</span>}
         </button>
-        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="grid size-10 place-items-center rounded-lg hover:bg-white/10 md:hidden" aria-label="Today's sales"><ReceiptText size={19} /></button>}
-        <button type="button" onClick={() => setPanel('shortcuts')} className="hidden size-10 place-items-center rounded-lg hover:bg-white/10 sm:grid" aria-label="Keyboard shortcuts" title="Keyboard shortcuts"><Keyboard size={19} /></button>
+        {canSeeSales && <button type="button" onClick={() => { setPanel('today'); loadToday() }} className="grid size-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Today's sales"><ReceiptText size={19} /></button>}
+        <button type="button" onClick={() => setPanel('shortcuts')} className="hidden size-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 sm:grid" aria-label="Keyboard shortcuts" title="Keyboard shortcuts"><Keyboard size={19} /></button>
         <div className="mx-1 hidden h-8 w-px bg-slate-200 lg:block" aria-hidden="true" />
         <div className="hidden items-center gap-2 lg:flex">
           <span className="grid size-9 place-items-center rounded-full bg-[#e9f0ff] text-[12.5px] font-bold">{initials}</span>
           <span className="leading-tight"><span className="block max-w-[9rem] truncate text-[13.5px] font-semibold">{currentUser.name}</span><span className="block text-[11.5px] text-slate-500">{currentUser.role_label}</span></span>
         </div>
-        <button type="button" onClick={onExit} className="flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold transition hover:border-white/50 hover:bg-white/10">
+        <button type="button" onClick={onExit} className="flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700">
           <LogOut size={16} aria-hidden="true" /><span className="hidden sm:inline">Exit till</span>
         </button>
       </div>
