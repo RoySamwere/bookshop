@@ -12,7 +12,7 @@ const primaryButton = 'primary-button'
 const secondaryButton = 'secondary-button'
 
 type StockRow = { id: number; book_id: number; branch_id: number; title: string; sku: string; isbn: string | null; quantity: number; reserved: number; reorder_level: number; branch_name: string }
-type Book = { id: number; title: string; sku: string; is_active: boolean }
+type Book = { id: number; title: string; sku: string; is_active: boolean; category_name?: string|null; subcategory_name?: string|null; brand?: string|null; page_count?: number|null; ruling_style?: string|null }
 type StockPage = { data: StockRow[]; current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null; summary: { units: number; value: number; stock_lines: number; low: number; out_of_stock: number } }
 const money = (value: number) => `KSh ${Number(value).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -95,6 +95,9 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [books, setBooks] = useState<Book[]>([])
+  const [bookPage, setBookPage] = useState(1)
+  const [bookLastPage, setBookLastPage] = useState(1)
+  const [bookTotal, setBookTotal] = useState(0)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [completedSearch, setCompletedSearch] = useState('')
@@ -108,15 +111,15 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
 
   useEffect(() => {
     const term = search.trim()
-    if (book || addingProduct || !term) {
+    if (book || addingProduct) {
       setBooks([]); setSearching(false); setSearchError(''); setCompletedSearch('')
       return
     }
     let cancelled = false
     setSearching(true); setSearchError(''); setBooks([])
     const timer = window.setTimeout(() => {
-      api<{ data: Book[] }>('/books', { query: { search: term, active_only: 1 } })
-        .then(data => { if (!cancelled) setBooks(data.data) })
+      api<{ data: Book[];last_page:number;total:number }>('/books', { query: { search: term, page:bookPage, per_page:50, receiving_search:1 } })
+        .then(data => { if (!cancelled) {setBooks(data.data);setBookLastPage(data.last_page);setBookTotal(data.total)} })
         .catch(e => { if (!cancelled) setSearchError(errorMessage(e)) })
         .finally(() => { if (!cancelled) { setSearching(false); setCompletedSearch(term) } })
     }, 300)
@@ -144,8 +147,8 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
       <FormAlert tone="success" message={productMessage} />
       <fieldset disabled={busy || creating} className="space-y-4 disabled:opacity-70">
         {book ? <div className="stock-product-selected"><strong>{book.title}</strong><span>{book.sku}</span><button type="button" className="text-button" onClick={() => { setBook(null); setSearch(''); setAddingProduct(false); setProductMessage(''); setError(null) }}>Change product</button>{error?.field('book_id') && <p className="mt-2 text-xs text-rose-600">{error.field('book_id')}</p>}</div> : <div>
-          <Field label="Find a product" hint="Start typing a name, SKU or ISBN. If there’s no match, you can add the product here."><input className={inputClass} value={search} maxLength={255} disabled={addingProduct} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => { setSearch(e.target.value); setBooks([]); setSearchError(''); setSearching(Boolean(e.target.value.trim())) }} placeholder="Type to find or add a product…" /></Field>
-          {!addingProduct && search.trim() && <div className="stock-product-results" aria-live="polite">{searching || completedSearch !== search.trim() ? <p>Searching…</p> : searchError ? <ErrorState message={searchError} onRetry={() => setRetry(n => n + 1)} /> : books.length ? books.map(item => <button type="button" key={item.id} className="stock-product-option" onClick={() => { setBook(item); setError(null) }}><strong>{item.title}</strong><span>{item.sku}</span></button>) : <div className="stock-product-missing"><p>No product matches “{search.trim()}”.</p>{canCreateProduct ? <button type="button" className="secondary-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Add “{search.trim()}” as a new product</button> : <p>Ask a catalogue manager to add this product.</p>}</div>}</div>}
+          <Field label="Find a product" hint="Search the entire Products & Books catalogue by product, SKU, category, subcategory, brand or exercise-book specification. Browse all products without typing."><input className={inputClass} value={search} maxLength={255} disabled={addingProduct} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => { setSearch(e.target.value); setBookPage(1);setBooks([]); setSearchError(''); setSearching(Boolean(e.target.value.trim())) }} placeholder="Type to find or add a product…" /></Field>
+          {!addingProduct && <div className="stock-product-results" aria-live="polite">{searching || completedSearch !== search.trim() ? <p>Searching…</p> : searchError ? <ErrorState message={searchError} onRetry={() => setRetry(n => n + 1)} /> : books.length ? books.map(item => <button type="button" key={item.id} disabled={!item.is_active} className="stock-product-option" onClick={() => { setBook(item); setError(null) }}><strong>{item.title}</strong><span>{[item.category_name,item.subcategory_name,item.brand,item.ruling_style,item.page_count?`${item.page_count} pages`:null,item.sku].filter(Boolean).join(' · ')}{!item.is_active?' · Inactive — activate in Products & Books first':''}</span></button>) : <div className="stock-product-missing"><p>No product matches “{search.trim()}”.</p>{canCreateProduct ? <button type="button" className="secondary-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Add “{search.trim()}” as a new product</button> : <p>Ask a catalogue manager to add this product.</p>}</div>}<div className="flex items-center justify-between gap-2 px-3 py-2 text-xs"><span>{bookTotal} matching products · page {bookPage} of {bookLastPage}</span><div className="flex gap-2"><button type="button" className="secondary-button" disabled={bookPage<=1} onClick={()=>setBookPage(p=>p-1)}>Previous</button><button type="button" className="secondary-button" disabled={bookPage>=bookLastPage} onClick={()=>setBookPage(p=>p+1)}>Next</button></div></div></div>}
           {!addingProduct && canCreateProduct && search.trim() && !searching && completedSearch === search.trim() && !searchError && books.length > 0 && !books.some(item => item.title.toLowerCase() === search.trim().toLowerCase() || item.sku.toLowerCase() === search.trim().toLowerCase()) && <button type="button" className="text-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Not listed? Add “{search.trim()}”</button>}
           {addingProduct && <AddReceiptProduct initialName={search.trim()} creating={creating} onBusy={setCreating} onCancel={() => setAddingProduct(false)} onCreated={item => { setBook(item); setAddingProduct(false); setError(null); setProductMessage('Product added. Enter the quantity below to receive stock.') }} />}
         </div>}
