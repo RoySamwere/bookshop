@@ -85,6 +85,8 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   const [book, setBook] = useState<Book | null>(initial.book ?? null)
   const [branch, setBranch] = useState(String(initial.branchId ?? branches[0]?.id ?? ''))
   const [quantity, setQuantity] = useState('')
+  const [unitId, setUnitId] = useState('')
+  const [units, setUnits] = useState<{id:number;name:string;pieces_per_unit:number}[]>([])
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
@@ -117,14 +119,16 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [book, addingProduct, search, retry])
 
+  useEffect(() => { if (!book) {setUnits([]);setUnitId('');return};let active=true;api<{id:number;name:string;pieces_per_unit:number}[]>(`/books/${book.id}/units`).then(data=>{if(active)setUnits(data)}).catch(()=>{if(active)setUnits([])});return ()=>{active=false} },[book])
+
   async function save(event: FormEvent) {
     event.preventDefault()
     if (submitting.current) return
     if (!book) { setError(new ApiError('Select a product to receive.', 422)); return }
     submitting.current = true; setBusy(true); setError(null)
     try {
-      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), reference: reference.trim() || null, notes: notes.trim() || null } })
-      onSaved(`${quantity} units received. ${book.title} now has ${result.quantity} units on hand at ${branches.find(b => b.id === Number(branch))?.name}.`)
+      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
+      onSaved(`${Number(quantity)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units received. ${book.title} now has ${result.quantity} units on hand at ${branches.find(b => b.id === Number(branch))?.name}.`)
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; setBusy(false) }
   }
@@ -141,6 +145,8 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
         </div>}
         <div className="grid gap-4 sm:grid-cols-2"><Field label="Receiving branch" error={error?.field('branch_id')}><select required className={inputClass} value={branch} onChange={e => setBranch(e.target.value)}><option value="">Choose branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
+        <Field label="Received as"><select className={inputClass} value={unitId} onChange={e=>setUnitId(e.target.value)}><option value="">Individual piece (×1)</option>{units.map(u=><option key={u.id} value={u.id}>{u.name} (×{u.pieces_per_unit})</option>)}</select></Field>
+        <p className="text-sm text-slate-600">Adds {Number(quantity||0)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units to stock.</p>
         <Field label="Delivery reference (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
         <Field label="Notes (optional)" error={error?.field('notes')}><textarea className={`${inputClass} h-20 py-3`} maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opening stock, delivery details…" /></Field>
       </fieldset>
