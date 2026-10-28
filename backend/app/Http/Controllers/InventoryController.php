@@ -32,6 +32,7 @@ class InventoryController extends Controller
             'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('is_active', true)],
             'quantity' => 'required|integer|min:1|max:2147483647',
             'product_unit_id' => 'nullable|integer|exists:product_units,id',
+            'supplier_id' => ['nullable','integer',Rule::exists('suppliers','id')->where('is_active',true)],
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -41,7 +42,7 @@ class InventoryController extends Controller
         $factor=$unit ? (int)$unit->pieces_per_unit : 1;
         $pieces=(int)$data['quantity']*$factor;
         if($pieces>2147483647) throw \Illuminate\Validation\ValidationException::withMessages(['quantity'=>'Converted quantity exceeds the maximum stock movement.']);
-        $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null,$unit?->id,(int)$data['quantity'],$factor);
+        $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null,$unit?->id,(int)$data['quantity'],$factor,$data['supplier_id']??null);
         return response()->json(['message'=>'Stock received successfully.','quantity'=>$quantity,'pieces_received'=>$pieces,'units_per_package'=>$factor],201);
     }
     public function movements(Request $request) {
