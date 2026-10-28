@@ -31,12 +31,24 @@ class InventoryController extends Controller
             'book_id' => ['required', 'integer', Rule::exists('books', 'id')->where('is_active', true)],
             'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('is_active', true)],
             'quantity' => 'required|integer|min:1|max:2147483647',
+            'product_unit_id' => 'nullable|integer|exists:product_units,id',
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
         $this->authorizeBranch($request, (int) $data['branch_id']);
-        $quantity = $service->change($data['book_id'], $data['branch_id'], $data['quantity'], 'receipt', $request->user()->id, $data['reference'] ?? null, $data['notes'] ?? null);
-        return response()->json(['message' => 'Stock received successfully.', 'quantity' => $quantity], 201);
+        $unit = isset($data['product_unit_id']) ? DB::table('product_units')->where('id',$data['product_unit_id'])->where('book_id',$data['book_id'])->first() : null;
+        if(isset($data['product_unit_id']) && !$unit) throw \Illuminate\Validation\ValidationException::withMessages(['product_unit_id'=>'Selected packaging does not belong to this product.']);
+        $factor=$unit ? (int)$unit->pieces_per_unit : 1;
+        $pieces=(int)$data['quantity']*$factor;
+        if($pieces>2147483647) throw \Illuminate\Validation\ValidationException::withMessages(['quantity'=>'Converted quantity exceeds the maximum stock movement.']);
+        $quantity=DB::transaction(function()use($service,$data,$request,$unit,$factor,$pieces){
+            $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null);
+            DB::table('inventory_movements')->where('book_id',$data['book_id'])->where('branch_id',$data['branch_id'])->where('type','receipt')->orderByDesc('id')->limit(1)->update([
+                'product_unit_id'=>$unit?->id,'package_quantity'=>$data['quantity'],'units_per_package'=>$factor,
+            ]);
+            return $quantity;
+        });
+        return response()->json(['message'=>'Stock received successfully.','quantity'=>$quantity,'pieces_received'=>$pieces,'units_per_package'=>$factor],201);
     }
     public function movements(Request $request) {
         $user=$request->user();
