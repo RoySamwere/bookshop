@@ -97,6 +97,50 @@ class LegacyPlatformOwnerUpgradeTest extends TestCase
         $this->assertDatabaseCount('audit_logs', 0);
     }
 
+    public function test_administrator_replacement_requires_explicit_promotion_and_is_audited(): void
+    {
+        $shop = Bookshop::factory()->create();
+        $user = $this->legacy(['bookshop_id' => $shop->id]);
+        $shop->forceFill(['owner_user_id' => $user->id])->save();
+        $admin = User::factory()->forBookshop($shop)->create(['role' => Roles::ADMIN]);
+        $credentials = $admin->fresh()->only(['id', 'email', 'password', 'email_verified_at']);
+        $this->artisan('platform:upgrade-legacy-owner', ['--promote-replacement-owner' => true])->assertFailed();
+        $this->artisan('platform:upgrade-legacy-owner', ['--replacement-owner' => $admin->id])->assertFailed();
+        $options = ['--replacement-owner' => $admin->id, '--promote-replacement-owner' => true];
+        $this->artisan('platform:upgrade-legacy-owner', [...$options, '--dry-run' => true])->assertSuccessful();
+        $this->assertSame(Roles::ADMIN, $admin->fresh()->role);
+        $this->assertSame($user->id, $shop->fresh()->owner_user_id);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->artisan('platform:upgrade-legacy-owner', $options)->assertSuccessful();
+        $this->artisan('platform:upgrade-legacy-owner', $options)->assertSuccessful();
+        $this->assertSame(Roles::PLATFORM_OWNER, $user->fresh()->role);
+        $this->assertNull($user->fresh()->bookshop_id);
+        $this->assertSame(Roles::BOOKSHOP_OWNER, $admin->fresh()->role);
+        $this->assertEquals($credentials, $admin->fresh()->only(array_keys($credentials)));
+        $this->assertSame($admin->id, $shop->fresh()->owner_user_id);
+        $audit = AuditLog::where('action', 'platform.legacy_owner_upgraded')->sole();
+        $this->assertSame([['user_id' => $admin->id, 'from' => Roles::ADMIN, 'to' => Roles::BOOKSHOP_OWNER]], $audit->metadata['owner_promotions']);
+    }
+
+    public function test_promotion_cannot_use_other_tenants_inactive_staff_or_non_administrators(): void
+    {
+        $shop = Bookshop::factory()->create();
+        $user = $this->legacy(['bookshop_id' => $shop->id]);
+        $shop->forceFill(['owner_user_id' => $user->id])->save();
+        $otherShop = Bookshop::factory()->create();
+        foreach ([
+            User::factory()->forBookshop($otherShop)->create(['role' => Roles::ADMIN]),
+            User::factory()->forBookshop($shop)->create(['role' => Roles::ADMIN, 'is_active' => false]),
+            User::factory()->forBookshop($shop)->create(['role' => Roles::CASHIER]),
+            $user,
+        ] as $invalid) {
+            $this->artisan('platform:upgrade-legacy-owner', ['--replacement-owner' => $invalid->id, '--promote-replacement-owner' => true])->assertFailed();
+        }
+        $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
+        $this->assertSame($user->id, $shop->fresh()->owner_user_id);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
     public function test_unadopted_business_records_block_detachment(): void
     {
         $user = $this->legacy();

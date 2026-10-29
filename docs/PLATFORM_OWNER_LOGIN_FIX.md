@@ -49,12 +49,21 @@ php artisan up
 
 If any step fails, `set -e` stops the sequence and the backend stays in maintenance until resolved. Do not blindly continue or roll back schema changes. Reload PHP-FPM using your host's established process if OPcache does not check file timestamps. The React files are served by Nginx independently of Laravel maintenance; use your normal frontend maintenance mechanism during an in-place build, or prepare assets in an immutable release before switching the current symlink.
 
-If the dry run reports that a bookshop would lose its owner, select an existing active `bookshop_owner` or legitimate `system_owner` in that same bookshop. The command never promotes employees to business owners. After verifying the replacement, run the following instead of the three upgrade lines above (enter the numeric user ID when prompted):
+If the dry run reports that a bookshop would lose its owner, select an existing active `bookshop_owner` or legitimate `system_owner` in that same bookshop. After verifying the replacement, run the following instead of the three upgrade lines above (enter the numeric user ID when prompted):
 
 ```bash
 read -r -p 'Verified replacement tenant owner user ID: ' REPLACEMENT_OWNER_ID
 php artisan platform:upgrade-legacy-owner --dry-run --replacement-owner="$REPLACEMENT_OWNER_ID"
 php artisan platform:upgrade-legacy-owner --replacement-owner="$REPLACEMENT_OWNER_ID"
+php artisan platform:upgrade-legacy-owner --dry-run
+```
+
+If the shop has no other owner but has an existing active `admin`, the business may explicitly choose that administrator as its new Bookshop Owner. This requires both the selected user ID and `--promote-replacement-owner`; the command never selects or promotes an employee automatically. It refuses other-bookshop users, inactive users and non-administrator staff. Promotion and ownership transfer are recorded together in the same audit event and transaction; the administrator's credentials are preserved. Review the ownership decision before running:
+
+```bash
+read -r -p 'Verified existing bookshop administrator user ID: ' REPLACEMENT_ADMIN_ID
+php artisan platform:upgrade-legacy-owner --dry-run --replacement-owner="$REPLACEMENT_ADMIN_ID" --promote-replacement-owner
+php artisan platform:upgrade-legacy-owner --replacement-owner="$REPLACEMENT_ADMIN_ID" --promote-replacement-owner
 php artisan platform:upgrade-legacy-owner --dry-run
 ```
 

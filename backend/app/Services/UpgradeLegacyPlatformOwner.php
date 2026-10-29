@@ -11,14 +11,14 @@ use RuntimeException;
 
 final class UpgradeLegacyPlatformOwner
 {
-    public function run(?int $replacementOwnerId = null, bool $dryRun = false): User
+    public function run(?int $replacementOwnerId = null, bool $dryRun = false, bool $promoteReplacementOwner = false): User
     {
         $email = strtolower(trim((string) config('platform.legacy_owner_email')));
         if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new RuntimeException('A valid trusted SYSTEM_OWNER_EMAIL must be configured.');
         }
 
-        return DB::transaction(function () use ($email, $replacementOwnerId, $dryRun) {
+        return DB::transaction(function () use ($email, $replacementOwnerId, $dryRun, $promoteReplacementOwner) {
             $matches = User::whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->get();
             if ($matches->count() !== 1) {
                 throw new RuntimeException('Expected exactly one existing account matching SYSTEM_OWNER_EMAIL; no accounts changed.');
@@ -42,18 +42,22 @@ final class UpgradeLegacyPlatformOwner
                 }
             })->lockForUpdate()->get();
             $transfers = [];
+            $promotions = [];
             foreach ($shops as $shop) {
                 $ownerId = $shop->owner_user_id === $user->id ? null : $shop->owner_user_id;
                 $owner = User::whereKey($ownerId)->where('bookshop_id', $shop->id)
                     ->whereIn('role', Roles::TENANT_OWNER_ROLES)->where('is_active', true)->lockForUpdate()->first();
                 if (! $owner) {
                     $replacement = User::whereKey($replacementOwnerId)->whereKeyNot($user->id)
-                        ->where('bookshop_id', $shop->id)->whereIn('role', Roles::TENANT_OWNER_ROLES)
+                        ->where('bookshop_id', $shop->id)->whereIn('role', $promoteReplacementOwner ? [...Roles::TENANT_OWNER_ROLES, Roles::ADMIN] : Roles::TENANT_OWNER_ROLES)
                         ->where('is_active', true)->lockForUpdate()->first();
                     if (! $replacement) {
-                        throw new RuntimeException("Bookshop {$shop->id} would lose its owner. Supply --replacement-owner with an active tenant owner from that bookshop; no accounts changed.");
+                        throw new RuntimeException("Bookshop {$shop->id} would lose its owner. Supply --replacement-owner with an active tenant owner from that bookshop, or explicitly add --promote-replacement-owner for its existing administrator; no accounts changed.");
                     }
                     $transfers[] = ['bookshop_id' => $shop->id, 'from' => $shop->owner_user_id, 'to' => $replacement->id];
+                    if ($replacement->role === Roles::ADMIN) {
+                        $promotions[] = ['user_id' => $replacement->id, 'from' => Roles::ADMIN, 'to' => Roles::BOOKSHOP_OWNER];
+                    }
                 }
             }
             $branchIds = $user->branches()->withoutGlobalScope('bookshop')->pluck('branches.id')->all();
@@ -61,6 +65,9 @@ final class UpgradeLegacyPlatformOwner
                 return $user;
             }
             $before = ['role' => $user->role, 'bookshop_id' => $user->bookshop_id, 'branch_ids' => $branchIds];
+            foreach ($promotions as $promotion) {
+                User::whereKey($promotion['user_id'])->update(['role' => Roles::BOOKSHOP_OWNER]);
+            }
             foreach ($transfers as $transfer) {
                 Bookshop::whereKey($transfer['bookshop_id'])->update(['owner_user_id' => $transfer['to']]);
             }
@@ -68,7 +75,7 @@ final class UpgradeLegacyPlatformOwner
             $user->branches()->detach();
             $user->forceFill(['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null])->save();
             AuditLog::record('platform.legacy_owner_upgraded', 'Upgraded the configured legacy administrator from the console', $user,
-                ['before' => $before, 'after' => ['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null], 'ownership_transfers' => $transfers], actor: $user);
+                ['before' => $before, 'after' => ['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null], 'ownership_transfers' => $transfers, 'owner_promotions' => $promotions], actor: $user);
 
             return $user;
         });
