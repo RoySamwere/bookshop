@@ -22,6 +22,7 @@ export default function PlatformPage() {
       <Route path="bookshops" element={<BookshopsView />} />
       <Route path="bookshops/:id" element={<BookshopDetailView />} />
       <Route path="users" element={<Gate permission="platform.users.view"><UsersView /></Gate>} />
+      <Route path="plans" element={<Gate permission="platform.plans.view"><PlansView /></Gate>} />
       <Route path="settings" element={<Gate permission="platform.settings.view"><SettingsView /></Gate>} />
       <Route path="audit" element={<Gate permission="platform.audit.view"><AuditView /></Gate>} />
       <Route path="*" element={<Navigate replace to="/platform" />} />
@@ -33,6 +34,7 @@ const nav: { to: string; label: string; icon: typeof Gauge; permission: Permissi
   { to: '/platform', label: 'Overview', icon: Gauge, permission: 'platform.access' },
   { to: '/platform/bookshops', label: 'Bookshops', icon: Store, permission: 'platform.bookshops.view' },
   { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
+  { to: '/platform/plans', label: 'Subscription plans', icon: Building2, permission: 'platform.plans.view' },
   { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
   { to: '/platform/audit', label: 'Audit history', icon: History, permission: 'platform.audit.view' },
 ]
@@ -121,6 +123,18 @@ function OverviewView() {
           : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{overview.data.recent_bookshops.map(shop => <li key={shop.id}><Link to={`/platform/bookshops/${shop.id}`} className="flex items-center justify-between gap-3 px-6 py-3 hover:bg-slate-50"><span><strong className="text-sm text-slate-900">{shop.name}</strong><small className="block text-xs text-slate-400">{shop.country} · {formatDate(shop.created_at)}</small></span><StatusPill status={shop.status} /></Link></li>)}</ul>}
       </Card></div>
     </>}
+  </>
+}
+
+function PlansView() {
+  const plans = useQuery({ queryKey: ['platform', 'plans'], queryFn: platformApi.plans })
+  return <>
+    <PageHeader eyebrow="PLATFORM" icon={<Building2 size={15} />} title="Subscription plans" description="Available plans, prices and trial periods." />
+    {plans.isPending ? <LoadingState /> : plans.error ? <ErrorState message={errorMessage(plans.error)} onRetry={() => void plans.refetch()} /> :
+      <div className="grid gap-4 sm:grid-cols-2">{plans.data.map(plan => <Card key={plan.id} title={plan.name} description={plan.description || undefined}>
+        <p className="font-semibold">{plan.currency} {plan.price} / {plan.billing_interval}</p>
+        <p className="text-sm text-slate-500">{plan.trial_days} trial days · {plan.is_active ? 'Active' : 'Inactive'}</p>
+      </Card>)}</div>}
   </>
 }
 

@@ -11,6 +11,18 @@ vi.mock('../../lib/auth', async importOriginal => ({ ...await importOriginal<typ
 vi.mock('./auth-provider', () => ({ useAuth: () => ({ user: null, loading: false }) }))
 beforeEach(() => { mocks.login.mockReset(); mocks.register.mockReset() })
 describe('authentication forms', () => {
+  it.each(['platform_owner', 'platform_admin'])('sends %s without a bookshop to the platform after login', async role => {
+    mocks.login.mockResolvedValue({ role, account_type: 'platform', bookshop_id: null, bookshop: null, permissions: ['platform.access'] })
+    render(<MemoryRouter initialEntries={['/login?next=%2Fdashboard']}><Routes>
+      <Route path="/login" element={<LoginPage />} /><Route path="/platform" element={<p>Platform dashboard</p>} />
+    </Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(screen.getByRole('textbox', { name: /Email address/ }), 'owner@example.com')
+    await user.type(document.getElementById('login-password')!, 'Secret-1!')
+    await user.click(screen.getByRole('button', { name: /^Sign in/ }))
+    expect(await screen.findByText('Platform dashboard')).toBeInTheDocument()
+    expect(screen.queryByText('Not linked to a bookshop')).not.toBeInTheDocument()
+  })
   it('validates login and routes a staff member to the requested section', async () => {
     const user = userEvent.setup()
     mocks.login.mockResolvedValue({ permissions: ['workspace.access'] })

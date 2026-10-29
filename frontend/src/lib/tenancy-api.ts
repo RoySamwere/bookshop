@@ -49,6 +49,7 @@ export type PlatformSettings = { bookshop_registration_open: boolean; support_em
 
 /** Platform administration. These endpoints never return bookshop business records. */
 export const platformApi = {
+  plans: async () => (await api<{ data: { id: number; name: string; description: string | null; price: string; currency: string; billing_interval: string; trial_days: number; is_active: boolean }[] }>('/platform/plans')).data,
   overview: async () => (await api<{ data: PlatformOverview }>('/platform/overview')).data,
   bookshops: (query: { search?: string; status?: string; page?: number }) => api<Paginated<PlatformBookshop>>('/platform/bookshops', { query }),
   bookshop: async (id: number) => (await api<{ data: PlatformBookshopDetails }>(`/platform/bookshops/${id}`)).data,

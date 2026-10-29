@@ -89,7 +89,7 @@ export function WorkspaceApp() {
 
   const enterWorkspace = useCallback((user: BookshopUser) => {
     // Customers, applicants, platform staff and owners still verifying have no workspace here.
-    if (!hasPermission(user, 'workspace.access') || needsOnboarding(user)) { router.replace(homeFor(user)); return }
+    if (user.account_type === 'platform' || !hasPermission(user, 'workspace.access') || needsOnboarding(user)) { router.replace(homeFor(user)); return }
     setCurrentUser(user)
     const requested = new URLSearchParams(window.location.search).get('section')
     setActive(previous => requested && canOpenSection(user, requested) ? requested : canOpenSection(user, previous) ? previous : firstSection(user))

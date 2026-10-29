@@ -19,7 +19,9 @@ final class Tenant
     /** The current bookshop id, or null when there is no tenant (guests, platform staff, console). */
     public static function id(): ?int
     {
-        return self::$override ?? auth()->user()?->bookshop_id;
+        $user = auth()->user();
+
+        return self::$override ?? ($user?->isPlatformUser() ? null : $user?->bookshop_id);
     }
 
     /** For tenant-only code paths; the `tenant` middleware guarantees this is set. */
@@ -52,7 +54,7 @@ final class Tenant
             return null;
         }
 
-        return $user->bookshop_id ?? false;
+        return $user->isPlatformUser() ? false : ($user->bookshop_id ?? false);
     }
 
     /** Runs code on behalf of one bookshop (console commands, jobs). */

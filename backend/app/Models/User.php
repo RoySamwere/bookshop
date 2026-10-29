@@ -19,11 +19,15 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasApiTokens, HasFactory, Notifiable;
 
     public const SOURCE_PUBLIC = 'public';
+
     public const SOURCE_BOOKSHOP_REGISTRATION = 'bookshop_registration';
+
     public const SOURCE_INVITATION = 'invitation';
 
     public const ACCESS_PENDING = 'pending';
+
     public const ACCESS_APPROVED = 'approved';
+
     public const ACCESS_REJECTED = 'rejected';
 
     protected $fillable = [
@@ -138,7 +142,7 @@ class User extends Authenticatable implements MustVerifyEmail
     /** Branch ids this user works in, always within their own bookshop; the owner works in every branch of it. */
     public function branchIds(): array
     {
-        if ($this->bookshop_id === null) {
+        if ($this->isPlatformUser() || $this->bookshop_id === null) {
             return [];
         }
 
@@ -213,12 +217,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function authData(): array
     {
-        $bookshop = $this->bookshop_id ? $this->bookshop()->with('subscription.plan')->first() : null;
+        $bookshopId = $this->isPlatformUser() ? null : $this->bookshop_id;
+        $bookshop = $bookshopId ? $this->bookshop()->with('subscription.plan')->first() : null;
 
         return [
             ...$this->only(['id', 'name', 'email', 'phone', 'role']),
             'account_type' => $this->accountType(),
-            'bookshop_id' => $this->bookshop_id,
+            'bookshop_id' => $bookshopId,
             'bookshop' => $bookshop ? [
                 ...$bookshop->summary(),
                 'is_owner' => $this->isOwner(),
@@ -231,7 +236,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'staff_access_note' => $this->staff_access_status === self::ACCESS_REJECTED ? $this->staff_access_note : null,
             'permissions' => $this->permissions(),
             'assignable_roles' => $this->assignableRoles(),
-            'branches' => $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $this->bookshop_id)
+            'branches' => $this->isPlatformUser() ? [] : $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $bookshopId)
                 ->get(['branches.id', 'name', 'code', 'is_main'])
                 ->map(fn (Branch $branch) => $branch->only(['id', 'name', 'code', 'is_main']))->all(),
         ];
