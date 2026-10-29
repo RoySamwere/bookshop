@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        $middleware->prependToPriorityList(\Illuminate\Routing\Middleware\SubstituteBindings::class, \App\Http\Middleware\ResolveBookshopManagement::class);
         $middleware->alias([
             'active' => \App\Http\Middleware\EnsureAccountIsActive::class,
             'session.active' => \App\Http\Middleware\EnsureSessionIsActive::class,

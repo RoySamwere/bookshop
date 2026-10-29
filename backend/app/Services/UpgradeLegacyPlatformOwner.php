@@ -46,6 +46,13 @@ final class UpgradeLegacyPlatformOwner
             $transfers = [];
             $promotions = [];
             foreach ($shops as $shop) {
+                // The original business can remain legally owned by a Platform Owner with an
+                // explicit management grant; rerunning the old provisioner must preserve it.
+                if ($user->role === Roles::PLATFORM_OWNER && $shop->owner_user_id === $user->id
+                    && DB::table('platform_bookshop_management')->where('user_id', $user->id)
+                        ->where('bookshop_id', $shop->id)->whereNull('revoked_at')->exists()) {
+                    continue;
+                }
                 $ownerId = $shop->owner_user_id === $user->id ? null : $shop->owner_user_id;
                 $owner = User::whereKey($ownerId)->where('bookshop_id', $shop->id)
                     ->whereIn('role', Roles::TENANT_OWNER_ROLES)->where('is_active', true)->lockForUpdate()->first();

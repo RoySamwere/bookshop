@@ -9,7 +9,8 @@ use Illuminate\Validation\Rules\Unique;
 
 /**
  * The current bookshop (tenant). It always comes from the signed-in user's own membership
- * (users.bookshop_id), never from a client-submitted bookshop_id. Console code that has no
+ * (users.bookshop_id), or a database-authorized platform management context resolved by middleware,
+ * never from a client-submitted bookshop_id. Console code that has no
  * signed-in user can act for one bookshop with Tenant::run().
  */
 final class Tenant
@@ -21,7 +22,7 @@ final class Tenant
     {
         $user = auth()->user();
 
-        return self::$override ?? ($user?->isPlatformUser() ? null : $user?->bookshop_id);
+        return self::$override ?? $user?->workspaceBookshopId();
     }
 
     /** For tenant-only code paths; the `tenant` middleware guarantees this is set. */
@@ -54,7 +55,7 @@ final class Tenant
             return null;
         }
 
-        return $user->isPlatformUser() ? false : ($user->bookshop_id ?? false);
+        return $user->workspaceBookshopId() ?? false;
     }
 
     /** Runs code on behalf of one bookshop (console commands, jobs). */

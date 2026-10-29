@@ -29,6 +29,7 @@ export type BookshopSummary = {
 }
 
 export type BookshopUser = {
+  management_context?: { bookshop_id: number; return_to: string } | null
   account_type: 'platform' | 'bookshop' | 'customer'
   bookshop_id: number | null
   bookshop: BookshopSummary | null
@@ -58,6 +59,7 @@ export const needsOnboarding = (user: BookshopUser) => user.account_type === 'bo
 
 /** Where a signed-in account belongs: platform staff to the console, staff to the workspace, everyone else to their account page. */
 export const homeFor = (user: BookshopUser) => {
+  if (user.management_context && hasPermission(user, 'workspace.access')) return '/dashboard'
   if (user.account_type === 'platform' && hasPermission(user, 'platform.access')) return '/platform'
   if (needsOnboarding(user)) return '/onboarding/verify-email'
   return hasPermission(user, 'workspace.access') ? '/dashboard' : '/account'

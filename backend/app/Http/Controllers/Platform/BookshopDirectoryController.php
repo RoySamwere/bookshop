@@ -20,6 +20,17 @@ use Illuminate\Http\Request;
  */
 class BookshopDirectoryController extends Controller
 {
+    public function store(\App\Http\Requests\BookshopRegistrationRequest $request, \App\Services\BookshopRegistrationService $registration): JsonResponse
+    {
+        // Reuse registration without replacing the platform operator's authenticated session.
+        $owner = $registration->register($request->validated());
+        $owner->forceFill(['created_by' => $request->user()->id])->save();
+        $sent = SafeMail::send(fn () => $owner->sendEmailVerificationNotification());
+        AuditLog::record('platform.bookshop_created', 'Created a bookshop and its separate owner account', $owner->bookshop, actor: $request->user(), bookshopId: $owner->bookshop_id);
+
+        return response()->json(['message' => $sent ? 'Bookshop created. The owner must verify their email.' : 'Bookshop created. Verification email could not be sent; use resend verification.', 'data' => $owner->bookshop->summary()], 201);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([

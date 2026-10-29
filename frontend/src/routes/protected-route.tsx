@@ -12,7 +12,7 @@ export function ProtectedRoute({ permission }: { permission?: Permission }) {
     return <main className="p-8" role="alert"><p>{error.message}</p><button onClick={retry}>Retry connection</button></main>
   }
   if (!user) return <Navigate replace to={`/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`} />
-  if (user.account_type === 'platform' && /^\/(dashboard|onboarding)(\/|$)/.test(location.pathname)) return <Navigate replace to="/platform" />
+  if (user.account_type === 'platform' && !user.management_context && /^\/(dashboard|onboarding)(\/|$)/.test(location.pathname)) return <Navigate replace to="/platform" />
   if (permission && !hasPermission(user, permission)) return <main className="p-8"><h1>Access restricted</h1><p>Your account does not have permission to open this page.</p></main>
   return <Outlet />
 }

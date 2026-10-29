@@ -38,6 +38,9 @@ class AuditLog extends Model
         /** @var Request $request */
         $request = request();
         $actor ??= $request->user();
+        if ($actor && ($managedId = \App\Support\Tenancy\ManagementContext::idFor($actor)) !== null) {
+            $metadata['platform_management'] = ['actor_id' => $actor->id, 'bookshop_id' => $managedId];
+        }
 
         return self::create([
             'bookshop_id' => $bookshopId ?? Tenant::id() ?? $actor?->bookshop_id,

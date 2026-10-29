@@ -44,14 +44,14 @@ class StaffInvitationController extends Controller
             'branch_ids.*.in' => 'You can only assign branches of your bookshop that you have access to.',
             'email.unique' => 'An account with this email address already exists.',
         ]);
-        $entitlements->ensureCanAddUser($caller->bookshop);
+        $entitlements->ensureCanAddUser(Tenant::bookshop());
 
         $user = DB::transaction(function () use ($data, $caller) {
             $user = new User(['name' => $data['name'], 'email' => strtolower(trim($data['email'])), 'phone' => $data['phone'] ?? null, 'role' => $data['role']]);
             // Unusable until the invitation is accepted; the invitee chooses their own password.
             $user->password = Str::random(64);
             $user->forceFill([
-                'bookshop_id' => $caller->bookshop_id,
+                'bookshop_id' => $caller->workspaceBookshopId(),
                 'is_active' => true,
                 'email_verified_at' => null,
                 'created_by' => $caller->id,
@@ -120,7 +120,7 @@ class StaffInvitationController extends Controller
     {
         return SafeMail::send(function () use ($user, $inviter) {
             $token = Password::broker('invitations')->createToken($user);
-            $user->notify(new StaffInvitation($token, $inviter->name, $inviter->bookshop?->name ?? 'your bookshop'));
+            $user->notify(new StaffInvitation($token, $inviter->name, Tenant::bookshop()?->name ?? 'your bookshop'));
         });
     }
 }

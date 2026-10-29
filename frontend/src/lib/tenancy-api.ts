@@ -1,5 +1,6 @@
 import { api, type Paginated } from './api'
-import type { BookshopStatus, Role, SubscriptionSummary } from './auth'
+import type { BookshopStatus, Role, SubscriptionSummary, BookshopRegistrationPayload } from './auth'
+import { queryClient } from '../app/query-client'
 import type { AuditEntry, TeamMember } from './workspace-api'
 
 type Saved<T> = { data: T; message: string }
@@ -49,6 +50,8 @@ export type PlatformSettings = { bookshop_registration_open: boolean; support_em
 
 /** Platform administration. These endpoints never return bookshop business records. */
 export const platformApi = {
+  managedBookshops: async () => (await api<{ data: BookshopProfile[] }>('/platform/managed-bookshops')).data,
+  createBookshop: (body: BookshopRegistrationPayload) => api<Saved<BookshopProfile>>('/platform/bookshops', { method: 'POST', body }),
   plans: async () => (await api<{ data: { id: number; name: string; description: string | null; price: string; currency: string; billing_interval: string; trial_days: number; is_active: boolean }[] }>('/platform/plans')).data,
   overview: async () => (await api<{ data: PlatformOverview }>('/platform/overview')).data,
   bookshops: (query: { search?: string; status?: string; page?: number }) => api<Paginated<PlatformBookshop>>('/platform/bookshops', { query }),
@@ -62,6 +65,21 @@ export const platformApi = {
   settings: async () => (await api<{ data: PlatformSettings }>('/platform/settings')).data,
   updateSettings: (body: Partial<Omit<PlatformSettings, 'default_trial_days'>>) => api<Saved<PlatformSettings>>('/platform/settings', { method: 'PUT', body }),
   audit: (query: { search?: string; page?: number }) => api<Paginated<AuditEntry>>('/platform/audit-logs', { query }),
+}
+
+/** Discard cached tenant records and reload the UI after the server changes the session context. */
+export async function enterBookshopManagement(id: number) {
+  await api(`/platform/management/${id}/enter`, { method: 'POST' })
+  await queryClient.cancelQueries()
+  queryClient.clear()
+  window.location.assign('/dashboard')
+}
+
+export async function returnToPlatform() {
+  await api('/platform/management/leave', { method: 'POST' })
+  await queryClient.cancelQueries()
+  queryClient.clear()
+  window.location.assign('/platform')
 }
 
 /** Common markets and their currencies; anything else can be typed in. */

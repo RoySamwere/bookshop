@@ -12,7 +12,8 @@ import {
 import { useAuth } from '../../features/auth/auth-provider'
 import { ApiError, errorMessage } from '../../lib/api'
 import { hasPermission, homeFor, logout, type BookshopUser, type Permission } from '../../lib/auth'
-import { BOOKSHOP_STATUS_LABELS, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
+import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
+import BookshopRegisterPage from '../register/bookshop/page'
 
 /** The Platform Owner console at /platform. Separate from every bookshop workspace; it shows tenant metadata only. */
 export default function PlatformPage() {
@@ -20,6 +21,8 @@ export default function PlatformPage() {
     <Route element={<PlatformShell />}>
       <Route index element={<OverviewView />} />
       <Route path="bookshops" element={<BookshopsView />} />
+      <Route path="bookshops/new" element={<Gate permission="platform.bookshops.onboard"><BookshopRegisterPage platformMode /></Gate>} />
+      <Route path="management" element={<ManagementView />} />
       <Route path="bookshops/:id" element={<BookshopDetailView />} />
       <Route path="users" element={<Gate permission="platform.users.view"><UsersView /></Gate>} />
       <Route path="plans" element={<Gate permission="platform.plans.view"><PlansView /></Gate>} />
@@ -33,6 +36,7 @@ export default function PlatformPage() {
 const nav: { to: string; label: string; icon: typeof Gauge; permission: Permission }[] = [
   { to: '/platform', label: 'Overview', icon: Gauge, permission: 'platform.access' },
   { to: '/platform/bookshops', label: 'Bookshops', icon: Store, permission: 'platform.bookshops.view' },
+  { to: '/platform/management', label: 'Bookshop Management', icon: Building2, permission: 'platform.access' },
   { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
   { to: '/platform/plans', label: 'Subscription plans', icon: Building2, permission: 'platform.plans.view' },
   { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
@@ -53,7 +57,7 @@ function PlatformShell() {
   if (!user) return <Navigate replace to={`/login?next=${encodeURIComponent(location.pathname)}`} />
   if (user.account_type !== 'platform' || !hasPermission(user, 'platform.access')) return <Navigate replace to={homeFor(user)} />
 
-  const links = nav.filter(item => hasPermission(user, item.permission))
+  const links = nav.filter(item => hasPermission(user, item.permission) && (item.to !== '/platform/management' || user.role === 'platform_owner'))
   const sidebar = <nav aria-label="Platform navigation" className="flex flex-col gap-1">
     {links.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/platform'} onClick={() => setOpen(false)}
       className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
@@ -96,9 +100,11 @@ function StatusPill({ status }: { status: PlatformBookshop['status'] }) {
 }
 
 function OverviewView() {
+  const user = useCurrentUser()
   const overview = useQuery({ queryKey: ['platform', 'overview'], queryFn: platformApi.overview })
   return <>
     <PageHeader eyebrow="PLATFORM" icon={<Gauge size={15} />} title="Platform overview" description="Bookshops, subscriptions and accounts across the platform. Bookshop business records are never shown here." />
+    {user.role === 'platform_owner' && <div className="mb-6"><Card title="Bookshop Management" description="Open the original Hekima Bookshop through your authorized management context."><Link className={primaryButton} to="/platform/management">Manage authorized bookshops</Link></Card></div>}
     {overview.isPending ? <LoadingState /> : overview.error ? <ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} /> : <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Bookshops" value={overview.data.bookshops.total} hint={`${overview.data.bookshops.registered_last_30_days} registered in the last 30 days`} icon={<Store size={18} />} />
@@ -126,6 +132,26 @@ function OverviewView() {
   </>
 }
 
+function ManagementView() {
+  const user = useCurrentUser()
+  if (user.role !== 'platform_owner') return <EmptyState icon={<ShieldCheck size={22} />} title="Access restricted" body="Bookshop management requires explicit Platform Owner authorization." />
+  return <ManagedBookshops />
+}
+
+function ManagedBookshops() {
+  const shops = useQuery({ queryKey: ['platform', 'managed-bookshops'], queryFn: platformApi.managedBookshops })
+  const enter = useMutation({ mutationFn: enterBookshopManagement })
+  return <>
+    <PageHeader eyebrow="PLATFORM" icon={<Building2 size={15} />} title="Bookshop Management" description="Only businesses explicitly authorized for your account appear here." />
+    {enter.error && <FormAlert message={errorMessage(enter.error)} />}
+    {shops.isPending ? <LoadingState /> : shops.error ? <ErrorState message={errorMessage(shops.error)} onRetry={() => void shops.refetch()} /> : shops.data.length === 0
+      ? <EmptyState icon={<Building2 size={22} />} title="Original bookshop awaiting authorization" body="The server administrator must verify and restore the original bookshop before it can be managed here." />
+      : <div className="grid gap-4 sm:grid-cols-2">{shops.data.map(shop => <Card key={shop.id} title={shop.name} description={BOOKSHOP_STATUS_LABELS[shop.status]}>
+        <button type="button" className={primaryButton} disabled={enter.isPending || shop.status !== 'active'} onClick={() => enter.mutate(shop.id)}>{enter.isPending ? 'Opening…' : 'Open bookshop workspace'}</button>
+      </Card>)}</div>}
+  </>
+}
+
 function PlansView() {
   const plans = useQuery({ queryKey: ['platform', 'plans'], queryFn: platformApi.plans })
   return <>
@@ -139,12 +165,14 @@ function PlansView() {
 }
 
 function BookshopsView() {
+  const user = useCurrentUser()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const list = useQuery({ queryKey: ['platform', 'bookshops', search, status, page], queryFn: () => platformApi.bookshops({ search: search.trim() || undefined, status: status || undefined, page }), placeholderData: keepPreviousData })
   return <>
     <PageHeader eyebrow="PLATFORM" icon={<Store size={15} />} title="Bookshops" description="Every registered bookshop, its owner and subscription state." />
+    {hasPermission(user, 'platform.bookshops.onboard') && <div className="mb-4"><Link className={primaryButton} to="/platform/bookshops/new">Create bookshop</Link></div>}
     <Card title="Directory" flush actions={<div className="flex flex-col gap-2 sm:flex-row">
       <label className="relative"><span className="sr-only">Search bookshops</span><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm sm:w-64" placeholder="Name, code or email" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></label>
       <label><span className="sr-only">Status</span><select className="h-10 rounded-xl border border-slate-200 px-3 text-sm" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">All statuses</option>{Object.entries(BOOKSHOP_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

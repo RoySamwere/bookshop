@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link } from 'react-router-dom'
@@ -6,17 +6,21 @@ import { ArrowUpRight, MailCheck, Store } from 'lucide-react'
 import { useRouter } from '@/lib/navigation'
 import { AuthHeading, AuthShell } from '../../../components/auth/auth-shell'
 import { PasswordInput, PasswordRules } from '../../../components/auth/password-field'
-import { Field, FormAlert, inputClass, primaryButton } from '../../../components/ui-kit'
+import { Card, Field, FormAlert, inputClass, primaryButton } from '../../../components/ui-kit'
 import { bookshopRegistrationSchema, type BookshopRegistrationValues } from '../../../features/auth/schemas'
 import { ApiError, errorMessage } from '../../../lib/api'
 import { registerBookshop } from '../../../lib/auth'
-import { COUNTRY_CURRENCIES } from '../../../lib/tenancy-api'
+import { COUNTRY_CURRENCIES, platformApi } from '../../../lib/tenancy-api'
 
 const story = { title: 'Run your bookshop on Hekima.', body: 'Register your shop in a few minutes: point of sale, stock, suppliers and staff, with your records kept private to your business.' }
 
 const FIELDS = ['owner_name', 'email', 'phone', 'password', 'bookshop_name', 'business_phone', 'business_location', 'country', 'currency', 'terms'] as const
 
-export default function BookshopRegisterPage() {
+function RegistrationShell({ platformMode, children }: { platformMode: boolean; children: ReactNode }) {
+  return platformMode ? <Card title="Create bookshop" description="Create a separate bookshop owner account. The owner will verify their email before trading.">{children}</Card> : <AuthShell story={story} topline={<span>Already registered? <Link to="/login">Sign in</Link></span>}>{children}</AuthShell>
+}
+
+export default function BookshopRegisterPage({ platformMode = false }: { platformMode?: boolean }) {
   const router = useRouter()
   const { watch, setValue, handleSubmit, setError, formState: { errors } } = useForm<BookshopRegistrationValues>({
     resolver: zodResolver(bookshopRegistrationSchema),
@@ -37,12 +41,18 @@ export default function BookshopRegisterPage() {
     setMessage('')
     setPending(true)
     try {
-      const result = await registerBookshop({
+      const payload = {
         owner_name: values.owner_name.trim(), email: values.email.trim(), phone: values.phone.trim(),
         password: values.password, password_confirmation: values.confirm,
         bookshop_name: values.bookshop_name.trim(), business_phone: values.business_phone.trim(), business_location: values.business_location.trim(),
         country: values.country.trim(), currency: values.currency.trim().toUpperCase(), terms: values.terms,
-      })
+      }
+      if (platformMode) {
+        const result = await platformApi.createBookshop(payload)
+        router.replace(`/platform/bookshops/${result.data.id}`)
+        return
+      }
+      const result = await registerBookshop(payload)
       if (result.data.signed_in) router.replace(result.data.next)
       else setDone({ email: result.data.email, message: result.message })
     } catch (e) {
@@ -56,17 +66,17 @@ export default function BookshopRegisterPage() {
     } finally { setPending(false) }
   }
 
-  if (done) return <AuthShell story={story}>
+  if (done) return <RegistrationShell platformMode={platformMode}>
     <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><MailCheck size={24} /></span>
     <AuthHeading title="Check your email">{done.message}</AuthHeading>
     <div className="hk-auth-panel text-sm text-slate-600"><p className="m-0">We sent a verification link to <strong className="text-slate-900">{done.email}</strong>. Your bookshop opens as soon as you confirm it.</p></div>
     <Link to="/login" className={`${primaryButton} mt-6 w-full`}>Go to sign in</Link>
-  </AuthShell>
+  </RegistrationShell>
 
-  return <AuthShell story={story} topline={<span>Already registered? <Link to="/login">Sign in</Link></span>}>
-    <AuthHeading title="Register your bookshop">You&apos;ll be the owner of a new, private workspace. We&apos;ll ask you to confirm your email address.</AuthHeading>
+  return <RegistrationShell platformMode={platformMode}>
+    <AuthHeading title={platformMode ? 'New bookshop owner' : 'Register your bookshop'}>{platformMode ? 'Enter the new owner’s details. They will verify their email before using their private workspace.' : <>You&apos;ll be the owner of a new, private workspace. We&apos;ll ask you to confirm your email address.</>}</AuthHeading>
     <form onSubmit={handleSubmit(submit)} noValidate>
-      <p className="mb-1 mt-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">About you</p>
+      <p className="mb-1 mt-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">{platformMode ? 'Owner details' : 'About you'}</p>
       <Field label="Full name" error={error('owner_name')}>
         <input className={inputClass} autoComplete="name" value={form.owner_name} onChange={e => setValue('owner_name', e.target.value)} aria-invalid={Boolean(errors.owner_name) || undefined} />
       </Field>
@@ -118,9 +128,9 @@ export default function BookshopRegisterPage() {
       </div>
       <FormAlert message={message} />
       <button className={`${primaryButton} w-full`} type="submit" disabled={pending}>
-        {pending ? 'Creating your bookshop…' : 'Create my bookshop'} {!pending && <ArrowUpRight size={16} />}
+        {pending ? 'Creating bookshop…' : platformMode ? 'Create bookshop' : 'Create my bookshop'} {!pending && <ArrowUpRight size={16} />}
       </button>
-      <p className="hk-auth-alt">Shopping or joining a team? <Link to="/register" className="hk-auth-link">Create a personal account</Link></p>
+      {!platformMode && <p className="hk-auth-alt">Shopping or joining a team? <Link to="/register" className="hk-auth-link">Create a personal account</Link></p>}
     </form>
-  </AuthShell>
+  </RegistrationShell>
 }

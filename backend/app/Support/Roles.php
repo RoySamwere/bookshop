@@ -8,7 +8,8 @@ namespace App\Support;
  */
 final class Roles
 {
-    // Platform (SaaS operator) roles. They never belong to a bookshop and hold no tenant permissions.
+    // Platform roles have no tenant membership. A verified management context can grant the
+    // Platform Owner tenant permissions for one explicitly authorized bookshop in that request.
     public const PLATFORM_OWNER = 'platform_owner';
     public const PLATFORM_ADMIN = 'platform_admin';
 

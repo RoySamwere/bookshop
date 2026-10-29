@@ -11,6 +11,7 @@ import { notificationsApi, type AppNotification } from '../lib/workspace-api'
 import { formatDate } from './ui-kit'
 import { BrandMark } from './brand-mark'
 import { brand } from '../lib/brand'
+import { returnToPlatform } from '../lib/tenancy-api'
 
 export const PROFILE_SECTION = 'My Profile'
 
@@ -231,7 +232,8 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       </div>
     </aside>}
 
-    <div className={`workspace-main ${posMode ? '!ml-0 !w-full !max-w-none' : ''}`} ref={mainRef} inert={modalOpen}>
+    <div className={`workspace-main ${posMode ? '!ml-0 !w-full !max-w-none' : ''} ${posMode && currentUser.management_context ? 'flex flex-col' : ''}`} ref={mainRef} inert={modalOpen}>
+      {currentUser.management_context && <BookshopManagementBanner name={bookshopName} />}
       {/* The till draws its own top bar (brand, branch, held sales, exit). */}
       {!posMode && <header className="app-header">
         <div className="header-leading">
@@ -274,7 +276,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
           </div>
         </div>
       </header>}
-      <main id="workspace-content" tabIndex={-1}>{children}</main>
+      <main id="workspace-content" tabIndex={-1} className={posMode && currentUser.management_context ? 'min-h-0 flex-1' : undefined}>{children}</main>
     </div>
 
     {searchOpen && <div className="command-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSearchOpen(false) }}>
@@ -298,5 +300,20 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
         <div className="command-footer"><span>↑ ↓ to move · Enter to open</span><span>Esc to close</span></div>
       </div>
     </div>}
+  </div>
+}
+
+export function BookshopManagementBanner({ name }: { name: string }) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  async function leave() {
+    setPending(true); setError('')
+    try { await returnToPlatform() }
+    catch (e) { setError(e instanceof Error ? e.message : 'Unable to return to platform.'); setPending(false) }
+  }
+  return <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-950" role="region" aria-label="Authorized bookshop management">
+    <span>Managing <strong>{name}</strong> as Platform Owner</span>
+    <button type="button" className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold" disabled={pending} onClick={() => void leave()}>{pending ? 'Returning…' : 'Return to Platform'}</button>
+    {error && <p className="w-full" role="alert">{error}</p>}
   </div>
 }

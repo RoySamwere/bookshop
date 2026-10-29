@@ -67,13 +67,13 @@ class UserController extends Controller
     {
         $caller = $request->user();
         if (in_array($request->input('role'), Roles::BRANCH_ROLES, true)) {
-            $entitlements->ensureCanAddUser($caller->bookshop);
+            $entitlements->ensureCanAddUser(\App\Support\Tenancy\Tenant::bookshop());
         }
         $user = DB::transaction(function () use ($request, $caller) {
             $user = new User($request->safe()->only(['name', 'email', 'phone', 'password', 'role']));
             $user->is_active = $request->boolean('is_active', true);
             // New accounts always join the creator's own bookshop.
-            $user->bookshop_id = $caller->bookshop_id;
+            $user->bookshop_id = $caller->workspaceBookshopId();
             $user->created_by = $caller->id;
             $user->email_verified_at = now();
             $user->save();
@@ -182,7 +182,7 @@ class UserController extends Controller
 
     private function notifyOwners(User $caller, string $title, string $body): void
     {
-        User::where('bookshop_id', $caller->bookshop_id)->whereIn('role', Roles::TENANT_OWNER_ROLES)->where('is_active', true)->get()
+        User::where('bookshop_id', $caller->workspaceBookshopId())->whereIn('role', Roles::TENANT_OWNER_ROLES)->where('is_active', true)->get()
             ->each(fn (User $owner) => $owner->notify(new AccountNotification($title, $body, 'info', 'Users')));
     }
 }

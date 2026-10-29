@@ -281,7 +281,7 @@ export function PosTerminal({ currentUser, notify, onExit, onNavigate }: { curre
     if (section !== 'Point of Sale') onNavigate(section)
   }
 
-  return <div className="pos-root flex h-dvh overflow-hidden bg-[#f4f7fc] text-[#162c4c]">
+  return <div className={`pos-root flex ${currentUser.management_context ? 'h-full' : 'h-dvh'} overflow-hidden bg-[#f4f7fc] text-[#162c4c]`}>
     {navOpen && <button type="button" className="fixed inset-0 z-40 bg-[#13254a]/40 md:hidden" onClick={() => setNavOpen(false)} aria-label="Close navigation" />}
     <aside className={`pos-sidebar z-50 flex w-[76px] shrink-0 flex-col items-center border-r border-white/10 bg-[#142341] py-5 text-white shadow-lg max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:transition-transform ${navOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'} md:relative md:translate-x-0`} aria-label="POS navigation">
       <div className="mb-7 flex size-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15"><BrandMark size={34} /></div>

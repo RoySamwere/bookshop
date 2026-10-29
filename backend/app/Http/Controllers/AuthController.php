@@ -45,6 +45,7 @@ class AuthController extends Controller
         }
         $token = null;
         if ($request->hasSession()) {
+            $request->session()->forget(\App\Support\Tenancy\ManagementContext::SESSION_KEY);
             Auth::guard('web')->login($user, $remember);
             $request->session()->regenerate();
             $request->session()->put('auth_last_activity_at', now()->timestamp);

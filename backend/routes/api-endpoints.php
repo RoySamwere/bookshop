@@ -40,7 +40,7 @@ Route::post('/auth/invitations/accept', [StaffInvitationController::class, 'acce
 // Public website: launch notification signups.
 Route::post('/public/launch-subscribers', [LaunchSubscriberController::class, 'store'])->middleware('throttle:subscribe');
 
-Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function () {
+Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middleware\ResolveBookshopManagement::class])->group(function () {
     Route::post('/auth/activity', fn () => response()->noContent());
     // Every signed-in account, including customers.
     Route::get('/auth/me', [AuthController::class, 'me']);
@@ -129,6 +129,10 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
     // Platform administration: platform staff only, and no route here reads bookshop business data.
     Route::prefix('platform')->middleware('platform')->group(function () {
         Route::get('/overview', [PlatformController::class, 'overview']);
+        Route::get('/managed-bookshops', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'index']);
+        Route::post('/management/{bookshop}/enter', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'enter'])->middleware('throttle:10,1');
+        Route::post('/management/leave', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'leave']);
+        Route::post('/bookshops', [BookshopDirectoryController::class, 'store'])->middleware('permission:platform.bookshops.onboard');
         Route::get('/bookshops', [BookshopDirectoryController::class, 'index'])->middleware('permission:platform.bookshops.view');
         Route::get('/bookshops/{bookshop}', [BookshopDirectoryController::class, 'show'])->middleware('permission:platform.bookshops.view');
         Route::post('/bookshops/{bookshop}/suspend', [BookshopDirectoryController::class, 'suspend'])->middleware('permission:platform.bookshops.suspend');

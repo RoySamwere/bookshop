@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\Roles;
+use App\Support\Tenancy\ManagementContext;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
@@ -100,7 +101,12 @@ class User extends Authenticatable implements MustVerifyEmail
     /** Owner of their bookshop (Bookshop Owner, or the legacy System Owner). */
     public function isOwner(): bool
     {
-        return Roles::isTenantOwner($this->role);
+        return Roles::isTenantOwner($this->role) || ManagementContext::idFor($this) !== null;
+    }
+
+    public function workspaceBookshopId(): ?int
+    {
+        return $this->isPlatformUser() ? ManagementContext::idFor($this) : $this->bookshop_id;
     }
 
     public function isPlatformUser(): bool
@@ -111,7 +117,7 @@ class User extends Authenticatable implements MustVerifyEmail
     /** Whether both accounts work in the same bookshop. */
     public function sharesBookshopWith(self $user): bool
     {
-        return $this->bookshop_id !== null && $this->bookshop_id === $user->bookshop_id;
+        return $this->workspaceBookshopId() !== null && $this->workspaceBookshopId() === $user->workspaceBookshopId();
     }
 
     public function canSignIn(): bool
@@ -126,7 +132,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function permissions(): array
     {
-        return $this->is_active ? Roles::permissionsFor($this->role) : [];
+        return $this->is_active ? array_values(array_unique([
+            ...Roles::permissionsFor($this->role),
+            ...(ManagementContext::idFor($this) !== null ? Roles::TENANT_PERMISSIONS : []),
+        ])) : [];
     }
 
     public function hasPermission(string $permission): bool
@@ -136,19 +145,20 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function assignableRoles(): array
     {
-        return Roles::assignableBy($this->role);
+        return Roles::assignableBy(ManagementContext::idFor($this) !== null ? Roles::BOOKSHOP_OWNER : $this->role);
     }
 
     /** Branch ids this user works in, always within their own bookshop; the owner works in every branch of it. */
     public function branchIds(): array
     {
-        if ($this->isPlatformUser() || $this->bookshop_id === null) {
+        $bookshopId = $this->workspaceBookshopId();
+        if ($bookshopId === null) {
             return [];
         }
 
         $ids = $this->isOwner()
-            ? Branch::withoutGlobalScope('bookshop')->where('bookshop_id', $this->bookshop_id)->pluck('id')
-            : $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $this->bookshop_id)->pluck('branches.id');
+            ? Branch::withoutGlobalScope('bookshop')->where('bookshop_id', $bookshopId)->pluck('id')
+            : $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $bookshopId)->pluck('branches.id');
 
         return $ids->map(fn ($id) => (int) $id)->all();
     }
@@ -179,10 +189,10 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         $query->whereKeyNot($caller->id)->whereNotIn('role', Roles::PLATFORM_ROLES);
         // Never outside the caller's own bookshop.
-        if ($caller->bookshop_id === null) {
+        if ($caller->workspaceBookshopId() === null) {
             return $query->whereRaw('1 = 0');
         }
-        $query->where('bookshop_id', $caller->bookshop_id);
+        $query->where('bookshop_id', $caller->workspaceBookshopId());
         if ($caller->isOwner()) {
             return $query;
         }
@@ -217,12 +227,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function authData(): array
     {
-        $bookshopId = $this->isPlatformUser() ? null : $this->bookshop_id;
-        $bookshop = $bookshopId ? $this->bookshop()->with('subscription.plan')->first() : null;
+        $bookshopId = $this->workspaceBookshopId();
+        $bookshop = $bookshopId ? Bookshop::with('subscription.plan')->find($bookshopId) : null;
 
         return [
             ...$this->only(['id', 'name', 'email', 'phone', 'role']),
             'account_type' => $this->accountType(),
+            'management_context' => ManagementContext::idFor($this) !== null ? ['bookshop_id' => $bookshopId, 'return_to' => '/platform'] : null,
             'bookshop_id' => $bookshopId,
             'bookshop' => $bookshop ? [
                 ...$bookshop->summary(),
@@ -236,9 +247,11 @@ class User extends Authenticatable implements MustVerifyEmail
             'staff_access_note' => $this->staff_access_status === self::ACCESS_REJECTED ? $this->staff_access_note : null,
             'permissions' => $this->permissions(),
             'assignable_roles' => $this->assignableRoles(),
-            'branches' => $this->isPlatformUser() ? [] : $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $bookshopId)
-                ->get(['branches.id', 'name', 'code', 'is_main'])
-                ->map(fn (Branch $branch) => $branch->only(['id', 'name', 'code', 'is_main']))->all(),
+            'branches' => ManagementContext::idFor($this) !== null
+                ? Branch::withoutGlobalScope('bookshop')->where('bookshop_id', $bookshopId)->get(['id', 'name', 'code', 'is_main'])->toArray()
+                : ($this->isPlatformUser() ? [] : $this->branches()->withoutGlobalScope('bookshop')->where('branches.bookshop_id', $bookshopId)
+                    ->get(['branches.id', 'name', 'code', 'is_main'])
+                    ->map(fn (Branch $branch) => $branch->only(['id', 'name', 'code', 'is_main']))->all()),
         ];
     }
 }

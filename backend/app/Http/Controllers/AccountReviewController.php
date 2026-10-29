@@ -113,7 +113,7 @@ class AccountReviewController extends Controller
         Gate::authorize('viewHistory', $user);
 
         $entries = AuditLog::query()->with('user')
-            ->where('bookshop_id', $request->user()->bookshop_id)
+            ->where('bookshop_id', $request->user()->workspaceBookshopId())
             ->where(fn (Builder $query) => $query
                 ->where(fn (Builder $about) => $about->where('subject_type', $user->getMorphClass())->where('subject_id', $user->id))
                 ->orWhere('user_id', $user->id))

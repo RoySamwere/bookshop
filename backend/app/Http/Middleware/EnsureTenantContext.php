@@ -18,11 +18,11 @@ class EnsureTenantContext
     {
         $user = $request->user();
 
-        if ($user->isPlatformUser()) {
+        if ($user->isPlatformUser() && $user->workspaceBookshopId() === null) {
             return $this->deny('Platform accounts cannot open bookshop workspaces.', 'platform_account');
         }
 
-        $bookshop = $user->bookshop_id ? Bookshop::find($user->bookshop_id) : null;
+        $bookshop = $user->workspaceBookshopId() ? Bookshop::find($user->workspaceBookshopId()) : null;
         if (! $bookshop) {
             return $this->deny('Your account is not linked to a bookshop yet. Ask your administrator to complete the bookshop setup.', 'no_bookshop');
         }

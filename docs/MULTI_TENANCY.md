@@ -8,8 +8,8 @@ moved over, and how to deploy and roll back.
 
 | Role | Scope | Notes |
 | --- | --- | --- |
-| `platform_owner` | Platform | Bookshops, platform staff, plans, settings and audit history. Has **no** tenant permissions. Created only with `php artisan platform:owner`. |
-| `platform_admin` | Platform | Views bookshops, users, settings and audit history. Can resend owner verification. Cannot suspend bookshops, change settings or manage platform staff. |
+| `platform_owner` | Platform | SaaS administration; no tenant membership or default tenant permissions. An explicit database grant and cookie-session entry permit management of the verified original business. See ORIGINAL_BOOKSHOP_MANAGEMENT.md. |
+| `platform_admin` | Platform | Views bookshops, users, settings and audit history. Can create bookshops with separate owners and resend verification. Cannot open private workspaces, suspend bookshops, change settings or manage platform staff. |
 | `bookshop_owner` | One bookshop | Full control of their own bookshop. Assigns admin, store manager, cashier, inventory officer. |
 | `system_owner` | One bookshop | The legacy single-shop owner. It has the same tenant permissions as `bookshop_owner`, so existing access keeps working after adoption. `tenancy:adopt-legacy --convert-owner` renames it to `bookshop_owner`. |
 | `admin`, `store_manager`, `cashier`, `inventory_officer` | One bookshop | Unchanged permissions, now limited to their own bookshop and branches. |
@@ -21,14 +21,14 @@ No public payload can set `role`, `bookshop_id`, `status`, `owner_user_id` or `p
 ## How isolation works
 
 - **Membership:** `users.bookshop_id` is the user's single bookshop membership. One account belongs to at most one bookshop; a person working for two shops needs two accounts in M1.
-- **Tenant resolver:** `App\Support\Tenancy\Tenant::id()` always comes from the signed-in user. A client-submitted `bookshop_id` is never used. Console code uses `Tenant::run($bookshop, fn () => …)`.
-- **`tenant` middleware** (`EnsureTenantContext`) guards every workspace route. It rejects platform accounts, users without a bookshop and suspended bookshops. It also rejects unverified emails and bookshops not yet activated. `tenant:onboarding` relaxes the last two checks for `GET/PATCH /bookshop` only. Each refusal returns a `code`: `platform_account`, `no_bookshop`, `bookshop_suspended`, `email_unverified` or `bookshop_pending`.
+- **Tenant resolver:** `App\Support\Tenancy\Tenant::id()` comes from the signed-in user's membership or a server-verified original-bookshop management context. A client-submitted `bookshop_id` is never used. Console code uses `Tenant::run($bookshop, fn () => …)`.
+- **`tenant` middleware** (`EnsureTenantContext`) guards every workspace route. It rejects platform accounts without a verified management context, users without a bookshop and suspended bookshops. It also rejects unverified emails and bookshops not yet activated. `tenant:onboarding` relaxes the last two checks for `GET/PATCH /bookshop` only. Each refusal returns a `code`: `platform_account`, `no_bookshop`, `bookshop_suspended`, `email_unverified` or `bookshop_pending`.
 - **Queries:** the business controllers use `DB::table()`. Every read, write, export and aggregate adds `where bookshop_id = Tenant::requireId()`.
 - **Validation:** every related ID uses `Tenant::exists('table')` and every business code uses `Tenant::unique('table', 'column')`. A cross-tenant ID therefore fails as a normal validation error or a 404, never as a silent success.
 - **Eloquent scope:** `Branch`, `TaxRate` and `BusinessProfile` use the `BelongsToBookshop` global scope, which denies by default. A signed-in account without a bookshop matches nothing. Platform code opts out explicitly with `withoutGlobalScope('bookshop')`.
 - **Service-level guard:** `InventoryService::change()` refuses unless the product, branch, supplier and packaging all belong to the same bookshop as the current tenant. This holds even if a controller check were missed.
 - **Database:** every tenant table has a `bookshop_id` foreign key (`restrictOnDelete`, so business records are never cascaded away). Business codes are unique per bookshop with composite unique indexes.
-- **Platform privacy:** `/api/platform/*` returns tenant metadata only: owner contact, counts, subscription and lifecycle history. Platform audit history is limited to `platform.*` and `bookshop.*` events. There is **no** support-access mechanism in M1. Platform staff cannot open a bookshop's business data at all. A future explicit, audited support grant would be a new feature.
+- **Platform privacy:** `/api/platform/*` returns tenant metadata only. Platform audit history is limited to `platform.*` and `bookshop.*` events. Original-business management now requires an explicit console-created grant, session entry and validation on every request; platform administrators cannot enter workspaces. See [Original bookshop management](ORIGINAL_BOOKSHOP_MANAGEMENT.md).
 
 ### Data classification
 
