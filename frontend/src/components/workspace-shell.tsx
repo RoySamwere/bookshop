@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, CheckCheck, ChevronDown, ChevronLeft,
   ChevronRight, FileText, History, LayoutDashboard, LogOut, Menu, Plus, Search, Settings,
-  ShieldCheck, ShoppingCart, Truck, UserRound, Users, WalletCards, X,
+  ShieldCheck, ShoppingCart, Store, Truck, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
 import { hasPermission, roleLabel, type BookshopUser, type Permission } from '../lib/auth'
 import { notificationsApi, type AppNotification } from '../lib/workspace-api'
@@ -26,6 +26,7 @@ const sections = [
   { label: 'Expenses', description: 'Shop expenses', icon: WalletCards, group: 'workspace', permission: 'expenses.manage' },
   { label: 'Users', description: 'Team accounts and access rights', icon: Users, group: 'workspace', permission: 'users.view' },
   { label: 'Audit Log', description: 'Sign-ins and account changes', icon: History, group: 'workspace', permission: 'audit.view' },
+  { label: 'My Bookshop', description: 'Bookshop profile, status and staff invitations', icon: Store, group: 'workspace', permission: 'settings.view' },
   { label: 'Settings', description: 'Business, branches, tax and receipts', icon: Settings, group: 'workspace', permission: 'settings.view' },
   { label: PROFILE_SECTION, description: 'Your details and password', icon: UserRound, group: 'account' },
 ] satisfies { label: string; description: string; icon: typeof BookOpen; group?: string; permission?: Permission }[]
@@ -128,7 +129,8 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const visibleSections = sections.filter(section => canOpenSection(currentUser, section.label))
   const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const modalOpen = drawerOpen || searchOpen
-  const branchLabel = currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches.map(branch => branch.name).join(' · ') || 'No branch assigned'
+  const branchLabel = currentUser.bookshop?.is_owner ? 'All branches' : currentUser.branches.map(branch => branch.name).join(' · ') || 'No branch assigned'
+  const bookshopName = currentUser.bookshop?.name || 'Bookshop workspace'
   const alerts = useNotifications()
 
   async function openNotification(item: AppNotification) {
@@ -193,7 +195,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Suppliers'] },
     { name: 'People', labels: ['Customers', 'Users'] },
     { name: 'Insights', labels: ['Reports & Analytics', 'Expenses'] },
-    { name: 'Admin', labels: ['Audit Log', 'Settings'] },
+    { name: 'Admin', labels: ['My Bookshop', 'Audit Log', 'Settings'] },
   ]
   const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
 
@@ -220,7 +222,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
         <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
       </div>
       <div className="sidebar-scroll">
-        <div className="shop-indicator" title={branchLabel}><span className="shop-icon"><ShoppingCart size={18} /></span><div><strong>{branchLabel}</strong><small><span className="status-dot" /> Bookshop workspace</small></div><ChevronDown size={14} /></div>
+        <div className="shop-indicator" title={branchLabel}><span className="shop-icon"><ShoppingCart size={18} /></span><div><strong>{bookshopName}</strong><small><span className="status-dot" /> {branchLabel}</small></div><ChevronDown size={14} /></div>
         {hasPermission(currentUser, 'pos.access') && <button className="sidebar-new-sale" onClick={() => navigate('Point of Sale')} title="New sale"><Plus size={19} /><span>New sale</span></button>}
         {groups.map(group => { const items = visibleSections.filter(section => group.labels.includes(section.label)); return items.length > 0 && <div className="sidebar-nav-group" key={group.name}><div className="sidebar-group-label">{group.name}</div><nav className="sidebar-links" aria-label={group.name}>{items.map(navButton)}</nav></div> })}
       </div>
@@ -234,7 +236,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       {!posMode && <header className="app-header">
         <div className="header-leading">
           <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>
-          {active === 'Dashboard' ? <div className="dashboard-greeting"><p>{today}</p><h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {currentUser.name.split(' ')[0]}</h1></div> : <div className="header-breadcrumb"><span>{currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches[0]?.name || 'Workspace'}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>}
+          {active === 'Dashboard' ? <div className="dashboard-greeting"><p>{today}</p><h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {currentUser.name.split(' ')[0]}</h1></div> : <div className="header-breadcrumb"><span>{currentUser.bookshop?.is_owner ? bookshopName : currentUser.branches[0]?.name || bookshopName}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>}
         </div>
         <div className="header-actions">
           <button ref={command.triggerRef} className="workspace-search" aria-label="Search workspace" aria-haspopup="dialog" aria-expanded={searchOpen} aria-keyshortcuts="Control+k Meta+k" onClick={() => { setSearch(''); setSearchOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}>
@@ -263,7 +265,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
               <span className="user-avatar">{initials}</span><span className="profile-trigger-copy"><strong>{currentUser.name}</strong><small>{roleLabel(currentUser.role)}</small></span><ChevronDown size={15} className="profile-chevron" />
             </button>
             {accountOpen && <div ref={account.panelRef} id="account-options" className="header-popover profile-popover">
-              <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · {branchLabel}</small></div>
+              <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · {bookshopName} · {branchLabel}</small></div>
               <button className="popover-action" onClick={() => navigate(PROFILE_SECTION)}><UserRound size={17} /> My profile and password</button>
               {hasPermission(currentUser, 'users.view') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
               {hasPermission(currentUser, 'settings.view') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}

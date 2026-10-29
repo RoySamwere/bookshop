@@ -121,11 +121,18 @@ class RegistrationTest extends TestCase
         Notification::fake();
         Branch::factory()->main()->create();
         $owner = User::factory()->create(['role' => Roles::SYSTEM_OWNER]);
+        $otherOwner = User::factory()->forBookshop(\App\Models\Bookshop::factory()->create())->create(['role' => Roles::BOOKSHOP_OWNER]);
+        $slug = $owner->bookshop->slug;
 
+        // A staff request must name the bookshop it is for.
         $this->postJson('/api/auth/register', $this->payload(['request_staff_access' => true]))
+            ->assertUnprocessable()->assertJsonValidationErrors('bookshop');
+        $this->postJson('/api/auth/register', $this->payload(['request_staff_access' => true, 'bookshop' => strtoupper($slug)]))
             ->assertCreated()->assertJsonPath('data.staff_access_status', User::ACCESS_PENDING);
 
         $user = User::where('email', 'amina@example.test')->firstOrFail();
+        $this->assertSame($owner->bookshop_id, $user->bookshop_id);
+        Notification::assertNotSentTo($otherOwner, AccountNotification::class);
         $this->assertSame(Roles::CUSTOMER, $user->role);
         $this->assertTrue($user->hasPendingStaffRequest());
         $this->assertFalse($user->canAccessWorkspace());

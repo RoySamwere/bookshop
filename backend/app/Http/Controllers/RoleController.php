@@ -14,7 +14,7 @@ class RoleController extends Controller
 
         return response()->json(['data' => array_map(
             fn (string $role) => [...Roles::describe($role), 'assignable' => in_array($role, $assignable, true)],
-            Roles::all(),
+            Roles::tenantRoles(),
         )]);
     }
 }

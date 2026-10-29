@@ -3,6 +3,8 @@
 use App\Http\Controllers\AccountReviewController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BookshopController;
+use App\Http\Controllers\BookshopRegistrationController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BusinessProfileController;
 use App\Http\Controllers\CatalogController;
@@ -13,7 +15,11 @@ use App\Http\Controllers\ProcurementController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductUnitController;
 use App\Http\Controllers\RegistrationController;
+use App\Http\Controllers\Platform\BookshopDirectoryController;
+use App\Http\Controllers\Platform\PlatformController;
+use App\Http\Controllers\Platform\PlatformUserController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\StaffInvitationController;
 use App\Http\Controllers\TaxRateController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +33,9 @@ Route::post('/auth/register', [RegistrationController::class, 'register'])->midd
 Route::get('/auth/email/verify/{id}/{hash}', [RegistrationController::class, 'verify'])
     ->middleware('throttle:6,1')->name($verificationRouteName ?? 'verification.verify');
 Route::post('/auth/email/resend', [RegistrationController::class, 'resend'])->middleware('throttle:verification');
+// Self-service bookshop owners: creates the owner, the bookshop tenant and its main branch.
+Route::post('/auth/register/bookshop', [BookshopRegistrationController::class, 'register'])->middleware('throttle:register');
+Route::post('/auth/invitations/accept', [StaffInvitationController::class, 'accept'])->middleware('throttle:5,1');
 
 // Public website: launch notification signups.
 Route::post('/public/launch-subscribers', [LaunchSubscriberController::class, 'store'])->middleware('throttle:subscribe');
@@ -44,7 +53,17 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
-    Route::middleware('permission:workspace.access')->group(function () {
+    // Onboarding: open to owners who have not verified yet, but never to a suspended bookshop.
+    Route::middleware(['permission:workspace.access', 'tenant:onboarding'])->group(function () {
+        Route::get('/bookshop', [BookshopController::class, 'show']);
+        Route::patch('/bookshop', [BookshopController::class, 'update'])->middleware('permission:settings.manage');
+    });
+
+    // Bookshop workspace. Every route runs inside the signed-in user's own, active bookshop.
+    Route::middleware(['permission:workspace.access', 'tenant'])->group(function () {
+        Route::get('/bookshop/activity', [BookshopController::class, 'activity'])->middleware('permission:audit.view');
+        Route::post('/staff-invitations', [StaffInvitationController::class, 'invite'])->middleware('permission:users.manage');
+        Route::post('/staff-invitations/{user}/resend', [StaffInvitationController::class, 'resend'])->middleware(['permission:users.manage', 'throttle:6,1']);
         Route::get('/dashboard', \App\Http\Controllers\DashboardController::class)->middleware('permission:dashboard.view');
         Route::get('/pos/branches', [PosController::class, 'branchesForPos'])->middleware('permission:pos.access');
         Route::get('/pos/products', [PosController::class, 'products'])->middleware('permission:pos.access');
@@ -104,8 +123,26 @@ Route::middleware(['auth:sanctum', 'active', 'session.active'])->group(function 
             Route::post('/users/{user}/resend-verification', [AccountReviewController::class, 'resendVerification'])->middleware('throttle:6,1');
         });
         Route::get('/users/{user}/audit-logs', [AccountReviewController::class, 'history'])->middleware('permission:audit.view');
-        Route::get('/launch-subscribers', [LaunchSubscriberController::class, 'index'])->middleware('permission:settings.manage');
-
         Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit.view');
     });
+
+    // Platform administration: platform staff only, and no route here reads bookshop business data.
+    Route::prefix('platform')->middleware('platform')->group(function () {
+        Route::get('/overview', [PlatformController::class, 'overview']);
+        Route::get('/bookshops', [BookshopDirectoryController::class, 'index'])->middleware('permission:platform.bookshops.view');
+        Route::get('/bookshops/{bookshop}', [BookshopDirectoryController::class, 'show'])->middleware('permission:platform.bookshops.view');
+        Route::post('/bookshops/{bookshop}/suspend', [BookshopDirectoryController::class, 'suspend'])->middleware('permission:platform.bookshops.suspend');
+        Route::post('/bookshops/{bookshop}/reactivate', [BookshopDirectoryController::class, 'reactivate'])->middleware('permission:platform.bookshops.suspend');
+        Route::post('/bookshops/{bookshop}/resend-owner-verification', [BookshopDirectoryController::class, 'resendOwnerVerification'])->middleware(['permission:platform.bookshops.onboard', 'throttle:6,1']);
+        Route::get('/users', [PlatformUserController::class, 'index'])->middleware('permission:platform.users.view');
+        Route::post('/users', [PlatformUserController::class, 'store'])->middleware('permission:platform.users.manage');
+        Route::patch('/users/{user}/status', [PlatformUserController::class, 'updateStatus'])->middleware('permission:platform.users.manage');
+        Route::get('/settings', [PlatformController::class, 'settings'])->middleware('permission:platform.settings.view');
+        Route::put('/settings', [PlatformController::class, 'updateSettings'])->middleware('permission:platform.settings.manage');
+        Route::get('/plans', [PlatformController::class, 'plans'])->middleware('permission:platform.plans.view');
+        Route::get('/audit-logs', [PlatformController::class, 'audit'])->middleware('permission:platform.audit.view');
+        Route::get('/launch-subscribers', [LaunchSubscriberController::class, 'index'])->middleware('permission:platform.settings.view');
+    });
+    // Original path kept for compatibility; the public launch list is platform data, not one bookshop's.
+    Route::get('/launch-subscribers', [LaunchSubscriberController::class, 'index'])->middleware(['platform', 'permission:platform.settings.view']);
 });

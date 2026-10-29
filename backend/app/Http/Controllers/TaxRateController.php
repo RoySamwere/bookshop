@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\TaxRateRequest;
 use App\Models\AuditLog;
 use App\Models\TaxRate;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,7 @@ class TaxRateController extends Controller
 
     public function update(TaxRateRequest $request, TaxRate $taxRate): JsonResponse
     {
+        abort_unless($taxRate->bookshop_id === Tenant::requireId(), 404);
         $data = $request->validated();
         if ($taxRate->is_default && (! ($data['is_active'] ?? true) || ! ($data['is_default'] ?? true))) {
             abort(422, 'Choose another default tax rate before changing this one.');
@@ -38,6 +40,7 @@ class TaxRateController extends Controller
 
     public function destroy(TaxRate $taxRate): JsonResponse
     {
+        abort_unless($taxRate->bookshop_id === Tenant::requireId(), 404);
         if ($taxRate->is_default) {
             abort(422, 'The default tax rate cannot be deleted.');
         }
@@ -52,9 +55,10 @@ class TaxRateController extends Controller
     private function save(TaxRate $taxRate, array $data): TaxRate
     {
         $taxRate->fill($data);
+        $taxRate->bookshop_id ??= Tenant::requireId();
         if ($taxRate->is_default) {
             $taxRate->is_active = true;
-            TaxRate::where('is_default', true)->whereKeyNot($taxRate->id)->update(['is_default' => false]);
+            TaxRate::where('bookshop_id', $taxRate->bookshop_id)->where('is_default', true)->whereKeyNot($taxRate->id)->update(['is_default' => false]);
         }
         $taxRate->save();
 

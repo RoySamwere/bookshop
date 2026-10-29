@@ -206,7 +206,10 @@ class StaffAccessApprovalTest extends TestCase
         $this->postJson('/api/public/launch-subscribers', ['email' => 'bot@example.test', 'website' => 'spam.example'])->assertOk();
         $this->assertSame(1, LaunchSubscriber::count());
 
-        $this->actingAs($this->owner, 'sanctum')->getJson('/api/launch-subscribers')->assertOk()->assertJsonPath('meta.total', 1);
+        // The launch list belongs to the platform, so even a bookshop owner cannot read it.
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/launch-subscribers')->assertForbidden();
+        $platformOwner = User::factory()->create(['role' => Roles::PLATFORM_OWNER]);
+        $this->actingAs($platformOwner, 'sanctum')->getJson('/api/launch-subscribers')->assertOk()->assertJsonPath('meta.total', 1);
         $cashier = User::factory()->inBranches($this->main)->create(['role' => Roles::CASHIER]);
         $this->actingAs($cashier, 'sanctum')->getJson('/api/launch-subscribers')->assertForbidden();
     }

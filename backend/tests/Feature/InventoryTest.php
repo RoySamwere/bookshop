@@ -16,7 +16,7 @@ class InventoryTest extends TestCase
     private function book(array $attributes = []): int
     {
         return DB::table('books')->insertGetId(array_merge([
-            'title' => 'Learning Mathematics', 'sku' => 'MATH-1', 'selling_price' => 500,
+            'bookshop_id' => $this->tenantId(), 'title' => 'Learning Mathematics', 'sku' => 'MATH-1', 'selling_price' => 500,
             'reorder_level' => 5, 'created_at' => now(), 'updated_at' => now(),
         ], $attributes));
     }
@@ -24,7 +24,7 @@ class InventoryTest extends TestCase
     /** Stock receipts must name an active supplier. */
     private function supplier(): int
     {
-        return DB::table('suppliers')->insertGetId(['name' => 'Longhorn Publishers', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        return DB::table('suppliers')->insertGetId(['bookshop_id' => $this->tenantId(), 'name' => 'Longhorn Publishers', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
     }
 
     /** New products must belong to a subcategory. */
@@ -41,7 +41,7 @@ class InventoryTest extends TestCase
         $this->actingAs(User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]), 'sanctum');
         for ($index = 1; $index <= 35; $index++) {
             $book = $this->book(['sku' => 'PAGE-'.$index]);
-            DB::table('inventory_balances')->insert(['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 1, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('inventory_balances')->insert(['bookshop_id' => $this->tenantId(), 'book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 1, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
         }
 
         $this->getJson('/api/inventory?page=1&per_page=30')->assertOk()->assertJsonCount(30, 'data')
@@ -131,7 +131,7 @@ class InventoryTest extends TestCase
         $book = $this->book();
         $second = $this->book(['title' => 'English', 'sku' => 'ENG-1']);
         foreach ([[$book, $branch->id, 10, 6], [$second, $branch->id, 0, 0], [$book, $other->id, 200, 0]] as [$id, $branchId, $quantity, $reserved]) {
-            DB::table('inventory_balances')->insert(['book_id' => $id, 'branch_id' => $branchId, 'quantity' => $quantity, 'reserved' => $reserved, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('inventory_balances')->insert(['bookshop_id' => $this->tenantId(), 'book_id' => $id, 'branch_id' => $branchId, 'quantity' => $quantity, 'reserved' => $reserved, 'created_at' => now(), 'updated_at' => now()]);
         }
         $this->actingAs(User::factory()->inBranches($branch)->create(['role' => Roles::INVENTORY_OFFICER]), 'sanctum');
         $response = $this->getJson('/api/inventory')->assertOk()->assertJsonCount(2, 'data');

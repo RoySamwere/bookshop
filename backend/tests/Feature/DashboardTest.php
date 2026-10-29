@@ -18,13 +18,13 @@ class DashboardTest extends TestCase
     public function test_summary_counts_all_sales_and_respects_branch_and_business_timezone(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-29 12:00:00', 'UTC'));
-        BusinessProfile::create(['name' => 'Test shop', 'timezone' => 'Africa/Nairobi']);
+        BusinessProfile::create(['name' => 'Test shop', 'timezone' => 'Africa/Nairobi'])->forceFill(['bookshop_id' => $this->tenantId()])->save();
         $branch = Branch::factory()->create();
         $other = Branch::factory()->create();
         $user = User::factory()->inBranches($branch)->create(['role' => Roles::ADMIN]);
-        $book = DB::table('books')->insertGetId(['title' => 'Test book', 'sku' => 'TEST-1', 'selling_price' => 50, 'reorder_level' => 5]);
+        $book = DB::table('books')->insertGetId(['bookshop_id' => $this->tenantId(), 'title' => 'Test book', 'sku' => 'TEST-1', 'selling_price' => 50, 'reorder_level' => 5]);
         $insert = function (int $branchId, string $created, int $number) use ($user, $book) {
-            $sale = DB::table('pos_sales')->insertGetId(['idempotency_key' => "test-{$number}", 'receipt_number' => "TEST-{$number}", 'branch_id' => $branchId, 'cashier_id' => $user->id, 'subtotal' => 100, 'total' => 100, 'payment_method' => 'mpesa', 'payment_reference' => 'SJK7H2M1QX', 'amount_received' => 100, 'status' => 'completed', 'created_at' => $created]);
+            $sale = DB::table('pos_sales')->insertGetId(['bookshop_id' => $this->tenantId(), 'idempotency_key' => "test-{$number}", 'receipt_number' => "TEST-{$number}", 'branch_id' => $branchId, 'cashier_id' => $user->id, 'subtotal' => 100, 'total' => 100, 'payment_method' => 'mpesa', 'payment_reference' => 'SJK7H2M1QX', 'amount_received' => 100, 'status' => 'completed', 'created_at' => $created]);
             DB::table('pos_sale_items')->insert(['sale_id' => $sale, 'book_id' => $book, 'title' => 'Test book', 'sku' => 'TEST-1', 'quantity' => 2, 'unit_price' => 50, 'line_total' => 100]);
         };
         for ($i = 1; $i <= 35; $i++) $insert($branch->id, '2026-10-29 10:00:00', $i);

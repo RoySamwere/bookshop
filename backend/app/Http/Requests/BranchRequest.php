@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\Tenancy\Tenant;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,7 +27,7 @@ class BranchRequest extends FormRequest
 
         return [
             'name' => [$required, 'string', 'max:255'],
-            'code' => [$required, 'string', 'max:20', 'regex:/^[A-Z0-9-]+$/', Rule::unique('branches', 'code')->ignore($branch?->id)],
+            'code' => [$required, 'string', 'max:20', 'regex:/^[A-Z0-9-]+$/', Tenant::unique('branches', 'code')->ignore($branch?->id)],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],

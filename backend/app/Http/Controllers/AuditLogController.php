@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\AuditLogResource;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -23,6 +24,7 @@ class AuditLogController extends Controller
         $caller = $request->user();
 
         $logs = AuditLog::query()->with('user:id,name,email,role')
+            ->where('bookshop_id', Tenant::requireId())
             // Administrators see activity by themselves and the accounts they can see.
             ->when(! $caller->isOwner(), fn ($query) => $query->whereIn(
                 'user_id', User::query()->visibleTo($caller)->pluck('id')->push($caller->id),

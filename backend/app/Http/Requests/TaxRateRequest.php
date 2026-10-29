@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\Tenancy\Tenant;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,7 +27,7 @@ class TaxRateRequest extends FormRequest
 
         return [
             'name' => [$required, 'string', 'max:100'],
-            'code' => [$required, 'string', 'max:20', 'regex:/^[A-Z0-9-]+$/', Rule::unique('tax_rates', 'code')->ignore($taxRate?->id)],
+            'code' => [$required, 'string', 'max:20', 'regex:/^[A-Z0-9-]+$/', Tenant::unique('tax_rates', 'code')->ignore($taxRate?->id)],
             'rate' => [$required, 'numeric', 'min:0', 'max:100'],
             'is_default' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],

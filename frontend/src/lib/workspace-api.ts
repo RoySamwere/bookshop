@@ -4,7 +4,7 @@ import type { BranchSummary, Permission, Role } from './auth'
 export type TeamMember = {
   id: number; name: string; email: string; phone: string | null; role: Role; role_label: string; is_active: boolean
   last_login_at: string | null; created_at: string; branches: BranchSummary[]; can_manage: boolean; can_review: boolean
-  email_verified: boolean; email_verified_at: string | null; registration_source: 'public' | null
+  email_verified: boolean; email_verified_at: string | null; registration_source: 'public' | 'bookshop_registration' | 'invitation' | null
   staff_access_status: 'pending' | 'approved' | 'rejected' | null; staff_access_requested_at: string | null
   staff_access_reviewed_at: string | null; staff_access_note: string | null
 }

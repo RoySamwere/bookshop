@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RegisterRequest;
 use App\Models\AuditLog;
+use App\Models\Bookshop;
 use App\Models\User;
 use App\Notifications\AccountNotification;
 use App\Support\Roles;
@@ -14,8 +15,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Public self-service accounts. Everyone registers as a customer; asking for staff access only
- * files a request that a System Owner or Administrator must approve.
+ * Public self-service customer accounts. Everyone registers as a customer; asking for staff access
+ * only files a request with the named bookshop, whose owner or administrator must approve it.
+ * Bookshop owners register through BookshopRegistrationController instead.
  */
 class RegistrationController extends Controller
 {
@@ -24,7 +26,9 @@ class RegistrationController extends Controller
         $data = $request->validated();
         $wantsStaffAccess = $request->boolean('request_staff_access');
 
-        $user = DB::transaction(function () use ($data, $wantsStaffAccess) {
+        $bookshop = isset($data['bookshop']) ? Bookshop::where('slug', $data['bookshop'])->first() : null;
+
+        $user = DB::transaction(function () use ($data, $wantsStaffAccess, $bookshop) {
             $user = new User([
                 'name' => $data['name'],
                 'email' => $data['email'],
@@ -34,6 +38,7 @@ class RegistrationController extends Controller
             // Set explicitly, never from input: public sign-ups can only ever be customers.
             $user->forceFill([
                 'role' => Roles::CUSTOMER,
+                'bookshop_id' => $bookshop?->id,
                 'is_active' => true,
                 'email_verified_at' => null,
                 'created_by' => null,
@@ -87,12 +92,16 @@ class RegistrationController extends Controller
         $user->markEmailAsVerified();
         event(new Verified($user));
         AuditLog::record('auth.email_verified', "{$user->name} verified their email address", $user, actor: $user);
+        $activated = $this->activateOwnedBookshop($user);
 
         return response()->json([
-            'message' => $user->hasPendingStaffRequest()
-                ? 'Email verified. Your staff access request is now ready for review.'
-                : 'Email verified. You can now sign in.',
+            'message' => match (true) {
+                $activated => 'Email verified. Your bookshop is active and ready to set up.',
+                $user->hasPendingStaffRequest() => 'Email verified. Your staff access request is now ready for review.',
+                default => 'Email verified. You can now sign in.',
+            },
             'status' => 'verified',
+            'next' => $user->role === Roles::BOOKSHOP_OWNER ? '/onboarding/setup' : null,
         ]);
     }
 
@@ -126,9 +135,23 @@ class RegistrationController extends Controller
         ], $sent ? 200 : 503);
     }
 
+    /** A registering owner's bookshop goes live once their email address is confirmed. */
+    private function activateOwnedBookshop(User $user): bool
+    {
+        $bookshop = $user->role === Roles::BOOKSHOP_OWNER ? Bookshop::where('owner_user_id', $user->id)->first() : null;
+        if (! $bookshop || $bookshop->status !== Bookshop::STATUS_PENDING) {
+            return false;
+        }
+        $bookshop->forceFill(['status' => Bookshop::STATUS_ACTIVE, 'verified_at' => now()])->save();
+        AuditLog::record('bookshop.activated', "{$bookshop->name} was activated after the owner verified their email", $bookshop, actor: $user);
+
+        return true;
+    }
+
+    /** Only the bookshop the applicant named reviews their request. */
     private function notifyReviewers(User $applicant): void
     {
-        User::whereIn('role', [Roles::SYSTEM_OWNER, Roles::ADMIN])->where('is_active', true)->get()
+        User::where('bookshop_id', $applicant->bookshop_id)->whereIn('role', [...Roles::TENANT_OWNER_ROLES, Roles::ADMIN])->where('is_active', true)->get()
             ->each(fn (User $reviewer) => $reviewer->notify(new AccountNotification(
                 'New staff access request',
                 "{$applicant->name} ({$applicant->email}) registered and asked for staff access.",

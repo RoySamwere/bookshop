@@ -15,13 +15,13 @@ import { brand } from '../../lib/brand'
 
 export default function RegisterPage() {
   const { watch, setValue, handleSubmit, setError, formState: { errors: fieldErrors } } = useForm<RegistrationValues>({
-    resolver: zodResolver(registrationSchema), defaultValues: { name: '', email: '', phone: '', password: '', confirm: '', terms: false, staff: false },
+    resolver: zodResolver(registrationSchema), defaultValues: { name: '', email: '', phone: '', password: '', confirm: '', terms: false, staff: false, bookshop: '' },
   })
   const form = watch()
   const errors = {
     name: fieldErrors.name?.message, email: fieldErrors.email?.message, phone: fieldErrors.phone?.message,
     password: fieldErrors.password ? 'Choose a password that meets every requirement below.' : undefined,
-    password_confirmation: fieldErrors.confirm?.message, terms: fieldErrors.terms?.message,
+    password_confirmation: fieldErrors.confirm?.message, terms: fieldErrors.terms?.message, bookshop: fieldErrors.bookshop?.message,
   }
   const [message, setMessage] = useState('')
   const [pending, setPending] = useState(false)
@@ -34,11 +34,12 @@ export default function RegisterPage() {
       const result = await register({
         name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null,
         password: form.password, password_confirmation: form.confirm, terms: form.terms, request_staff_access: form.staff,
+        bookshop: form.staff ? form.bookshop?.trim() || null : null,
       })
       setDone({ email: result.data.email, message: result.message, staff: result.data.staff_access_status === 'pending' })
     } catch (e) {
       if (e instanceof ApiError) {
-        for (const key of ['name', 'email', 'phone', 'password', 'terms'] as const) {
+        for (const key of ['name', 'email', 'phone', 'password', 'terms', 'bookshop'] as const) {
           const message = e.field(key)
           if (message) setError(key, { message })
         }
@@ -47,7 +48,7 @@ export default function RegisterPage() {
     } finally { setPending(false) }
   }
 
-  const story = { title: `Create your ${brand.shortName} account.`, body: 'Customers get an account ready for when online ordering opens. Joining the team? Ask for staff access and an administrator will review it.' }
+  const story = { title: `Create your ${brand.shortName} account.`, body: 'Customers get an account ready for when online ordering opens. Joining a team? Ask for staff access and the bookshop will review it.' }
 
   if (done) return <AuthShell story={story}>
     <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><MailCheck size={24} /></span>
@@ -64,6 +65,7 @@ export default function RegisterPage() {
 
   return <AuthShell story={story} topline={<span>Already registered? <Link to="/login">Sign in</Link></span>}>
     <AuthHeading title="Create an account">It takes a minute. We&apos;ll ask you to confirm your email address.</AuthHeading>
+    <p className="hk-auth-panel mb-5 text-sm text-slate-600">Own a bookshop? <Link to="/register/bookshop" className="hk-auth-link">Register your bookshop</Link> to get your own private workspace.</p>
     <form onSubmit={handleSubmit(submit)} noValidate>
       <Field label="Full name" error={errors.name}>
         <input className={inputClass} autoComplete="name" value={form.name} onChange={e => setValue('name', e.target.value)} required aria-invalid={Boolean(errors.name) || undefined} />
@@ -85,8 +87,11 @@ export default function RegisterPage() {
       </Field>
       <label className="hk-check">
         <input type="checkbox" checked={form.staff} onChange={e => setValue('staff', e.target.checked)} />
-        <span>I work at {brand.name} and need staff access<small>An administrator reviews every request before any management access is given.</small></span>
+        <span>I work at a bookshop and need staff access<small>The bookshop&apos;s owner or administrator reviews every request before any management access is given.</small></span>
       </label>
+      {form.staff && <Field label="Bookshop code" error={errors.bookshop} hint="Ask your manager for the code shown on their bookshop profile.">
+        <input className={inputClass} autoCapitalize="none" value={form.bookshop} onChange={e => setValue('bookshop', e.target.value)} aria-invalid={Boolean(errors.bookshop) || undefined} />
+      </Field>}
       <div>
         <label className="hk-check">
           <input type="checkbox" checked={form.terms} onChange={e => setValue('terms', e.target.checked)} aria-invalid={Boolean(errors.terms) || undefined} />

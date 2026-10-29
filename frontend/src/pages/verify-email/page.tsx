@@ -9,6 +9,7 @@ import { AuthHeading, AuthShell } from '../../components/auth/auth-shell'
 import { Field, FormAlert, LoadingState, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
 import { ApiError, errorMessage } from '../../lib/api'
 import { resendVerification, verifyEmail } from '../../lib/auth'
+import { queryClient } from '../../app/query-client'
 
 const story = { title: 'One quick check.', body: 'Confirming your email address keeps your account secure and lets us reach you about orders and access requests.' }
 
@@ -16,7 +17,7 @@ export default function VerifyEmailPage() {
   return <Suspense fallback={<BrandLoader />}><VerifyEmailScreen /></Suspense>
 }
 
-type Result = { state: 'checking' } | { state: 'verified'; message: string } | { state: 'failed'; message: string } | { state: 'none' }
+type Result = { state: 'checking' } | { state: 'verified'; message: string; next?: string | null } | { state: 'failed'; message: string } | { state: 'none' }
 
 function VerifyEmailScreen() {
   const params = useSearchParams()
@@ -29,7 +30,10 @@ function VerifyEmailScreen() {
     if (!hasLink || started.current) return
     started.current = true
     verifyEmail(link)
-      .then(response => setResult({ state: 'verified', message: response.message }))
+      .then(response => {
+        setResult({ state: 'verified', message: response.message, next: response.next })
+        void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+      })
       .catch(error => setResult({ state: 'failed', message: error instanceof ApiError && error.status === 429 ? 'Too many attempts. Wait a minute and open the link again.' : errorMessage(error) }))
     // The link is read once from the URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,7 +44,8 @@ function VerifyEmailScreen() {
   if (result.state === 'verified') return <AuthShell story={story}>
     <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><CircleCheck size={24} /></span>
     <AuthHeading title="Email verified">{result.message}</AuthHeading>
-    <Link to="/login?verified=1" className={`${primaryButton} w-full`}>Sign in</Link>
+    {/* Bookshop owners continue onboarding (sign-in is asked for there if needed). */}
+    <Link to={result.next || '/login?verified=1'} className={`${primaryButton} w-full`}>{result.next ? 'Continue setting up your bookshop' : 'Sign in'}</Link>
   </AuthShell>
 
   return <AuthShell story={story}>

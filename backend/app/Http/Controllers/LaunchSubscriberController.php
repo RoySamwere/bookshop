@@ -27,7 +27,7 @@ class LaunchSubscriberController extends Controller
         return response()->json(['message' => $message]);
     }
 
-    /** For the owner: who is waiting for launch. */
+    /** For platform staff: who is waiting for the public site to launch. */
     public function index(Request $request): JsonResponse
     {
         $subscribers = LaunchSubscriber::query()->latest()->paginate(50);

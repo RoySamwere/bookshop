@@ -37,11 +37,11 @@ class PosTest extends TestCase
             ]);
         }
         $id = DB::table('books')->insertGetId(array_merge([
-            'title' => 'Book', 'sku' => uniqid('SKU-'), 'selling_price' => 500, 'reorder_level' => 5,
+            'bookshop_id' => $this->tenantId(), 'title' => 'Book', 'sku' => uniqid('SKU-'), 'selling_price' => 500, 'reorder_level' => 5,
             'product_subcategory_id' => $subcategory, 'created_at' => now(), 'updated_at' => now(),
         ], $attributes));
         if ($stock) {
-            DB::table('inventory_balances')->insert(['book_id' => $id, 'branch_id' => $this->branch->id, 'quantity' => $stock, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('inventory_balances')->insert(['bookshop_id' => $this->tenantId(), 'book_id' => $id, 'branch_id' => $this->branch->id, 'quantity' => $stock, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
         }
 
         return $id;

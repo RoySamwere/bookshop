@@ -13,7 +13,7 @@ import { AuthHeading, AuthShell } from '../../components/auth/auth-shell'
 import { PasswordInput } from '../../components/auth/password-field'
 import { Field, FormAlert, inputClass, primaryButton } from '../../components/ui-kit'
 import { ApiError, errorMessage } from '../../lib/api'
-import { hasPermission, homeFor, login, safeNextPath } from '../../lib/auth'
+import { homeFor, login, safeNextPath, type BookshopUser } from '../../lib/auth'
 
 export default function LoginPage() {
   return <Suspense fallback={<BrandLoader />}><LoginScreen /></Suspense>
@@ -38,16 +38,23 @@ function LoginScreen() {
     : params.get('signed_out') ? 'You have signed out.'
     : ''
 
+  // A return path is only followed inside the area the account belongs to (workspace or platform console).
+  const destination = (user: BookshopUser) => {
+    const home = homeFor(user)
+    return next && (home === '/dashboard' || next.startsWith(home)) ? next : home
+  }
+
   // Someone who is already signed in goes straight to where they belong.
   useEffect(() => {
-    if (existingUser) router.replace(hasPermission(existingUser, 'workspace.access') && next ? next : homeFor(existingUser))
+    if (existingUser) router.replace(destination(existingUser))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, next, existingUser])
 
   async function submit({ email, password, remember }: LoginValues) {
     setPending(true); setError(null); setMessage('')
     try {
       const user = await login(email.trim(), password, remember)
-      router.replace(hasPermission(user, 'workspace.access') ? (next || '/dashboard') : '/account')
+      router.replace(destination(user))
     } catch (e) {
       setPending(false)
       if (e instanceof ApiError) {

@@ -26,7 +26,7 @@ class BusinessProfileController extends Controller
 
     private function payload(BusinessProfile $profile): array
     {
-        $tax = TaxRate::where('is_default', true)->where('is_active', true)->first();
+        $tax = TaxRate::where('bookshop_id', $profile->bookshop_id)->where('is_default', true)->where('is_active', true)->first();
 
         return [
             ...$profile->makeHidden(['created_at'])->toArray(),

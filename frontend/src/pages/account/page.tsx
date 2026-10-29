@@ -8,7 +8,7 @@ import BrandLoader from '../../components/brand-loader'
 import { CustomerHome } from '../../components/profile-view'
 import { ErrorState, secondaryButton } from '../../components/ui-kit'
 import { ApiError, UNAUTHORIZED_EVENT, errorMessage, sessionStore } from '../../lib/api'
-import { getCurrentUser, hasPermission, logout, resendMyVerification, type BookshopUser } from '../../lib/auth'
+import { getCurrentUser, homeFor, logout, resendMyVerification, type BookshopUser } from '../../lib/auth'
 import { sessionLoginUrl } from '../../lib/session'
 
 /** Signed-in customers and staff applicants. Staff with workspace access are sent to /dashboard. */
@@ -26,7 +26,7 @@ export default function AccountPage() {
   const load = useCallback(() => {
     setBootError('')
     getCurrentUser()
-      .then(current => hasPermission(current, 'workspace.access') ? router.replace('/dashboard') : setUser(current))
+      .then(current => homeFor(current) !== '/account' ? router.replace(homeFor(current)) : setUser(current))
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 0) { setBootError(error.message); return }
         sessionStore.clear()

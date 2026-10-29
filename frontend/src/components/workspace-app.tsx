@@ -12,9 +12,12 @@ import { SalesHistoryView } from './sales-history-view'
 import { SettingsView } from './settings-view'
 import { AuditView } from './audit-view'
 import { ProfileView } from './profile-view'
+import { BookshopAdminView } from './bookshop-admin-view'
+import { SuspendedNotice } from './onboarding'
+import { AuthShell } from './auth/auth-shell'
 import { ErrorState } from './ui-kit'
 import { API_BASE, ApiError, UNAUTHORIZED_EVENT, sessionStore, api } from '../lib/api'
-import { getCurrentUser, hasPermission, homeFor, logout, type BookshopUser } from '../lib/auth'
+import { getCurrentUser, hasPermission, homeFor, logout, needsOnboarding, type BookshopUser } from '../lib/auth'
 import { sessionLoginUrl } from '../lib/session'
 import {
   ArrowUpRight,
@@ -85,8 +88,8 @@ export function WorkspaceApp() {
   }, [])
 
   const enterWorkspace = useCallback((user: BookshopUser) => {
-    // Customers and pending applicants have no workspace; their account page explains why.
-    if (!hasPermission(user, 'workspace.access')) { router.replace(homeFor(user)); return }
+    // Customers, applicants, platform staff and owners still verifying have no workspace here.
+    if (!hasPermission(user, 'workspace.access') || needsOnboarding(user)) { router.replace(homeFor(user)); return }
     setCurrentUser(user)
     const requested = new URLSearchParams(window.location.search).get('section')
     setActive(previous => requested && canOpenSection(user, requested) ? requested : canOpenSection(user, previous) ? previous : firstSection(user))
@@ -161,11 +164,18 @@ export function WorkspaceApp() {
 
   const toastNode = toast && <div className="toast" role="status"><span className="toast-check">✓</span>{toast}</div>
 
+  // The server refuses every workspace request in these states; explain instead of showing failing screens.
+  const blocked = currentUser.bookshop?.status === 'suspended' ? <SuspendedNotice reason={currentUser.bookshop.suspension_reason} />
+    : !currentUser.bookshop ? <><h2 tabIndex={-1}>Not linked to a bookshop</h2><p className="hk-auth-lede">Your account is not part of a bookshop yet. Ask your administrator to finish moving your shop to the new bookshop setup.</p></>
+    : null
+  if (blocked) return <AuthShell story={{ title: 'Workspace unavailable.', body: 'Your records are kept safe while access is paused.' }}>{blocked}<p className="hk-auth-alt"><button type="button" className="hk-auth-link" onClick={() => void signOut()}>Sign out</button></p></AuthShell>
+
   const view = !canOpenSection(currentUser, active)
     ? <section className="page-placeholder"><h1 tabIndex={-1}>Access restricted</h1><p>Your role does not include access to this section.</p></section>
     : active === 'Users' ? <UsersView currentUser={currentUser} notify={notify} />
     : active === 'Settings' ? <SettingsView currentUser={currentUser} notify={notify} />
     : active === 'Audit Log' ? <AuditView />
+    : active === 'My Bookshop' ? <BookshopAdminView currentUser={currentUser} notify={notify} onNavigate={navigateTo} />
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
     : active === 'Point of Sale' ? <PosTerminal currentUser={currentUser} notify={notify} onExit={() => navigateTo(canOpenSection(currentUser, 'Dashboard') ? 'Dashboard' : firstSection(currentUser))} onNavigate={navigateTo} />
     : active === 'Sales History' ? <SalesHistoryView />

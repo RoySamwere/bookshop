@@ -8,6 +8,13 @@ namespace App\Support;
  */
 final class Roles
 {
+    // Platform (SaaS operator) roles. They never belong to a bookshop and hold no tenant permissions.
+    public const PLATFORM_OWNER = 'platform_owner';
+    public const PLATFORM_ADMIN = 'platform_admin';
+
+    // Tenant roles. Every one of them works inside exactly one bookshop.
+    public const BOOKSHOP_OWNER = 'bookshop_owner';
+    /** Legacy single-shop owner: full control of its own bookshop, kept so existing access survives the move to tenancy. */
     public const SYSTEM_OWNER = 'system_owner';
     public const ADMIN = 'admin';
     public const STORE_MANAGER = 'store_manager';
@@ -15,7 +22,8 @@ final class Roles
     public const INVENTORY_OFFICER = 'inventory_officer';
     public const CUSTOMER = 'customer';
 
-    public const PERMISSIONS = [
+    /** Business permissions; they only ever apply inside the user's own bookshop. */
+    public const TENANT_PERMISSIONS = [
         'workspace.access', 'dashboard.view',
         'pos.access', 'sales.view', 'returns.process',
         'catalog.view', 'catalog.manage', 'inventory.view', 'inventory.manage',
@@ -26,7 +34,36 @@ final class Roles
         'storefront.access',
     ];
 
+    public const PLATFORM_PERMISSIONS = [
+        'platform.access', 'platform.bookshops.view', 'platform.bookshops.onboard', 'platform.bookshops.suspend',
+        'platform.users.view', 'platform.users.manage', 'platform.settings.view', 'platform.settings.manage',
+        'platform.audit.view', 'platform.plans.view',
+    ];
+
+    public const PERMISSIONS = [...self::TENANT_PERMISSIONS, ...self::PLATFORM_PERMISSIONS];
+
+    public const PLATFORM_ROLES = [self::PLATFORM_OWNER, self::PLATFORM_ADMIN];
+    public const TENANT_OWNER_ROLES = [self::BOOKSHOP_OWNER, self::SYSTEM_OWNER];
+
     private const DEFINITIONS = [
+        self::PLATFORM_OWNER => [
+            'label' => 'Platform Owner',
+            'description' => 'Administers the SaaS platform: bookshops, platform staff, plans and global settings. No access to bookshop business data.',
+            'permissions' => 'platform',
+        ],
+        self::PLATFORM_ADMIN => [
+            'label' => 'Platform Administrator',
+            'description' => 'Supports bookshop onboarding and views platform records. Cannot suspend bookshops or manage platform staff.',
+            'permissions' => [
+                'platform.access', 'platform.bookshops.view', 'platform.bookshops.onboard',
+                'platform.users.view', 'platform.settings.view', 'platform.audit.view', 'platform.plans.view',
+            ],
+        ],
+        self::BOOKSHOP_OWNER => [
+            'label' => 'Bookshop Owner',
+            'description' => 'Full control of their own bookshop: profile, branches, staff, products, POS, stock, reports and settings.',
+            'permissions' => '*',
+        ],
         self::SYSTEM_OWNER => [
             'label' => 'System Owner',
             'description' => 'Full access to settings, users, branches, inventory, sales, finances and reports.',
@@ -77,6 +114,8 @@ final class Roles
 
     /** Roles each role may assign when creating or editing accounts. */
     private const ASSIGNABLE = [
+        self::PLATFORM_OWNER => [self::PLATFORM_ADMIN],
+        self::BOOKSHOP_OWNER => [self::ADMIN, self::STORE_MANAGER, self::CASHIER, self::INVENTORY_OFFICER, self::CUSTOMER],
         self::SYSTEM_OWNER => [self::ADMIN, self::STORE_MANAGER, self::CASHIER, self::INVENTORY_OFFICER, self::CUSTOMER],
         self::ADMIN => [self::STORE_MANAGER, self::CASHIER, self::INVENTORY_OFFICER, self::CUSTOMER],
     ];
@@ -106,7 +145,27 @@ final class Roles
         }
         $permissions = self::DEFINITIONS[$role]['permissions'];
 
-        return $permissions === '*' ? self::PERMISSIONS : $permissions;
+        return match ($permissions) {
+            '*' => self::TENANT_PERMISSIONS,
+            'platform' => self::PLATFORM_PERMISSIONS,
+            default => $permissions,
+        };
+    }
+
+    public static function isPlatform(?string $role): bool
+    {
+        return in_array($role, self::PLATFORM_ROLES, true);
+    }
+
+    public static function isTenantOwner(?string $role): bool
+    {
+        return in_array($role, self::TENANT_OWNER_ROLES, true);
+    }
+
+    /** Roles that exist inside a bookshop, shown in the workspace role picker. */
+    public static function tenantRoles(): array
+    {
+        return array_values(array_diff(self::all(), self::PLATFORM_ROLES));
     }
 
     public static function assignableBy(?string $role): array

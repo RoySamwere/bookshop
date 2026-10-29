@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'active' => \App\Http\Middleware\EnsureAccountIsActive::class,
             'session.active' => \App\Http\Middleware\EnsureSessionIsActive::class,
             'permission' => \App\Http\Middleware\EnsurePermission::class,
+            'tenant' => \App\Http\Middleware\EnsureTenantContext::class,
+            'platform' => \App\Http\Middleware\EnsurePlatformAccess::class,
         ]);
         // The API has no login page to redirect to; guests get a JSON 401 instead.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\BusinessProfile;
 use App\Models\User;
+use App\Support\Tenancy\Tenant;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,18 +14,19 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request)
     {
-        $data = $request->validate(['branch_id' => 'nullable|integer|exists:branches,id', 'period' => 'nullable|in:today,week']);
+        $tenant = Tenant::requireId();
+        $data = $request->validate(['branch_id' => ['nullable', 'integer', Tenant::exists('branches')], 'period' => 'nullable|in:today,week']);
         $user = $request->user();
-        $branches = Branch::query()->where('is_active', true)
-            ->when(! $user->isOwner(), fn ($q) => $q->whereIn('id', $user->branchIds()))->orderByDesc('is_main')->orderBy('name')->get(['id', 'name']);
+        $branches = Branch::query()->where('bookshop_id', $tenant)->where('is_active', true)
+            ->whereIn('id', $user->branchIds())->orderByDesc('is_main')->orderBy('name')->get(['id', 'name']);
         $branchId = isset($data['branch_id']) ? (int) $data['branch_id'] : null;
         abort_if($branchId !== null && ! $branches->contains('id', $branchId), 403, 'Branch access denied.');
         $branchIds = $branchId ? [$branchId] : $branches->pluck('id')->all();
-        $timezone = BusinessProfile::query()->value('timezone') ?: config('app.timezone');
+        $timezone = BusinessProfile::query()->where('bookshop_id', $tenant)->value('timezone') ?: config('app.timezone');
         $today = CarbonImmutable::now($timezone)->startOfDay();
         $start = ($data['period'] ?? 'today') === 'week' ? $today->subDays(6) : $today;
         $end = $today->addDay();
-        $sales = DB::table('pos_sales as s')->whereIn('s.branch_id', $branchIds)->where('s.status', 'completed')
+        $sales = DB::table('pos_sales as s')->where('s.bookshop_id', $tenant)->whereIn('s.branch_id', $branchIds)->where('s.status', 'completed')
             ->where('s.created_at', '>=', $start->utc())->where('s.created_at', '<', $end->utc());
         $result = ['branches' => $branches, 'timezone' => $timezone, 'summary' => null, 'hourly' => [], 'top_sellers' => [], 'recent_sales' => [], 'stock' => null, 'staff_requests' => null];
 
@@ -53,6 +55,7 @@ class DashboardController extends Controller
         if ($user->hasPermission('inventory.view')) {
             $stock = DB::table('books as b')->crossJoin('branches as br')
                 ->leftJoin('inventory_balances as i', fn ($join) => $join->on('i.book_id', '=', 'b.id')->on('i.branch_id', '=', 'br.id'))
+                ->where('b.bookshop_id', $tenant)->where('br.bookshop_id', $tenant)
                 ->where('b.is_active', true)->whereIn('br.id', $branchIds);
             $available = 'COALESCE(i.quantity, 0) - COALESCE(i.reserved, 0)';
             $summary = (clone $stock)->selectRaw("COALESCE(SUM(CASE WHEN {$available} <= 0 THEN 1 ELSE 0 END), 0) as out_of_stock, COALESCE(SUM(CASE WHEN {$available} > 0 AND {$available} <= b.reorder_level THEN 1 ELSE 0 END), 0) as low")->first();

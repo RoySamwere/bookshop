@@ -30,6 +30,8 @@ Routes: public home, terms, login, register, forgot/reset password, verify email
 
 `bookshops`, `users.bookshop_id`, and `branches.bookshop_id` exist, but bookshop isolation is incomplete. Catalog/supplier/business queries are shared and branch visibility is not a substitute for tenant isolation. Do not claim this is a production-ready multi-tenant service. Before tenant rollout: add tenant ownership to domain tables, backfill only through an explicitly reviewed migration, implement tenant middleware and query scopes for DB query-builder controllers, constrain validation and writes, distinguish shop admins from platform owners, and test cross-tenant reads/writes/exports. No existing business records should be rewritten during the frontend foundation work.
 
+Tenant isolation (Milestone 1) is implemented; see [MULTI_TENANCY.md](MULTI_TENANCY.md) for the design, data classification, legacy adoption and deployment steps.
+
 ## Sequence and API compatibility
 
 1. Establish Vite, TypeScript, React Router, Tailwind and lazy public/protected routes while keeping existing React components. Add test/build commands and deploy documentation.

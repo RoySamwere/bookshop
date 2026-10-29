@@ -99,6 +99,13 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+        // Staff invitation links reuse the hashed reset-token store with a longer lifetime.
+        'invitations' => [
+            'provider' => 'users',
+            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => (int) env('STAFF_INVITATION_EXPIRE', 4320),
+            'throttle' => 0,
+        ],
     ],
 
     /*

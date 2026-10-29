@@ -38,9 +38,12 @@ class UserAccessTest extends TestCase
             ->assertJsonPath('data.user.permissions', Roles::permissionsFor($role));
         $token = $response->json('data.token');
 
-        $this->withToken($token)->getJson('/api/auth/me')->assertOk()
-            ->assertJsonPath('data.assignable_roles', Roles::assignableBy($role))
-            ->assertJsonPath('data.branches.0.code', 'MAIN');
+        $me = $this->withToken($token)->getJson('/api/auth/me')->assertOk()
+            ->assertJsonPath('data.assignable_roles', Roles::assignableBy($role));
+        // Platform staff never work inside a bookshop, even if a branch link exists.
+        Roles::isPlatform($role)
+            ? $me->assertJsonPath('data.account_type', 'platform')->assertJsonPath('data.bookshop', null)->assertJsonPath('data.branches', [])
+            : $me->assertJsonPath('data.branches.0.code', 'MAIN')->assertJsonPath('data.bookshop.id', $user->bookshop_id);
         $this->assertNotNull($user->fresh()->last_login_at);
 
         $this->withToken($token)->postJson('/api/auth/logout')->assertOk();
@@ -207,10 +210,13 @@ class UserAccessTest extends TestCase
         $this->actingAs(User::factory()->inBranches($this->main)->create(['role' => Roles::ADMIN]), 'sanctum');
 
         $roles = collect($this->getJson('/api/roles')->assertOk()->json('data'))->keyBy('value');
-        $this->assertCount(6, $roles);
+        // Bookshop roles only; platform roles never appear in a workspace.
+        $this->assertCount(7, $roles);
+        $this->assertArrayNotHasKey(Roles::PLATFORM_OWNER, $roles->all());
         $this->assertTrue($roles['cashier']['assignable']);
         $this->assertFalse($roles['admin']['assignable']);
         $this->assertFalse($roles['system_owner']['assignable']);
+        $this->assertFalse($roles['bookshop_owner']['assignable']);
     }
 
     private function newUser(string $role, array $branchIds): array

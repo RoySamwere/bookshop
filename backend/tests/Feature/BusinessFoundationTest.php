@@ -9,24 +9,33 @@ use App\Models\User;
 use App\Support\Roles;
 use Database\Seeders\BusinessFoundationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Support\Tenancy\Tenant;
 use Tests\TestCase;
 
 class BusinessFoundationTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** The foundation seeder fills in defaults for the bookshops that exist. */
+    private function seedFoundation(): void
+    {
+        $this->tenantId();
+        $this->seed(BusinessFoundationSeeder::class);
+    }
+
     public function test_seeder_creates_defaults_once_and_assigns_unbranched_staff(): void
     {
         $admin = User::factory()->create(['role' => Roles::ADMIN]);
         $customer = User::factory()->create(['role' => Roles::CUSTOMER]);
 
-        $this->seed(BusinessFoundationSeeder::class);
-        BusinessProfile::current()->update(['name' => 'Renamed Shop']);
-        $this->seed(BusinessFoundationSeeder::class);
+        $profile = fn () => Tenant::run($this->tenantId(), fn () => BusinessProfile::current());
+        $this->seedFoundation();
+        $profile()->update(['name' => 'Renamed Shop']);
+        $this->seedFoundation();
 
         $this->assertSame(1, BusinessProfile::count());
-        $this->assertSame('Renamed Shop', BusinessProfile::current()->name);
-        $this->assertSame('KES', BusinessProfile::current()->currency);
+        $this->assertSame('Renamed Shop', $profile()->name);
+        $this->assertSame('KES', $profile()->currency);
         $this->assertSame(1, Branch::where('is_main', true)->count());
         $this->assertSame('16.00', TaxRate::where('is_default', true)->value('rate'));
         $this->assertSame(['MAIN'], $admin->branches()->pluck('code')->all());
@@ -35,7 +44,7 @@ class BusinessFoundationTest extends TestCase
 
     public function test_workspace_users_can_read_business_settings_but_only_the_owner_can_change_them(): void
     {
-        $this->seed(BusinessFoundationSeeder::class);
+        $this->seedFoundation();
         $main = Branch::where('is_main', true)->first();
         $cashier = User::factory()->inBranches($main)->create(['role' => Roles::CASHIER]);
         $admin = User::factory()->inBranches($main)->create(['role' => Roles::ADMIN]);
@@ -56,7 +65,7 @@ class BusinessFoundationTest extends TestCase
 
     public function test_owner_manages_branches_and_the_main_branch_stays_active(): void
     {
-        $this->seed(BusinessFoundationSeeder::class);
+        $this->seedFoundation();
         $owner = User::factory()->create(['role' => Roles::SYSTEM_OWNER]);
         $main = Branch::where('is_main', true)->first();
         $this->actingAs($owner, 'sanctum');
@@ -86,7 +95,7 @@ class BusinessFoundationTest extends TestCase
 
     public function test_tax_rates_keep_a_single_active_default(): void
     {
-        $this->seed(BusinessFoundationSeeder::class);
+        $this->seedFoundation();
         $this->actingAs(User::factory()->create(['role' => Roles::SYSTEM_OWNER]), 'sanctum');
         $vat = TaxRate::where('code', 'VAT16')->first();
 

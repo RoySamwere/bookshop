@@ -14,6 +14,7 @@ class BranchFactory extends Factory
             'code' => strtoupper(fake()->unique()->bothify('BR-###')),
             'city' => fake()->city(),
             'is_active' => true,
+            'bookshop_id' => fn () => BookshopFactory::defaultId(),
         ];
     }
 

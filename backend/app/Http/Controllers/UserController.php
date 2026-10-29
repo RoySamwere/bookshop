@@ -7,6 +7,7 @@ use App\Http\Resources\UserResource;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Notifications\AccountNotification;
+use App\Services\EntitlementService;
 use App\Support\Roles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -62,12 +63,17 @@ class UserController extends Controller
         return new UserResource($user->load('branches'));
     }
 
-    public function store(UserRequest $request): JsonResponse
+    public function store(UserRequest $request, EntitlementService $entitlements): JsonResponse
     {
         $caller = $request->user();
+        if (in_array($request->input('role'), Roles::BRANCH_ROLES, true)) {
+            $entitlements->ensureCanAddUser($caller->bookshop);
+        }
         $user = DB::transaction(function () use ($request, $caller) {
             $user = new User($request->safe()->only(['name', 'email', 'phone', 'password', 'role']));
             $user->is_active = $request->boolean('is_active', true);
+            // New accounts always join the creator's own bookshop.
+            $user->bookshop_id = $caller->bookshop_id;
             $user->created_by = $caller->id;
             $user->email_verified_at = now();
             $user->save();
@@ -80,7 +86,7 @@ class UserController extends Controller
             'role' => $user->role, 'branch_ids' => $user->branches()->pluck('branches.id')->all(),
         ]);
         if (! $caller->isOwner()) {
-            $this->notifyOwners('New team member', "{$caller->name} added {$user->name} as ".Roles::label($user->role).'.');
+            $this->notifyOwners($caller, 'New team member', "{$caller->name} added {$user->name} as ".Roles::label($user->role).'.');
         }
 
         return (new UserResource($user->load('branches')))
@@ -153,8 +159,8 @@ class UserController extends Controller
         if ($user->id === $request->user()->id) {
             return response()->json(['message' => 'You cannot delete your own account.'], 422);
         }
-        if ($user->isOwner()) {
-            return response()->json(['message' => 'System owner accounts cannot be deleted.'], 422);
+        if ($user->isOwner() || $user->isPlatformUser()) {
+            return response()->json(['message' => 'Owner accounts cannot be deleted.'], 422);
         }
         $this->authorizeManagement($request, $user);
 
@@ -174,9 +180,9 @@ class UserController extends Controller
         abort_unless($caller->canManageUser($user), 403, 'You cannot manage this account.');
     }
 
-    private function notifyOwners(string $title, string $body): void
+    private function notifyOwners(User $caller, string $title, string $body): void
     {
-        User::where('role', Roles::SYSTEM_OWNER)->where('is_active', true)->get()
+        User::where('bookshop_id', $caller->bookshop_id)->whereIn('role', Roles::TENANT_OWNER_ROLES)->where('is_active', true)->get()
             ->each(fn (User $owner) => $owner->notify(new AccountNotification($title, $body, 'info', 'Users')));
     }
 }

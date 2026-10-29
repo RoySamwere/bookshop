@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryService;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -10,9 +11,10 @@ use Illuminate\Validation\Rule;
 class InventoryController extends Controller
 {
     public function index(Request $request) {
-        $request->validate(['branch_id'=>'nullable|integer|exists:branches,id', 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
+        $tenant=Tenant::requireId();
+        $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
-        $branches=$user->role==='system_owner' ? null : $user->branches()->pluck('branches.id')->all();
+        $branches=$user->isOwner() ? null : $user->branchIds();
         // Every catalogued product is visible in inventory, including zero-stock items.
         // Only accessible branches are included; no synthetic inventory movements are created.
         $query = DB::table('books as b')
@@ -20,6 +22,7 @@ class InventoryController extends Controller
             ->leftJoin('inventory_balances as i', function($join) {
                 $join->on('i.book_id','=','b.id')->on('i.branch_id','=','br.id');
             })
+            ->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
             ->where('b.is_active',true)->where('br.is_active',true)
             ->when($branches!==null,fn($q)=>$q->whereIn('br.id',$branches))
             ->when($request->query('branch_id'),fn($q,$id)=>$q->where('br.id',$id))
@@ -36,8 +39,8 @@ class InventoryController extends Controller
     }
     public function bulkReceive(Request $request, InventoryService $service) {
         $data=$request->validate([
-            'branch_id'=>['required','integer',Rule::exists('branches','id')->where('is_active',true)],
-            'supplier_id'=>['required','integer',Rule::exists('suppliers','id')->where('is_active',true)],
+            'branch_id'=>['required','integer',Tenant::exists('branches')->where('is_active',true)],
+            'supplier_id'=>['required','integer',Tenant::exists('suppliers')->where('is_active',true)],
             'rows'=>'required|array|min:1|max:100',
             'rows.*.title'=>'required|string|max:255',
             'rows.*.sku'=>'required|string|max:100',
@@ -50,14 +53,15 @@ class InventoryController extends Controller
         $skus=array_map(fn($r)=>strtoupper(trim($r['sku'])),$data['rows']);
         if(count($skus)!==count(array_unique($skus)))
             throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Duplicate SKUs in this batch.']);
-        $received=DB::transaction(function()use($data,$request,$service){
+        $tenant=Tenant::requireId();
+        $received=DB::transaction(function()use($data,$request,$service,$tenant){
             foreach($data['rows'] as $row){
-                $book=DB::table('books')->where('sku',$row['sku'])->lockForUpdate()->first();
+                $book=DB::table('books')->where('bookshop_id',$tenant)->where('sku',$row['sku'])->lockForUpdate()->first();
                 if($book && !$book->is_active)
                     throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Inactive product: '.$row['sku']]);
                 if(!$book){
                     $id=DB::table('books')->insertGetId([
-                        'title'=>$row['title'],'sku'=>$row['sku'],
+                        'bookshop_id'=>$tenant,'title'=>$row['title'],'sku'=>$row['sku'],
                         'product_subcategory_id'=>$row['product_subcategory_id'],
                         'cost_price'=>$row['cost_price'],'selling_price'=>$row['selling_price'],
                         'reorder_level'=>10,'is_active'=>true,'created_at'=>now(),'updated_at'=>now()
@@ -77,11 +81,11 @@ class InventoryController extends Controller
     }
     public function receive(Request $request, InventoryService $service) {
         $data = $request->validate([
-            'book_id' => ['required', 'integer', Rule::exists('books', 'id')->where('is_active', true)],
-            'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('is_active', true)],
+            'book_id' => ['required', 'integer', Tenant::exists('books')->where('is_active', true)],
+            'branch_id' => ['required', 'integer', Tenant::exists('branches')->where('is_active', true)],
             'quantity' => 'required|integer|min:1|max:2147483647',
-            'product_unit_id' => 'nullable|integer|exists:product_units,id',
-            'supplier_id' => ['required','integer',Rule::exists('suppliers','id')->where('is_active',true)],
+            'product_unit_id' => ['nullable','integer',Tenant::exists('product_units')],
+            'supplier_id' => ['required','integer',Tenant::exists('suppliers')->where('is_active',true)],
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -96,17 +100,17 @@ class InventoryController extends Controller
     }
     public function movements(Request $request) {
         $user=$request->user();
-        $branches=$user->role==='system_owner' ? null : $user->branches()->pluck('branches.id')->all();
-        return DB::table('inventory_movements')->when($branches!==null,fn($q)=>$q->whereIn('branch_id',$branches))->orderByDesc('id')->paginate(30);
+        $branches=$user->isOwner() ? null : $user->branchIds();
+        return DB::table('inventory_movements')->where('bookshop_id',Tenant::requireId())->when($branches!==null,fn($q)=>$q->whereIn('branch_id',$branches))->orderByDesc('id')->paginate(30);
     }
     public function adjust(Request $request,InventoryService $service) {
-        $data=$request->validate(['book_id'=>'required|exists:books,id','branch_id'=>'required|exists:branches,id','quantity_change'=>'required|integer|not_in:0','notes'=>'required|string|max:1000']);
+        $data=$request->validate(['book_id'=>['required',Tenant::exists('books')],'branch_id'=>['required',Tenant::exists('branches')],'quantity_change'=>'required|integer|not_in:0','notes'=>'required|string|max:1000']);
         $this->authorizeBranch($request,(int)$data['branch_id']);
         $quantity=$service->change($data['book_id'],$data['branch_id'],$data['quantity_change'],'adjustment',$request->user()->id,null,$data['notes']);
         return response()->json(['quantity'=>$quantity]);
     }
     public function transfer(Request $request,InventoryService $service) {
-        $data=$request->validate(['book_id'=>'required|exists:books,id','from_branch_id'=>'required|exists:branches,id|different:to_branch_id','to_branch_id'=>'required|exists:branches,id','quantity'=>'required|integer|min:1','notes'=>'nullable|string|max:1000']);
+        $data=$request->validate(['book_id'=>['required',Tenant::exists('books')],'from_branch_id'=>['required',Tenant::exists('branches'),'different:to_branch_id'],'to_branch_id'=>['required',Tenant::exists('branches')],'quantity'=>'required|integer|min:1','notes'=>'nullable|string|max:1000']);
         $this->authorizeBranch($request,(int)$data['from_branch_id']);$this->authorizeBranch($request,(int)$data['to_branch_id']);
         $reference='TRANSFER-'.(string) \Illuminate\Support\Str::uuid();
         DB::transaction(function () use ($data,$request,$service,$reference) {
@@ -116,6 +120,6 @@ class InventoryController extends Controller
         return response()->json(['reference'=>$reference],201);
     }
     public function authorizeBranch(Request $request,int $branchId): void {
-        abort_unless($request->user()->role==='system_owner'||$request->user()->branches()->where('branches.id',$branchId)->exists(),403,'Branch access denied.');
+        abort_unless(in_array($branchId,$request->user()->branchIds(),true),403,'Branch access denied.');
     }
 }
