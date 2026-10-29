@@ -1,84 +1,137 @@
 'use client'
 
-import { ArrowRight, ArrowUpRight, BarChart3, BookOpen, Boxes, CircleDollarSign, FileText, Package, Plus, ShoppingCart, Truck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowRight, ArrowUpRight, BookOpen, Boxes, CircleDollarSign, FileText, Package, RefreshCw, ShoppingCart, Truck } from 'lucide-react'
+import { api } from '../lib/api'
+import { hasPermission, type BookshopUser } from '../lib/auth'
 
-type Product = { id: number; name: string; category: string; sku: string; price: number; cost: number; stock: number; tone: string }
-type Sale = { receipt: string; customer: string; items: number; total: number; method: string; time: string; status: string }
+type Sale = { id: number; receipt_number: string; total: string | number; payment_method: string; created_at: string; branch_name?: string | null }
+type SalesResponse = { data: Sale[]; summary: { transactions: number | string; revenue: number | string } }
+type InventoryResponse = { summary: { units: number | string; value: number | string; stock_lines: number | string; low: number | string; out_of_stock: number | string } }
+type Book = { id: number; title: string; sku: string; selling_price: number | string; category_name?: string | null }
+type BooksResponse = { data: Book[]; total: number }
+type Period = 'today' | '7days' | '30days'
 const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { maximumFractionDigits: 0 })}`
-const weeklyRevenue = [22400, 30100, 26700, 38900, 33800, 44200, 48320]
-const chartPoints = weeklyRevenue.map((value, index) => `${index * 100},${180 - value / 60000 * 180}`).join(' ')
+const number = (value: number | string | undefined) => Number(value || 0)
+const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+const dates = (period: Period) => {
+  const now = new Date()
+  const from = new Date(now)
+  from.setDate(from.getDate() - (period === 'today' ? 0 : period === '7days' ? 6 : 29))
+  return { from: localDate(from), to: localDate(now) }
+}
 
-export function OverviewDashboard({ userName, products, sales, onNavigate }: {
-  userName: string; products: Product[]; sales: Sale[]; onNavigate: (section: string) => void
+export function OverviewDashboard({ userName, currentUser, onNavigate }: {
+  userName: string; currentUser: BookshopUser; onNavigate: (section: string) => void
 }) {
-  const healthy = products.filter(product => product.stock > 8).length
-  const low = products.filter(product => product.stock > 0 && product.stock <= 8).length
-  const out = products.filter(product => product.stock === 0).length
-  const healthyPercent = Math.round(healthy / products.length * 100)
-  const stockValue = products.reduce((sum, product) => sum + product.cost * product.stock, 0)
-  const units = products.reduce((sum, product) => sum + product.stock, 0)
-  const metrics = [
-    { label: 'Sales total', value: money(sales.reduce((sum, sale) => sum + sale.total, 0)), caption: 'Across the sample transactions', icon: CircleDollarSign, tone: 'blue' },
-    { label: 'Transactions', value: String(sales.length).padStart(2, '0'), caption: 'Completed sample receipts', icon: FileText, tone: 'green' },
-    { label: 'Units in stock', value: units.toLocaleString(), caption: `${low + out} products need attention`, icon: Boxes, tone: 'orange' },
-    { label: 'Inventory value', value: money(stockValue), caption: `${products.length} products · at cost price`, icon: Package, tone: 'purple' },
-  ]
+  const [period, setPeriod] = useState<Period>('7days')
+  const [revision, setRevision] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [sales, setSales] = useState<SalesResponse | null>(null)
+  const [inventory, setInventory] = useState<InventoryResponse | null>(null)
+  const [books, setBooks] = useState<BooksResponse | null>(null)
+  const [errors, setErrors] = useState<string[]>([])
+  const canSales = hasPermission(currentUser, 'sales.view')
+  const canInventory = hasPermission(currentUser, 'inventory.view')
+  const canCatalogue = hasPermission(currentUser, 'catalog.view')
+  const canPos = hasPermission(currentUser, 'pos.access')
+  const canSuppliers = hasPermission(currentUser, 'suppliers.view')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const requests: { key: string; run: Promise<unknown> }[] = []
+    if (canSales) requests.push({ key: 'sales', run: api<SalesResponse>('/pos/sales', { query: { ...dates(period), page: 1 } }) })
+    if (canInventory) requests.push({ key: 'inventory', run: api<InventoryResponse>('/inventory', { query: { per_page: 10 } }) })
+    if (canCatalogue) requests.push({ key: 'books', run: api<BooksResponse>('/books', { query: { per_page: 10 } }) })
+    const results = await Promise.allSettled(requests.map(request => request.run))
+    const failures: string[] = []
+    results.forEach((result, index) => {
+      const key = requests[index].key
+      if (result.status === 'rejected') {
+        failures.push(`${key}: ${result.reason instanceof Error ? result.reason.message : 'Unable to load'}`)
+        if (key === 'sales') setSales(null)
+        if (key === 'inventory') setInventory(null)
+        if (key === 'books') setBooks(null)
+      } else {
+        if (key === 'sales') setSales(result.value as SalesResponse)
+        if (key === 'inventory') setInventory(result.value as InventoryResponse)
+        if (key === 'books') setBooks(result.value as BooksResponse)
+      }
+    })
+    setErrors(failures)
+    setLoading(false)
+  }, [canSales, canInventory, canCatalogue, period])
+
+  useEffect(() => { void load() }, [load, revision])
+
+  const totals = inventory?.summary
+  const stockLines = number(totals?.stock_lines)
+  const low = number(totals?.low)
+  const out = number(totals?.out_of_stock)
+  const healthy = Math.max(0, stockLines - low - out)
+  const healthyPercent = stockLines ? Math.round(healthy / stockLines * 100) : 0
+  const metrics = useMemo(() => [
+    ...(canSales ? [
+      { label: 'Revenue', value: sales ? money(number(sales.summary.revenue)) : '—', caption: period === 'today' ? 'Today' : period === '7days' ? 'Last 7 days' : 'Last 30 days', icon: CircleDollarSign, tone: 'blue' },
+      { label: 'Transactions', value: sales ? number(sales.summary.transactions).toLocaleString('en-KE') : '—', caption: 'Recorded POS sales', icon: FileText, tone: 'green' },
+    ] : []),
+    ...(canInventory ? [
+      { label: 'Units in stock', value: totals ? number(totals.units).toLocaleString('en-KE') : '—', caption: `${low + out} stock lines need attention`, icon: Boxes, tone: 'orange' },
+      { label: 'Inventory value', value: totals ? money(number(totals.value)) : '—', caption: 'At selling price · all accessible branches', icon: Package, tone: 'purple' },
+    ] : []),
+  ], [canSales, canInventory, sales, totals, period, low, out])
 
   return <div className="overview-page">
     <div className="overview-heading">
-      <div><div className="overview-eyebrow"><span /> YOUR SHOP AT A GLANCE</div><h1 tabIndex={-1}>Welcome back, {userName.split(' ')[0]}<span className="greeting-dot">.</span></h1><p>A clear view of your sales, shelves, and next steps.</p></div>
-      <div className="overview-heading-actions"><span className="demo-badge">Demo overview</span><button className="primary-button" onClick={() => onNavigate('Point of Sale')}><Plus size={17} /> New sale</button></div>
+      <div><div className="overview-eyebrow"><span /> LIVE SHOP OVERVIEW</div><h1 tabIndex={-1}>Welcome back, {userName.split(' ')[0]}<span className="greeting-dot">.</span></h1><p>Sales, stock and daily operations from your shop records.</p></div>
+      <div className="overview-heading-actions">
+        <select aria-label="Sales period" value={period} onChange={event => setPeriod(event.target.value as Period)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <option value="today">Today</option><option value="7days">Last 7 days</option><option value="30days">Last 30 days</option>
+        </select>
+        <button className="overview-text-link" onClick={() => setRevision(value => value + 1)} disabled={loading}><RefreshCw size={16} /> {loading ? 'Loading…' : 'Refresh'}</button>
+        {canPos && <button className="primary-button" onClick={() => onNavigate('Point of Sale')}><ShoppingCart size={17} /> New sale</button>}
+      </div>
     </div>
-
-    <section className="overview-metrics" aria-label="Shop summary">
-      {metrics.map(({ label, value, caption, icon: Icon, tone }) => <article className="overview-metric" key={label}><div className="overview-metric-top"><span>{label}</span><span className={`overview-metric-icon ${tone}`}><Icon size={19} /></span></div><strong>{value}</strong><p>{caption}</p></article>)}
+    {errors.length > 0 && <div role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Some live data could not be loaded: {errors.join('; ')}. <button className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Retry</button></div>}
+    {metrics.length > 0 && <section className="overview-metrics" aria-label="Live shop summary">{metrics.map(({ label, value, caption, icon: Icon, tone }) => <article className="overview-metric" key={label}><div className="overview-metric-top"><span>{label}</span><span className={`overview-metric-icon ${tone}`}><Icon size={19} /></span></div><strong>{loading && !sales && !inventory ? 'Loading…' : value}</strong><p>{caption}</p></article>)}</section>}
+    <section className="overview-quick-actions" aria-label="Quick actions"><span>Quick actions</span>
+      {[
+        { label: 'Open register', section: 'Point of Sale', icon: ShoppingCart, allowed: canPos },
+        { label: 'Manage catalogue', section: 'Products & Books', icon: BookOpen, allowed: canCatalogue },
+        { label: 'Review stock', section: 'Inventory & Stock', icon: Boxes, allowed: canInventory },
+        { label: 'Suppliers', section: 'Suppliers', icon: Truck, allowed: canSuppliers },
+      ].filter(item => item.allowed).map(({ label, section, icon: Icon }) => <button key={section} onClick={() => onNavigate(section)}><Icon size={16} />{label}<ArrowUpRight size={14} /></button>)}
     </section>
-
-    <section className="overview-quick-actions" aria-label="Quick actions">
-      <span>Quick actions</span>
-      {[{ label: 'Open register', section: 'Point of Sale', icon: ShoppingCart }, { label: 'Manage catalogue', section: 'Products & Books', icon: BookOpen }, { label: 'Review stock', section: 'Inventory & Stock', icon: Boxes }, { label: 'Suppliers', section: 'Suppliers', icon: Truck }].map(({ label, section, icon: Icon }) => <button key={section} onClick={() => onNavigate(section)}><Icon size={16} />{label}<ArrowUpRight size={14} /></button>)}
-    </section>
-
     <div className="overview-primary-grid">
-      <section className="overview-card revenue-card" aria-labelledby="revenue-title">
-        <div className="overview-card-heading"><div><h2 id="revenue-title">Sales performance</h2><p>Sample revenue across the week</p></div><span className="period-label">Last 7 days</span></div>
-        <div className="revenue-summary"><strong>{money(weeklyRevenue.reduce((sum, value) => sum + value, 0))}</strong><span><i /> Revenue</span></div>
-        <div className="revenue-chart"><div className="revenue-axis"><span>60k</span><span>40k</span><span>20k</span><span>0</span></div><div className="revenue-plot">
-          <div className="revenue-grid-lines"><i /><i /><i /><i /></div>
-          <svg viewBox="0 0 600 180" preserveAspectRatio="none" role="img" aria-label="Sample weekly revenue rises from KSh 22,400 on Tuesday to KSh 48,320 on Monday.">
-            <defs><linearGradient id="revenue-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#5974c4" stopOpacity=".2" /><stop offset="100%" stopColor="#5974c4" stopOpacity="0" /></linearGradient></defs>
-            <polygon points={`0,180 ${chartPoints} 600,180`} fill="url(#revenue-shade)" />
-            <polyline points={chartPoints} fill="none" stroke="#506cb7" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          </svg>
-        </div></div>
-        <div className="revenue-days">{['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon'].map(day => <span key={day}>{day}</span>)}</div>
-        <div className="overview-card-footer"><span><BarChart3 size={15} /> Illustrative weekly data</span><button onClick={() => onNavigate('Reports & Analytics')}>Reports <ArrowRight size={15} /></button></div>
-      </section>
-
-      <section className="overview-card health-card" aria-labelledby="health-title">
-        <div className="overview-card-heading"><div><h2 id="health-title">Inventory health</h2><p>Keep your best sellers on the shelf</p></div><button className="overview-icon-link" aria-label="View inventory" onClick={() => onNavigate('Inventory & Stock')}><ArrowUpRight size={19} /></button></div>
-        <div className="overview-stock-summary"><div className="health-ring" style={{ background: `conic-gradient(#24a995 0 ${healthyPercent}%, #e9b35a ${healthyPercent}% ${(healthy + low) / products.length * 100}%, #df827e 0)` }} role="img" aria-label={`${healthyPercent}% of products have healthy stock`}><div><strong>{healthyPercent}%</strong><span>healthy stock</span></div></div>
-          <div className="health-legend"><div><i className="healthy" /><span>Healthy</span><strong>{healthy}</strong></div><div><i className="low" /><span>Low stock</span><strong>{low}</strong></div><div><i className="out" /><span>Out of stock</span><strong>{out}</strong></div></div>
-        </div>
-        <div className="overview-stock-alert"><span className="stock-alert-symbol"><Boxes size={19} /></span><div><strong>{low + out} products need attention</strong><p>Review low and unavailable stock.</p></div></div>
+      {canSales && <section className="overview-card revenue-card" aria-labelledby="revenue-title">
+        <div className="overview-card-heading"><div><h2 id="revenue-title">Sales performance</h2><p>Recorded transactions for the selected period</p></div><span className="period-label">{period === 'today' ? 'Today' : period === '7days' ? '7 days' : '30 days'}</span></div>
+        <div className="revenue-summary"><strong>{sales ? money(number(sales.summary.revenue)) : '—'}</strong><span><i /> Revenue</span></div>
+        <div className="px-5 pb-5 text-sm text-slate-500">{sales ? `${number(sales.summary.transactions).toLocaleString('en-KE')} transactions recorded` : loading ? 'Loading sales…' : 'Sales data unavailable'}</div>
+        <div className="overview-card-footer"><span>Live POS records</span><button onClick={() => onNavigate('Sales History')}>Sales history <ArrowRight size={15} /></button></div>
+      </section>}
+      {canInventory && <section className="overview-card health-card" aria-labelledby="health-title">
+        <div className="overview-card-heading"><div><h2 id="health-title">Inventory health</h2><p>Stock across accessible branches</p></div><button className="overview-icon-link" aria-label="View inventory" onClick={() => onNavigate('Inventory & Stock')}><ArrowUpRight size={19} /></button></div>
+        <div className="overview-stock-summary"><div className="health-ring" style={{ background: `conic-gradient(#24a995 0 ${healthyPercent}%, #e9b35a ${healthyPercent}% ${stockLines ? (healthy + low) / stockLines * 100 : 0}%, #df827e 0)` }} role="img" aria-label={`${healthyPercent}% of stock lines have healthy stock`}><div><strong>{totals ? `${healthyPercent}%` : '—'}</strong><span>healthy stock</span></div></div>
+          <div className="health-legend"><div><i className="healthy" /><span>Healthy</span><strong>{healthy}</strong></div><div><i className="low" /><span>Low stock</span><strong>{low}</strong></div><div><i className="out" /><span>Out of stock</span><strong>{out}</strong></div></div></div>
+        <div className="overview-stock-alert"><span className="stock-alert-symbol"><Boxes size={19} /></span><div><strong>{low + out} stock lines need attention</strong><p>Based on product reorder levels and available stock.</p></div></div>
         <button className="overview-stock-button" onClick={() => onNavigate('Inventory & Stock')}>Review inventory <ArrowRight size={16} /></button>
-      </section>
+      </section>}
     </div>
-
     <div className="overview-secondary-grid">
-      <section className="overview-card overview-sales" aria-labelledby="recent-sales-title">
-        <div className="overview-card-heading"><div><h2 id="recent-sales-title">Recent sales</h2><p>Sample receipts from your register</p></div><button className="overview-text-link" onClick={() => onNavigate('Sales History')}>View all <ArrowUpRight size={15} /></button></div>
-        <div className="table-scroll" role="region" aria-label="Recent sales table, scroll horizontally for more columns" tabIndex={0}>
-          <table className="overview-sales-table"><thead><tr><th scope="col">Receipt</th><th scope="col">Customer</th><th scope="col">Amount</th><th scope="col">Payment</th><th scope="col">Status</th></tr></thead><tbody>{sales.map(sale => <tr key={sale.receipt}><td><strong>{sale.receipt}</strong><small>{sale.time}</small></td><td>{sale.customer}</td><td className="sale-amount">{money(sale.total)}</td><td><span className={`payment-label ${sale.method === 'M-Pesa' ? 'is-mpesa' : ''}`}>{sale.method}</span></td><td><span className="paid-label"><i />{sale.status}</span></td></tr>)}</tbody></table>
-        </div>
-      </section>
-
-      <section className="overview-card overview-catalogue" aria-labelledby="catalogue-title">
-        <div className="overview-card-heading"><div><h2 id="catalogue-title">On your shelves</h2><p>A look at your product catalogue</p></div><button className="overview-icon-link" aria-label="View catalogue" onClick={() => onNavigate('Products & Books')}><ArrowUpRight size={19} /></button></div>
-        <div className="overview-product-list">{products.slice(0, 4).map(product => <div className="overview-product" key={product.id}><span className={`overview-book ${product.tone}`}><BookOpen size={20} /></span><div><strong>{product.name}</strong><span>{product.category}</span></div><span className={`overview-product-stock ${product.stock <= 8 ? 'needs-stock' : ''}`}>{product.stock}<small>in stock</small></span></div>)}</div>
-        <button className="overview-catalogue-link" onClick={() => onNavigate('Products & Books')}>Explore catalogue <ArrowRight size={16} /></button>
-      </section>
+      {canSales && <section className="overview-card overview-sales" aria-labelledby="recent-sales-title">
+        <div className="overview-card-heading"><div><h2 id="recent-sales-title">Recent sales</h2><p>Latest transactions in the selected period</p></div><button className="overview-text-link" onClick={() => onNavigate('Sales History')}>View all <ArrowUpRight size={15} /></button></div>
+        <div className="table-scroll" role="region" aria-label="Recent sales" tabIndex={0}><table className="overview-sales-table"><thead><tr><th>Receipt</th><th>Branch</th><th>Amount</th><th>Payment</th><th>Date</th></tr></thead><tbody>
+          {(sales?.data || []).slice(0, 6).map(sale => <tr key={sale.id}><td><strong>{sale.receipt_number}</strong></td><td>{sale.branch_name || '—'}</td><td className="sale-amount">{money(number(sale.total))}</td><td>{sale.payment_method?.toUpperCase()}</td><td>{new Date(sale.created_at).toLocaleDateString('en-KE')}</td></tr>)}
+          {!sales?.data?.length && <tr><td colSpan={5}>{loading ? 'Loading sales…' : 'No sales recorded for this period.'}</td></tr>}
+        </tbody></table></div>
+      </section>}
+      {canCatalogue && <section className="overview-card overview-catalogue" aria-labelledby="catalogue-title">
+        <div className="overview-card-heading"><div><h2 id="catalogue-title">Product catalogue</h2><p>{books ? `${books.total} registered products` : 'Live catalogue records'}</p></div><button className="overview-icon-link" aria-label="View catalogue" onClick={() => onNavigate('Products & Books')}><ArrowUpRight size={19} /></button></div>
+        <div className="overview-product-list">{(books?.data || []).slice(0, 4).map(book => <div className="overview-product" key={book.id}><span className="overview-book teal"><BookOpen size={20} /></span><div><strong>{book.title}</strong><span>{book.sku}</span></div><span className="text-sm font-semibold">{money(number(book.selling_price))}</span></div>)}
+          {!books?.data?.length && <p className="p-4 text-sm text-slate-500">{loading ? 'Loading products…' : 'No products available.'}</p>}
+        </div><button className="overview-catalogue-link" onClick={() => onNavigate('Products & Books')}>Explore catalogue <ArrowRight size={16} /></button>
+      </section>}
     </div>
-    <p className="overview-demo-note">Demo workspace · Figures are sample data, not live trading totals.</p>
+    <p className="overview-demo-note">Live data · Figures reflect recorded transactions and accessible inventory. Inventory value is calculated at selling price.</p>
   </div>
 }
