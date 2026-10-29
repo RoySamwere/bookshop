@@ -128,9 +128,13 @@ class BookshopManagementTest extends TestCase
         $admin = User::factory()->create(['role' => $role]);
         $this->login($admin);
         $payload = ['owner_name' => 'New Owner', 'email' => 'new@shop.test', 'phone' => '+254712345678', 'password' => 'Strong-pass1!', 'password_confirmation' => 'Strong-pass1!', 'bookshop_name' => 'New Books', 'business_phone' => '+254712345678', 'business_location' => 'Nairobi', 'country' => 'Kenya', 'currency' => 'KES', 'terms' => true];
+        $payload['business_location'] = str_repeat('L', 255);
         $id = $this->postJson('/api/v1/platform/bookshops', $payload)->assertCreated()->json('data.id');
         $this->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.id', $admin->id)->assertJsonPath('data.account_type', 'platform');
         $this->assertDatabaseHas('users', ['email' => 'new@shop.test', 'role' => Roles::BOOKSHOP_OWNER, 'bookshop_id' => $id]);
+        $this->assertDatabaseHas('users', ['email' => 'new@shop.test', 'registration_source' => User::SOURCE_BOOKSHOP_REGISTRATION]);
+        $this->assertDatabaseHas('branches', ['bookshop_id' => $id, 'city' => $payload['business_location']]);
+        $this->assertDatabaseHas('business_profiles', ['bookshop_id' => $id, 'city' => $payload['business_location']]);
         $this->assertDatabaseCount('platform_bookshop_management', 0);
         $this->getJson("/api/v1/books?bookshop_id={$id}")->assertForbidden();
         $this->postJson("/api/v1/platform/management/{$id}/enter")->assertForbidden();

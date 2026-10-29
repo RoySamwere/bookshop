@@ -74,6 +74,29 @@ The existing Customers, Reports & Analytics and Expenses screens remain previews
 
 ## Verification
 
+### MySQL shop-creation 500 correction
+
+MySQL error 1406 (`Data too long for column 'registration_source'`) occurs when registration writes `bookshop_registration` (21 characters) into the original `VARCHAR(20)`. Migration `2026_11_01_000002_widen_bookshop_registration_fields` expands that column to 64 characters. It also expands `branches.city` and `business_profiles.city` to 255 characters to match the existing registration location validation. Existing values, credentials, IDs and nullability are preserved. Its down method intentionally retains the wider columns to avoid truncating valid data.
+
+After a verified database backup, this backend-only fix can be applied on the VPS without rebuilding the frontend:
+
+```bash
+set -e
+cd /home/nifunzel/domains/hekimabookshop.co.ke/app
+git pull --ff-only origin main
+cd backend
+php artisan down --retry=60
+php artisan optimize:clear
+php artisan migrate --force
+php artisan config:cache
+php artisan queue:restart
+php artisan up
+```
+
+Then retry **Create bookshop**. The migration, not a cache clear or frontend rebuild, fixes the column limit. Do not shorten existing role/source values manually or disable MySQL strict mode. If a step fails, stop and resolve the error before reopening traffic.
+
+The failure was reproduced on strict MySQL (SQLSTATE 22001 / error 1406), then registration and platform-management feature tests passed against a disposable MySQL schema with the correction applied. A separate MySQL migration check verified old values survive, repeated up calls are safe, and down does not truncate the widened values. The application database and production configuration were not modified during verification.
+
 Run `php artisan test` in backend and `npm run test` / `npm run build` in frontend. Regression coverage includes grant-only navigation, session restoration, return action, original menu visibility, grant revocation/suspension/role changes, admin exclusion, cross-tenant reads and writes, shop creation without session replacement, legacy record and credential preservation, idempotent adoption, stock receiving and idempotent POS checkout.
 
 Production was not deployed or modified by the implementation. SQLite tests do not replace staging checks of MySQL locking or the host's static-file publication configuration.

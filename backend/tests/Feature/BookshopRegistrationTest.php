@@ -82,6 +82,18 @@ class BookshopRegistrationTest extends TestCase
         $this->assertTrue(Bookshop::firstOrFail()->subscription->trial_ends_at->equalTo(now()->addDays(30)));
     }
 
+    public function test_registration_source_and_maximum_business_location_are_stored_without_truncation(): void
+    {
+        Notification::fake();
+        $location = str_repeat('L', 255);
+        $this->postJson('/api/v1/auth/register/bookshop', $this->payload(['business_location' => $location]))->assertCreated();
+        $owner = User::where('email', 'wanjiru@example.test')->sole();
+        $this->assertSame(User::SOURCE_BOOKSHOP_REGISTRATION, $owner->registration_source);
+        $this->assertDatabaseHas('bookshops', ['id' => $owner->bookshop_id, 'location' => $location]);
+        $this->assertDatabaseHas('branches', ['bookshop_id' => $owner->bookshop_id, 'city' => $location]);
+        $this->assertDatabaseHas('business_profiles', ['bookshop_id' => $owner->bookshop_id, 'city' => $location]);
+    }
+
     public static function privilegeFields(): array
     {
         return [
