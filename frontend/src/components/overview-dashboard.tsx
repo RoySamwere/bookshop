@@ -1,137 +1,60 @@
-'use client'
-
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, ArrowUpRight, BookOpen, Boxes, CircleDollarSign, FileText, Package, RefreshCw, ShoppingCart, Truck } from 'lucide-react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { AlertTriangle, BookOpen, RefreshCw, UserRoundCheck } from 'lucide-react'
 import { api } from '../lib/api'
 import { hasPermission, type BookshopUser } from '../lib/auth'
+import { BrandMark } from './brand-mark'
 
-type Sale = { id: number; receipt_number: string; total: string | number; payment_method: string; created_at: string; branch_name?: string | null }
-type SalesResponse = { data: Sale[]; summary: { transactions: number | string; revenue: number | string } }
-type InventoryResponse = { summary: { units: number | string; value: number | string; stock_lines: number | string; low: number | string; out_of_stock: number | string } }
-type Book = { id: number; title: string; sku: string; selling_price: number | string; category_name?: string | null }
-type BooksResponse = { data: Book[]; total: number }
-type Period = 'today' | '7days' | '30days'
-const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { maximumFractionDigits: 0 })}`
-const number = (value: number | string | undefined) => Number(value || 0)
-const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-const dates = (period: Period) => {
-  const now = new Date()
-  const from = new Date(now)
-  from.setDate(from.getDate() - (period === 'today' ? 0 : period === '7days' ? 6 : 29))
-  return { from: localDate(from), to: localDate(now) }
+export type DashboardData = {
+  branches: { id: number; name: string }[]; timezone: string
+  summary: { revenue: number | string; transactions: number; items: number; average: number; payments: Record<string, number | string> } | null
+  hourly: { hour: number; label: string; revenue: number }[]
+  top_sellers: { book_id: number; title: string; units: number; revenue: number | string }[]
+  recent_sales: { id: number; receipt_number: string; created_at: string; payment_method: string; total: number | string; cashier_name: string; units: number }[]
+  stock: { low: number; out_of_stock: number; reorder: { id: number; title: string; branch_name: string; reorder_level: number; available: number }[] } | null
+  staff_requests: number | null
 }
+const money = (value: number | string) => `KSh ${Number(value).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`
+const methods = [{ key: 'mpesa', label: 'M-Pesa' }, { key: 'cash', label: 'Cash' }, { key: 'card', label: 'Card' }]
+const saleDate = (value: string) => new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value.replace(' ', 'T')}Z`)
 
-export function OverviewDashboard({ userName, currentUser, onNavigate }: {
-  userName: string; currentUser: BookshopUser; onNavigate: (section: string) => void
-}) {
-  const [period, setPeriod] = useState<Period>('7days')
-  const [revision, setRevision] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [sales, setSales] = useState<SalesResponse | null>(null)
-  const [inventory, setInventory] = useState<InventoryResponse | null>(null)
-  const [books, setBooks] = useState<BooksResponse | null>(null)
-  const [errors, setErrors] = useState<string[]>([])
-  const canSales = hasPermission(currentUser, 'sales.view')
-  const canInventory = hasPermission(currentUser, 'inventory.view')
-  const canCatalogue = hasPermission(currentUser, 'catalog.view')
-  const canPos = hasPermission(currentUser, 'pos.access')
-  const canSuppliers = hasPermission(currentUser, 'suppliers.view')
+export function OverviewDashboard({ currentUser, onNavigate }: { userName: string; currentUser: BookshopUser; onNavigate: (section: string) => void }) {
+  const [branch, setBranch] = useState('')
+  const [period, setPeriod] = useState<'today' | 'week'>('today')
+  const { data, isPending, error, refetch, isFetching } = useQuery({
+    queryKey: ['dashboard', currentUser.id, branch, period],
+    queryFn: async () => (await api<{ data: DashboardData }>('/dashboard', { query: { branch_id: branch || undefined, period } })).data,
+    refetchInterval: 60_000,
+  })
+  const summary = data?.summary
+  const stock = data?.stock
+  const label = data?.branches.find(item => String(item.id) === branch)?.name || (data?.branches.length === 1 ? data.branches[0].name : 'all branches')
+  const hours = data?.hourly.filter(item => item.revenue > 0 || (item.hour >= 8 && item.hour <= 19)) || []
+  const maxSeller = Math.max(1, ...(data?.top_sellers.map(item => Number(item.revenue)) || []))
+  const value = (value: number | string | undefined | null) => isPending ? '…' : value == null ? '—' : Number(value).toLocaleString('en-KE')
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    const requests: { key: string; run: Promise<unknown> }[] = []
-    if (canSales) requests.push({ key: 'sales', run: api<SalesResponse>('/pos/sales', { query: { ...dates(period), page: 1 } }) })
-    if (canInventory) requests.push({ key: 'inventory', run: api<InventoryResponse>('/inventory', { query: { per_page: 10 } }) })
-    if (canCatalogue) requests.push({ key: 'books', run: api<BooksResponse>('/books', { query: { per_page: 10 } }) })
-    const results = await Promise.allSettled(requests.map(request => request.run))
-    const failures: string[] = []
-    results.forEach((result, index) => {
-      const key = requests[index].key
-      if (result.status === 'rejected') {
-        failures.push(`${key}: ${result.reason instanceof Error ? result.reason.message : 'Unable to load'}`)
-        if (key === 'sales') setSales(null)
-        if (key === 'inventory') setInventory(null)
-        if (key === 'books') setBooks(null)
-      } else {
-        if (key === 'sales') setSales(result.value as SalesResponse)
-        if (key === 'inventory') setInventory(result.value as InventoryResponse)
-        if (key === 'books') setBooks(result.value as BooksResponse)
-      }
-    })
-    setErrors(failures)
-    setLoading(false)
-  }, [canSales, canInventory, canCatalogue, period])
-
-  useEffect(() => { void load() }, [load, revision])
-
-  const totals = inventory?.summary
-  const stockLines = number(totals?.stock_lines)
-  const low = number(totals?.low)
-  const out = number(totals?.out_of_stock)
-  const healthy = Math.max(0, stockLines - low - out)
-  const healthyPercent = stockLines ? Math.round(healthy / stockLines * 100) : 0
-  const metrics = useMemo(() => [
-    ...(canSales ? [
-      { label: 'Revenue', value: sales ? money(number(sales.summary.revenue)) : '—', caption: period === 'today' ? 'Today' : period === '7days' ? 'Last 7 days' : 'Last 30 days', icon: CircleDollarSign, tone: 'blue' },
-      { label: 'Transactions', value: sales ? number(sales.summary.transactions).toLocaleString('en-KE') : '—', caption: 'Recorded POS sales', icon: FileText, tone: 'green' },
-    ] : []),
-    ...(canInventory ? [
-      { label: 'Units in stock', value: totals ? number(totals.units).toLocaleString('en-KE') : '—', caption: `${low + out} stock lines need attention`, icon: Boxes, tone: 'orange' },
-      { label: 'Inventory value', value: totals ? money(number(totals.value)) : '—', caption: 'At selling price · all accessible branches', icon: Package, tone: 'purple' },
-    ] : []),
-  ], [canSales, canInventory, sales, totals, period, low, out])
-
-  return <div className="overview-page">
-    <div className="overview-heading">
-      <div><div className="overview-eyebrow"><span /> LIVE SHOP OVERVIEW</div><h1 tabIndex={-1}>Welcome back, {userName.split(' ')[0]}<span className="greeting-dot">.</span></h1><p>Sales, stock and daily operations from your shop records.</p></div>
-      <div className="overview-heading-actions">
-        <select aria-label="Sales period" value={period} onChange={event => setPeriod(event.target.value as Period)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-          <option value="today">Today</option><option value="7days">Last 7 days</option><option value="30days">Last 30 days</option>
-        </select>
-        <button className="overview-text-link" onClick={() => setRevision(value => value + 1)} disabled={loading}><RefreshCw size={16} /> {loading ? 'Loading…' : 'Refresh'}</button>
-        {canPos && <button className="primary-button" onClick={() => onNavigate('Point of Sale')}><ShoppingCart size={17} /> New sale</button>}
+  return <div className="shop-dashboard" aria-busy={isPending}>
+    <div className="dashboard-filters"><label><span className="sr-only">Dashboard branch</span><select aria-label="Dashboard branch" value={branch} onChange={event => setBranch(event.target.value)}><option value="">All accessible branches</option>{data?.branches.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button onClick={() => void refetch()} disabled={isFetching} className="dashboard-link"><RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Refresh</button></div>
+    {error && <div role="alert" className="dashboard-error">{error.message} <button onClick={() => void refetch()}>Try again</button></div>}
+    <section className="dashboard-summary-grid" aria-label="Business summary">
+      <article className="dashboard-hero"><div className="hero-watermark" aria-hidden="true"><BrandMark size={270} /></div><p>{period === 'today' ? 'Today' : 'This week'} at {label}</p><div className="hero-amount">{summary ? money(Math.trunc(Number(summary.revenue))) : isPending ? 'Loading…' : '—'}<span>{summary ? `.${Number(summary.revenue).toFixed(2).split('.')[1]}` : ''}</span></div><p className="hero-caption">{summary ? `${Number(summary.transactions).toLocaleString()} sales · average ${money(summary.average)}` : 'Sales from your shop records'}</p><div className="payment-split" aria-hidden="true">{methods.map(method => <span key={method.key} className={`payment-${method.key}`} style={{ flex: Number(summary?.payments[method.key] || 0) || 0.001 }} />)}</div><div className="payment-legend">{methods.map(method => <span key={method.key}><i className={`payment-${method.key}`} />{method.label} <strong>{summary ? money(summary.payments[method.key] || 0) : '—'}</strong></span>)}</div></article>
+      <div className="dashboard-stat-stack">
+        {hasPermission(currentUser, 'sales.view') && <article className="dashboard-stat"><span className="stat-symbol"><BookOpen size={22} /></span><div><p>Items sold</p><strong>{value(summary?.items)}</strong></div><small>across<br />{value(summary?.transactions)} sales</small></article>}
+        {hasPermission(currentUser, 'inventory.view') && <article className="dashboard-stat"><span className="stat-symbol pink"><AlertTriangle size={22} /></span><div><p>Stock alerts</p><strong>{value(stock ? Number(stock.low) + Number(stock.out_of_stock) : null)}</strong></div><small>{value(stock?.low)} running low<br />{value(stock?.out_of_stock)} sold out</small></article>}
+        {hasPermission(currentUser, 'users.view') && <article className="dashboard-stat"><span className="stat-symbol"><UserRoundCheck size={22} /></span><div><p>Staff requests</p><strong>{value(data?.staff_requests)}</strong></div><button className="dashboard-link" onClick={() => onNavigate('Users')}>Review</button></article>}
       </div>
-    </div>
-    {errors.length > 0 && <div role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Some live data could not be loaded: {errors.join('; ')}. <button className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Retry</button></div>}
-    {metrics.length > 0 && <section className="overview-metrics" aria-label="Live shop summary">{metrics.map(({ label, value, caption, icon: Icon, tone }) => <article className="overview-metric" key={label}><div className="overview-metric-top"><span>{label}</span><span className={`overview-metric-icon ${tone}`}><Icon size={19} /></span></div><strong>{loading && !sales && !inventory ? 'Loading…' : value}</strong><p>{caption}</p></article>)}</section>}
-    <section className="overview-quick-actions" aria-label="Quick actions"><span>Quick actions</span>
-      {[
-        { label: 'Open register', section: 'Point of Sale', icon: ShoppingCart, allowed: canPos },
-        { label: 'Manage catalogue', section: 'Products & Books', icon: BookOpen, allowed: canCatalogue },
-        { label: 'Review stock', section: 'Inventory & Stock', icon: Boxes, allowed: canInventory },
-        { label: 'Suppliers', section: 'Suppliers', icon: Truck, allowed: canSuppliers },
-      ].filter(item => item.allowed).map(({ label, section, icon: Icon }) => <button key={section} onClick={() => onNavigate(section)}><Icon size={16} />{label}<ArrowUpRight size={14} /></button>)}
     </section>
-    <div className="overview-primary-grid">
-      {canSales && <section className="overview-card revenue-card" aria-labelledby="revenue-title">
-        <div className="overview-card-heading"><div><h2 id="revenue-title">Sales performance</h2><p>Recorded transactions for the selected period</p></div><span className="period-label">{period === 'today' ? 'Today' : period === '7days' ? '7 days' : '30 days'}</span></div>
-        <div className="revenue-summary"><strong>{sales ? money(number(sales.summary.revenue)) : '—'}</strong><span><i /> Revenue</span></div>
-        <div className="px-5 pb-5 text-sm text-slate-500">{sales ? `${number(sales.summary.transactions).toLocaleString('en-KE')} transactions recorded` : loading ? 'Loading sales…' : 'Sales data unavailable'}</div>
-        <div className="overview-card-footer"><span>Live POS records</span><button onClick={() => onNavigate('Sales History')}>Sales history <ArrowRight size={15} /></button></div>
-      </section>}
-      {canInventory && <section className="overview-card health-card" aria-labelledby="health-title">
-        <div className="overview-card-heading"><div><h2 id="health-title">Inventory health</h2><p>Stock across accessible branches</p></div><button className="overview-icon-link" aria-label="View inventory" onClick={() => onNavigate('Inventory & Stock')}><ArrowUpRight size={19} /></button></div>
-        <div className="overview-stock-summary"><div className="health-ring" style={{ background: `conic-gradient(#24a995 0 ${healthyPercent}%, #e9b35a ${healthyPercent}% ${stockLines ? (healthy + low) / stockLines * 100 : 0}%, #df827e 0)` }} role="img" aria-label={`${healthyPercent}% of stock lines have healthy stock`}><div><strong>{totals ? `${healthyPercent}%` : '—'}</strong><span>healthy stock</span></div></div>
-          <div className="health-legend"><div><i className="healthy" /><span>Healthy</span><strong>{healthy}</strong></div><div><i className="low" /><span>Low stock</span><strong>{low}</strong></div><div><i className="out" /><span>Out of stock</span><strong>{out}</strong></div></div></div>
-        <div className="overview-stock-alert"><span className="stock-alert-symbol"><Boxes size={19} /></span><div><strong>{low + out} stock lines need attention</strong><p>Based on product reorder levels and available stock.</p></div></div>
-        <button className="overview-stock-button" onClick={() => onNavigate('Inventory & Stock')}>Review inventory <ArrowRight size={16} /></button>
-      </section>}
+    <div className="dashboard-detail-grid">
+      {hasPermission(currentUser, 'sales.view') && <>
+        <section className="dashboard-card sales-chart-card"><div className="dashboard-card-heading"><div><h2>Sales by hour</h2><p>{period === 'today' ? 'Today’s sales' : 'Sales across the last 7 days'}, in {data?.timezone || 'your shop timezone'}.</p></div><div className="chart-period" role="group" aria-label="Sales chart period"><button aria-pressed={period === 'today'} onClick={() => setPeriod('today')}>Today</button><button aria-pressed={period === 'week'} onClick={() => setPeriod('week')}>This week</button></div></div>
+          <div className="dashboard-chart" role="img" aria-label={`Hourly revenue chart. ${summary ? money(summary.revenue) : 'No data'} in the selected period.`}><ResponsiveContainer width="100%" height="100%"><BarChart data={hours} margin={{ top: 18, right: 0, left: -24, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f8" /><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#8390ad', fontSize: 11 }} interval="preserveStartEnd" /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#8390ad', fontSize: 11 }} tickFormatter={value => Number(value) >= 1000 ? `${Number(value) / 1000}k` : String(value)} /><Tooltip cursor={{ fill: '#eaf1ff' }} formatter={value => [money(Number(value)), 'Revenue']} contentStyle={{ borderRadius: 10, border: 'none', background: '#172440', color: '#fff' }} labelStyle={{ color: '#fff' }} itemStyle={{ color: '#fff' }} /><Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={40}>{hours.map(item => <Cell key={item.hour} fill={item.hour === Number(new Intl.DateTimeFormat('en-GB', { timeZone: data?.timezone || 'UTC', hour: '2-digit', hourCycle: 'h23' }).format(new Date())) ? '#f67fbb' : '#087df5'} />)}</Bar></BarChart></ResponsiveContainer></div>
+          {!isPending && summary && Number(summary.transactions) === 0 && <p className="dashboard-empty">No sales recorded in this period yet.</p>}
+        </section>
+        <section className="dashboard-card"><div className="dashboard-card-heading"><h2>Top sellers {period === 'today' ? 'today' : 'this week'}</h2><button className="dashboard-link" onClick={() => onNavigate('Sales History')}>Sales history</button></div><ol className="top-sellers">{data?.top_sellers.map((item, index) => <li key={item.book_id}><span className="seller-rank">{index + 1}</span><div><div className="seller-title"><strong>{item.title}</strong><span>{money(item.revenue)}</span></div><div className="seller-progress"><span><i style={{ width: `${Number(item.revenue) / maxSeller * 100}%` }} /></span><small>{Number(item.units).toLocaleString()} sold</small></div></div></li>)}</ol>{!data?.top_sellers.length && <p className="dashboard-empty">{isPending ? 'Loading products…' : 'Top sellers appear after your first sale.'}</p>}</section>
+        <section className="dashboard-card latest-sales"><div className="dashboard-card-heading"><h2>Latest sales</h2><button className="dashboard-link" onClick={() => onNavigate('Sales History')}>Sales history</button></div><div className="dashboard-table-scroll"><table><thead><tr><th>Receipt</th><th>Time</th><th>Items</th><th>Paid by</th><th>Served by</th><th>Total</th></tr></thead><tbody>{data?.recent_sales.map(sale => <tr key={sale.id}><td><button className="dashboard-link" onClick={() => onNavigate('Sales History')}>{sale.receipt_number}</button></td><td>{saleDate(sale.created_at).toLocaleTimeString('en-KE', { timeZone: data.timezone, hour: 'numeric', minute: '2-digit' })}</td><td>{sale.units}</td><td><span className={`method-badge ${sale.payment_method}`}>{methods.find(item => item.key === sale.payment_method)?.label || sale.payment_method}</span></td><td>{sale.cashier_name || '—'}</td><td>{money(sale.total)}</td></tr>)}</tbody></table></div>{!data?.recent_sales.length && <p className="dashboard-empty">{isPending ? 'Loading sales…' : 'No sales recorded in this period.'}</p>}</section>
+      </>}
+      {hasPermission(currentUser, 'inventory.view') && <section className="dashboard-card reorder-card"><div className="dashboard-card-heading"><h2>Reorder soon</h2><button className="dashboard-link" onClick={() => onNavigate('Inventory & Stock')}>Inventory</button></div><ul>{stock?.reorder.map((item, index) => <li key={`${item.id}-${index}`}><div><strong>{item.title}</strong><small>{item.available} left · reorder at {item.reorder_level}{data && data.branches.length > 1 && !branch ? ` · ${item.branch_name}` : ''}</small></div><span className={`stock-pill ${Number(item.available) <= 0 ? 'sold-out' : ''}`}>{Number(item.available) <= 0 ? 'Sold out' : 'Low'}</span><button onClick={() => onNavigate('Inventory & Stock')}>Review</button></li>)}</ul>{!stock?.reorder.length && <p className="dashboard-empty">{isPending ? 'Checking stock…' : 'Stock levels are looking good.'}</p>}</section>}
     </div>
-    <div className="overview-secondary-grid">
-      {canSales && <section className="overview-card overview-sales" aria-labelledby="recent-sales-title">
-        <div className="overview-card-heading"><div><h2 id="recent-sales-title">Recent sales</h2><p>Latest transactions in the selected period</p></div><button className="overview-text-link" onClick={() => onNavigate('Sales History')}>View all <ArrowUpRight size={15} /></button></div>
-        <div className="table-scroll" role="region" aria-label="Recent sales" tabIndex={0}><table className="overview-sales-table"><thead><tr><th>Receipt</th><th>Branch</th><th>Amount</th><th>Payment</th><th>Date</th></tr></thead><tbody>
-          {(sales?.data || []).slice(0, 6).map(sale => <tr key={sale.id}><td><strong>{sale.receipt_number}</strong></td><td>{sale.branch_name || '—'}</td><td className="sale-amount">{money(number(sale.total))}</td><td>{sale.payment_method?.toUpperCase()}</td><td>{new Date(sale.created_at).toLocaleDateString('en-KE')}</td></tr>)}
-          {!sales?.data?.length && <tr><td colSpan={5}>{loading ? 'Loading sales…' : 'No sales recorded for this period.'}</td></tr>}
-        </tbody></table></div>
-      </section>}
-      {canCatalogue && <section className="overview-card overview-catalogue" aria-labelledby="catalogue-title">
-        <div className="overview-card-heading"><div><h2 id="catalogue-title">Product catalogue</h2><p>{books ? `${books.total} registered products` : 'Live catalogue records'}</p></div><button className="overview-icon-link" aria-label="View catalogue" onClick={() => onNavigate('Products & Books')}><ArrowUpRight size={19} /></button></div>
-        <div className="overview-product-list">{(books?.data || []).slice(0, 4).map(book => <div className="overview-product" key={book.id}><span className="overview-book teal"><BookOpen size={20} /></span><div><strong>{book.title}</strong><span>{book.sku}</span></div><span className="text-sm font-semibold">{money(number(book.selling_price))}</span></div>)}
-          {!books?.data?.length && <p className="p-4 text-sm text-slate-500">{loading ? 'Loading products…' : 'No products available.'}</p>}
-        </div><button className="overview-catalogue-link" onClick={() => onNavigate('Products & Books')}>Explore catalogue <ArrowRight size={16} /></button>
-      </section>}
-    </div>
-    <p className="overview-demo-note">Live data · Figures reflect recorded transactions and accessible inventory. Inventory value is calculated at selling price.</p>
   </div>
 }

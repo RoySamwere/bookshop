@@ -6,6 +6,7 @@ import { formatKes, includedVat, METHOD_LABELS, toNumber, type PaymentMethod, ty
 import { available, cartTotal, cartUnits, lineTotal, MPESA_CODE, quickCashOptions, type CartLine } from '../../lib/pos-store'
 import type { BusinessProfile } from '../../lib/workspace-api'
 import { receiptDate } from './receipt-print'
+import { BrandMark } from '../brand-mark'
 
 /** The paper ticket: a white card with a torn bottom edge. */
 export function Ticket({ children, label }: { children: ReactNode; label: string }) {
@@ -85,7 +86,6 @@ function TicketLine({ line, flash, onQuantity, onRemove }: { line: CartLine; fla
     <div className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 text-[14px] font-semibold leading-snug text-[#162c4c]">{product.title}</p>
-        <p className="mt-0.5 truncate text-[12px] tabular-nums text-slate-400">{product.isbn || product.sku}</p>
       </div>
       <p className="shrink-0 pt-px text-[14px] font-bold tabular-nums text-[#13254a]">{formatKes(lineTotal(line))}</p>
     </div>
@@ -98,7 +98,7 @@ function TicketLine({ line, flash, onQuantity, onRemove }: { line: CartLine; fla
         <button type="button" onClick={() => onQuantity(product.id, quantity + 1)} disabled={quantity >= limit} className="grid h-full w-9 place-items-center rounded-r-lg text-slate-600 hover:bg-slate-100 disabled:opacity-35" aria-label={`One more ${product.title}`}><Plus size={15} /></button>
       </div>
       <span className="text-[12.5px] tabular-nums text-slate-500">× {formatKes(toNumber(product.selling_price))}</span>
-      {quantity >= limit && <span className="text-[12px] font-semibold text-amber-700">All {limit} in stock</span>}
+      {limit - quantity <= 5 && <span className="pos-low-stock ml-auto text-[11px] font-semibold">{quantity >= limit ? 'All in sale' : `${limit - quantity} more in stock`}</span>}
       <button type="button" onClick={() => onRemove(product.id)} className="ml-auto grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remove ${product.title}`}><X size={16} /></button>
     </div>
   </li>
@@ -138,14 +138,14 @@ export function TenderView({ cart, method, received, reference, busy, error, onM
       <span className="ml-auto pr-2 text-[13px] tabular-nums text-slate-500">{cartUnits(cart)} {cartUnits(cart) === 1 ? 'item' : 'items'}</span>
     </header>
 
-    <form className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6 pt-5" onSubmit={event => { event.preventDefault(); if (valid && !busy) onComplete() }}>
+    <form className="pos-payment-form flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6 pt-5" onSubmit={event => { event.preventDefault(); if (valid && !busy) onComplete() }}>
       <p className="text-[14px] font-semibold text-slate-600">Amount due</p>
       <p className="text-[40px] font-extrabold leading-tight tracking-tight tabular-nums text-[#13254a]">{formatKes(total)}</p>
 
       <fieldset className="mt-5">
         <legend className="mb-2 text-[13px] font-semibold text-slate-600">Payment method</legend>
         <div className="grid grid-cols-3 gap-2">
-          {METHODS.map(({ value, icon: Icon, hint }) => <button key={value} type="button" onClick={() => onMethod(value)} aria-pressed={method === value}
+          {METHODS.map(({ value, icon: Icon, hint }) => <button key={value} type="button" disabled={busy} data-method={value} onClick={() => onMethod(value)} aria-pressed={method === value}
             className={`relative flex h-[72px] flex-col items-center justify-center gap-1 rounded-xl border-2 text-[14px] font-bold transition ${method === value ? 'border-[#087df5] bg-blue-50 text-[#0a5fc2]' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
             <Icon size={21} aria-hidden="true" />{METHOD_LABELS[value]}
             <span className="absolute right-1.5 top-1 hidden text-[10.5px] font-semibold text-slate-400 sm:block" aria-hidden="true">{hint}</span>
@@ -174,6 +174,7 @@ export function TenderView({ cart, method, received, reference, busy, error, onM
           onChange={event => onReference(method === 'mpesa' ? event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) : event.target.value.slice(0, 100))}
           placeholder={method === 'mpesa' ? 'e.g. SJK7H2M1QX' : 'e.g. 482915'}
           className="pos-framed mt-1.5 h-14 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-[20px] font-bold tracking-[0.12em] text-[#162c4c] outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-300 focus:border-[#087df5] focus:ring-4 focus:ring-blue-100" />
+        {method === 'mpesa' && MPESA_CODE.test(reference.trim()) && <p className="pos-code-valid" role="status"><CheckCircle2 size={15} /> Code looks right: {reference.trim().length} letters and numbers</p>}
         <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
           {method === 'mpesa' ? <>Check the customer&apos;s M-Pesa SMS shows <strong className="tabular-nums text-slate-700">{formatKes(total)}</strong> to the shop, then type the 10-character code.</>
             : <>Charge <strong className="tabular-nums text-slate-700">{formatKes(total)}</strong> on the card machine first, then enter the approval number from the slip.</>}
@@ -187,7 +188,7 @@ export function TenderView({ cart, method, received, reference, busy, error, onM
           className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#0f8a5f] text-[17px] font-bold text-white shadow-[0_8px_20px_-8px_rgba(15,138,95,.7)] transition hover:bg-[#0c7550] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">
           {busy ? 'Completing sale…' : `Complete ${METHOD_LABELS[method]} sale`}
         </button>
-        <p className="mt-2.5 text-center text-[12px] leading-relaxed text-slate-500">M-Pesa and card payments are confirmed by you at the till, not through a payment gateway.</p>
+        <p className="mt-2.5 text-center text-[12px] leading-relaxed text-slate-500">Recorded by the cashier, not through a payment gateway.</p>
       </div>
     </form>
   </Ticket>
@@ -212,13 +213,17 @@ export function ReceiptView({ receipt, expectedTotal, profile, reprint, onPrint,
   useEffect(() => { newSaleRef.current?.focus() }, [])
 
   return <Ticket label={reprint ? 'Receipt' : 'Sale complete'}>
-    <header className="border-b border-dashed border-slate-200 px-5 pb-4 pt-5">
+    <header className="pos-receipt-header border-b border-dashed border-slate-200 px-5 pb-4 pt-5">
+      <BrandMark size={48} />
+      <div>
       {!reprint && <p role="status" className="flex items-center gap-2 text-[15px] font-bold text-[#0f8a5f]"><CheckCircle2 size={20} aria-hidden="true" /> Sale complete<span className="sr-only">, receipt {sale.receipt_number}{change > 0 ? `, give change ${formatKes(change)}` : ''}</span></p>}
       <p className={`${reprint ? '' : 'mt-1 '}text-[20px] font-bold tabular-nums text-[#13254a]`}>{sale.receipt_number}</p>
       <p className="text-[13px] text-slate-500">{receiptDate(sale.created_at)}{sale.cashier_name ? ` · ${sale.cashier_name}` : ''}</p>
+      </div>
     </header>
 
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className={`pos-payment-summary ${sale.payment_method}`}><span className="payment-summary-symbol">{sale.payment_method === 'mpesa' ? <Smartphone size={19} /> : sale.payment_method === 'card' ? <CreditCard size={19} /> : <Banknote size={19} />}</span><div><p>Paid by {METHOD_LABELS[sale.payment_method] || sale.payment_method}</p>{sale.payment_reference && <strong>{sale.payment_reference}</strong>}</div><b>{formatKes(toNumber(sale.amount_received))}</b></div>
       {!reprint && change > 0 && <div className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-emerald-800" role="status">
         <p className="text-[13px] font-semibold">Give change</p>
         <p className="text-[30px] font-extrabold leading-tight tabular-nums">{formatKes(change)}</p>
@@ -233,8 +238,6 @@ export function ReceiptView({ receipt, expectedTotal, profile, reprint, onPrint,
       <dl className="mt-4 space-y-1.5 border-t border-dashed border-slate-300 pt-3 text-[13.5px] tabular-nums">
         <div className="flex justify-between text-[16px] font-bold text-[#13254a]"><dt>Total</dt><dd>{formatKes(total)}</dd></div>
         {vat && <div className="flex justify-between text-slate-500"><dt>Includes {vat.label}</dt><dd>{formatKes(vat.amount)}</dd></div>}
-        <div className="flex justify-between text-slate-600"><dt>Paid by {METHOD_LABELS[sale.payment_method] || sale.payment_method}</dt><dd>{formatKes(toNumber(sale.amount_received))}</dd></div>
-        {sale.payment_reference && <div className="flex justify-between text-slate-600"><dt>Reference</dt><dd className="tracking-wide">{sale.payment_reference}</dd></div>}
         {change > 0 && <div className="flex justify-between text-slate-600"><dt>Change</dt><dd>{formatKes(change)}</dd></div>}
       </dl>
     </div>

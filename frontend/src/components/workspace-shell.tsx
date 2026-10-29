@@ -160,10 +160,14 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
         setDrawerOpen(false); setAccountOpen(false); setNotificationsOpen(false)
         setSearchOpen(previous => !previous)
       }
+      if (event.key === 'F9' && !posMode && hasPermission(currentUser, 'pos.access')) {
+        event.preventDefault()
+        onNavigate('Point of Sale')
+      }
     }
     window.addEventListener('keydown', shortcut)
     return () => window.removeEventListener('keydown', shortcut)
-  }, [])
+  }, [posMode, currentUser, onNavigate])
 
   function navigate(section: string) {
     onNavigate(section)
@@ -184,42 +188,44 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   useEffect(() => { if (posMode) { setDrawerOpen(false); setSearchOpen(false); setNotificationsOpen(false); setAccountOpen(false) } }, [posMode])
 
   const results = visibleSections.filter(section => `${section.label} ${section.description}`.toLowerCase().includes(search.toLowerCase()))
+  const groups = [
+    { name: 'Sell', labels: ['Dashboard', 'Point of Sale', 'Sales History'] },
+    { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Suppliers'] },
+    { name: 'People', labels: ['Customers', 'Users'] },
+    { name: 'Insights', labels: ['Reports & Analytics', 'Expenses'] },
+    { name: 'Admin', labels: ['Audit Log', 'Settings'] },
+  ]
+  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
 
   function navButton(section: typeof sections[number]) {
     const Icon = section.icon
     return <button key={section.label} className={`sidebar-link ${active === section.label ? 'is-active' : ''}`}
       onClick={() => navigate(section.label)} aria-label={section.label} aria-current={active === section.label ? 'page' : undefined}
       title={collapsed && !mobile ? section.label : undefined}>
-      <Icon size={19} aria-hidden="true" /><span className="sidebar-link-label">{section.label}</span>
+      <Icon size={19} aria-hidden="true" /><span className="sidebar-link-label">{displayLabel[section.label] || section.label}</span>
       {active === section.label && <span className="sidebar-active-dot" aria-hidden="true" />}
     </button>
   }
 
-  return <div className={`workspace-shell ${posMode ? 'pos-focus-mode' : ''} ${collapsed ? 'nav-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''} ${modalOpen ? 'overlay-open' : ''}`}>
+  return <div className={`workspace-shell ${active === 'Dashboard' ? 'dashboard-mode' : ''} ${posMode ? 'pos-focus-mode' : ''} ${collapsed ? 'nav-collapsed' : ''} ${drawerOpen ? 'drawer-open' : ''} ${modalOpen ? 'overlay-open' : ''}`}>
     <a className="skip-link" href="#workspace-content">Skip to content</a>
     {drawerOpen && <div className="sidebar-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
     {!posMode && <aside id="app-navigation" className="app-sidebar" ref={drawer.panelRef} tabIndex={-1}
       role={mobile && drawerOpen ? 'dialog' : undefined} aria-modal={mobile && drawerOpen ? true : undefined}
       aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
       <div className="sidebar-brand">
-        <BrandMark size={36} className="flex-none rounded-[11px] ring-1 ring-white/15" />
-        <div className="sidebar-brand-copy"><strong>{brand.shortName}<span>Bookshop management</span></strong></div>
+        <BrandMark size={46} className="flex-none" />
+        <div className="sidebar-brand-copy"><strong>{brand.shortName}<span>Bookshop</span></strong></div>
+        <button className="sidebar-collapse" onClick={toggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} aria-controls="app-navigation">{collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
       </div>
       <div className="sidebar-scroll">
-        <div className="shop-indicator" title={branchLabel}><span className="status-dot" /><span className="truncate">{branchLabel}</span><span className="shop-status">Online</span></div>
-        {visibleSections.some(section => !('group' in section)) && <>
-          <div className="sidebar-group-label">OPERATIONS</div>
-          <nav className="sidebar-links" aria-label="Shop operations">{visibleSections.filter(section => !('group' in section)).map(navButton)}</nav>
-        </>}
-        <div className="sidebar-group-label workspace-group">WORKSPACE</div>
-        <nav className="sidebar-links" aria-label="Workspace">{visibleSections.filter(section => 'group' in section && section.group === 'workspace').map(navButton)}</nav>
+        <div className="shop-indicator" title={branchLabel}><span className="shop-icon"><ShoppingCart size={18} /></span><div><strong>{branchLabel}</strong><small><span className="status-dot" /> Bookshop workspace</small></div><ChevronDown size={14} /></div>
+        {hasPermission(currentUser, 'pos.access') && <button className="sidebar-new-sale" onClick={() => navigate('Point of Sale')} title="New sale"><Plus size={19} /><span>New sale</span></button>}
+        {groups.map(group => { const items = visibleSections.filter(section => group.labels.includes(section.label)); return items.length > 0 && <div className="sidebar-nav-group" key={group.name}><div className="sidebar-group-label">{group.name}</div><nav className="sidebar-links" aria-label={group.name}>{items.map(navButton)}</nav></div> })}
       </div>
       <div className="sidebar-footer">
-        <div className="sidebar-identity"><span className="user-avatar">{initials}</span><div><strong>{currentUser.name}</strong><span>{roleLabel(currentUser.role)}</span></div><ShieldCheck size={17} aria-hidden="true" /></div>
-        <button className="collapse-control" onClick={toggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} aria-controls="app-navigation" title={collapsed ? 'Expand sidebar' : undefined}>
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}<span>Collapse sidebar</span>
-        </button>
+        <div className="sidebar-identity"><button className="user-avatar" onClick={() => navigate(PROFILE_SECTION)} aria-label="My profile">{initials}</button><div><strong>{currentUser.name}</strong><span>{roleLabel(currentUser.role)}</span></div><button className="sidebar-signout" onClick={() => void onSignOut()} aria-label="Sign out"><LogOut size={18} /></button></div>
       </div>
     </aside>}
 
@@ -228,11 +234,11 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       {!posMode && <header className="app-header">
         <div className="header-leading">
           <button ref={drawer.triggerRef} className="header-icon mobile-nav-trigger" aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="app-navigation" onClick={() => { setDrawerOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}><Menu size={22} /></button>
-          <div className="header-breadcrumb"><span>{currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches[0]?.name || 'Workspace'}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>
+          {active === 'Dashboard' ? <div className="dashboard-greeting"><p>{today}</p><h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {currentUser.name.split(' ')[0]}</h1></div> : <div className="header-breadcrumb"><span>{currentUser.role === 'system_owner' ? 'All branches' : currentUser.branches[0]?.name || 'Workspace'}</span><ChevronRight size={13} aria-hidden="true" /><strong>{active}</strong></div>}
         </div>
         <div className="header-actions">
           <button ref={command.triggerRef} className="workspace-search" aria-label="Search workspace" aria-haspopup="dialog" aria-expanded={searchOpen} aria-keyshortcuts="Control+k Meta+k" onClick={() => { setSearch(''); setSearchOpen(true); setAccountOpen(false); setNotificationsOpen(false) }}>
-            <Search size={17} /><span>Find a workspace…</span><kbd>Ctrl K</kbd>
+            <Search size={17} /><span>Search products, receipts or people</span><kbd>Ctrl K</kbd>
           </button>
           <time className="header-date">{today}</time>
           {hasPermission(currentUser, 'pos.access') && <button className="header-pos" onClick={() => navigate('Point of Sale')} aria-label="New sale"><Plus size={17} /><span>New sale</span></button>}

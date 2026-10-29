@@ -7,8 +7,8 @@ import { formatKes, posApi, toNumber, type PosCategory, type PosProduct } from '
 import { available } from '../../lib/pos-store'
 
 // Bookcloth tones from the public website's shelf, one per category so a section is recognisable at a glance.
-const SPINES = ['#9e2b3a', '#2f5d50', '#c98a1b', '#2e6f8e', '#5b3a6b', '#7a4b2a', '#3d5a99', '#4b7f3a']
-export const spineColour = (categoryId?: number | null) => categoryId ? SPINES[categoryId % SPINES.length] : '#94a3b8'
+const SPINES = ['#087df5', '#f67fbb', '#0a50bf', '#80b3ff', '#b32470']
+export const spineColour = (categoryId?: number | null) => categoryId ? SPINES[(categoryId - 1) % SPINES.length] : '#80b3ff'
 
 export type CatalogueHandle = { focusSearch: () => void; refresh: () => void }
 type AddSource = 'tap' | 'scan'
@@ -81,16 +81,9 @@ export const PosCatalogue = forwardRef<CatalogueHandle, {
   }
 
   const showingAll = !query && !categoryId
-  return <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Products">
-    <div className="space-y-3 px-4 pb-3 pt-4 sm:px-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="hidden text-[11px] font-bold uppercase tracking-[.16em] text-[#9e2b3a] sm:block">Hekima · Sales catalogue</p>
-          <h1 className="text-[20px] font-extrabold tracking-tight text-[#13254a] sm:mt-0.5 sm:text-[23px]">Find a product</h1>
-          <p className="hidden text-[12.5px] text-slate-500 sm:block">Scan, search or tap to add to the current sale.</p>
-        </div>
-        <div className="hidden items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 sm:flex"><span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" /> Live inventory</div>
-      </div>
+  return <section className="pos-catalogue flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Products">
+    <h1 className="sr-only">Point of sale product catalogue</h1>
+    <div className="pos-catalogue-tools space-y-3 px-4 pb-3 pt-4 sm:px-6">
       <label className="pos-framed flex h-[62px] items-center gap-3 rounded-2xl border-2 border-[#d9e3f3] bg-white px-4 shadow-[0_8px_25px_-16px_rgba(19,37,74,.35)] transition focus-within:border-[#13254a] focus-within:ring-4 focus-within:ring-blue-100">
         <ScanBarcode size={22} className="shrink-0 text-[#087df5]" aria-hidden="true" />
         <span className="sr-only">Scan a barcode or search products</span>
@@ -149,17 +142,16 @@ function ProductTile({ product, quantity, locked, onAdd }: { product: PosProduct
   const code = product.isbn || product.sku
   return <button type="button" onClick={onAdd} disabled={out || locked}
     aria-label={`Add ${product.title}, ${formatKes(toNumber(product.selling_price))}${out ? ', out of stock' : `, ${stock} in stock`}${quantity ? `, ${quantity} in this sale` : ''}`}
-    className="group relative flex h-full min-h-[172px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white py-3.5 pl-4 pr-3 text-left shadow-[0_3px_12px_-7px_rgba(16,38,78,.18)] transition hover:-translate-y-0.5 hover:border-[#9e2b3a]/50 hover:shadow-[0_12px_25px_-12px_rgba(19,37,74,.25)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[.985] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:shadow-none disabled:active:scale-100">
+    data-in-cart={quantity > 0} className="pos-product group relative flex h-full min-h-[132px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white py-3 pl-4 pr-3 text-left transition hover:border-blue-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[.985] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:shadow-none disabled:active:scale-100">
     <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: spineColour(product.category_id), opacity: out ? 0.35 : 1 }} aria-hidden="true" />
     {quantity > 0 && <span className="absolute right-2 top-2 rounded-full bg-[#087df5] px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">×{quantity}</span>}
-    <span className="mb-2 flex size-9 items-center justify-center rounded-xl bg-[#f3f5fa] text-[#13254a] transition group-hover:bg-[#fbeef0] group-hover:text-[#9e2b3a]"><BookOpen size={18} aria-hidden="true" /></span>
     <span className={`block truncate pr-8 text-[11.5px] ${out ? 'text-slate-400' : 'text-slate-500'}`}>{product.subcategory || product.category || 'Product'}</span>
     <span className={`mt-0.5 line-clamp-2 text-[14px] font-semibold leading-snug ${out ? 'text-slate-400' : 'text-[#162c4c]'}`}>{product.title}</span>
     <span className="mt-1 block truncate text-[11.5px] tabular-nums text-slate-400">{code}</span>
     <span className="mt-auto flex flex-wrap items-end justify-between gap-x-2 gap-y-0.5 pt-2.5">
       <span className={`whitespace-nowrap text-[15px] font-bold tabular-nums ${out ? 'text-slate-400' : 'text-[#13254a]'}`}>{formatKes(toNumber(product.selling_price))}</span>
       {out ? <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-semibold text-rose-600"><PackageX size={13} aria-hidden="true" /> Sold out</span>
-        : left <= 5 ? <span className="whitespace-nowrap text-[11.5px] font-semibold tabular-nums text-amber-700">{left <= 0 ? 'All in sale' : `Only ${left} left`}</span>
+        : left <= 5 ? <span className="pos-low-stock whitespace-nowrap text-[11.5px] font-semibold tabular-nums">{left <= 0 ? 'All in sale' : `Only ${left} left`}</span>
         : <span className="whitespace-nowrap text-[11.5px] tabular-nums text-slate-500">{stock} in stock</span>}
     </span>
   </button>

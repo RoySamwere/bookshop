@@ -8,6 +8,8 @@ import './pages/globals.css'
 import './pages/workspace.css'
 import './pages/public.css'
 import './pages/pos.css'
+import './pages/shop-theme.css'
+import './pages/pos-theme.css'
 import { clearLegacyCredentials } from './lib/api'
 
 clearLegacyCredentials()
