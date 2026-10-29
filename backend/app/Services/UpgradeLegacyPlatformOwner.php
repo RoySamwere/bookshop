@@ -27,13 +27,15 @@ final class UpgradeLegacyPlatformOwner
             if (! in_array($user->role, [Roles::SYSTEM_OWNER, Roles::PLATFORM_OWNER], true)) {
                 throw new RuntimeException('The trusted account is not a legacy System Owner or Platform Owner; no accounts changed.');
             }
-            // Unadopted single-shop records have no bookshop ownership pointer yet.
+            $retainedDefaults = [];
+            // Real legacy business data requires adoption; untouched installation defaults do not.
             if ($user->role === Roles::SYSTEM_OWNER && $user->bookshop_id === null) {
-                foreach (['branches', 'business_profiles', 'tax_rates', 'books', 'authors', 'publishers', 'book_categories', 'suppliers', 'product_units', 'inventory_balances', 'inventory_movements', 'purchase_orders', 'goods_receipts', 'pos_sales'] as $table) {
+                foreach (['books', 'authors', 'publishers', 'book_categories', 'suppliers', 'product_units', 'inventory_balances', 'inventory_movements', 'purchase_orders', 'goods_receipts', 'pos_sales'] as $table) {
                     if (DB::table($table)->whereNull('bookshop_id')->exists()) {
                         throw new RuntimeException('Unassigned legacy business records exist. Adopt them into a bookshop with a separate verified tenant owner using tenancy:adopt-legacy before upgrading; no accounts changed.');
                     }
                 }
+                $retainedDefaults = $this->verifiedBootstrapDefaults($user);
             }
             $shops = Bookshop::where(function ($query) use ($user) {
                 $query->where('owner_user_id', $user->id);
@@ -75,9 +77,75 @@ final class UpgradeLegacyPlatformOwner
             $user->branches()->detach();
             $user->forceFill(['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null])->save();
             AuditLog::record('platform.legacy_owner_upgraded', 'Upgraded the configured legacy administrator from the console', $user,
-                ['before' => $before, 'after' => ['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null], 'ownership_transfers' => $transfers, 'owner_promotions' => $promotions], actor: $user);
+                ['before' => $before, 'after' => ['role' => Roles::PLATFORM_OWNER, 'bookshop_id' => null], 'ownership_transfers' => $transfers, 'owner_promotions' => $promotions, 'retained_bootstrap_defaults' => $retainedDefaults], actor: $user);
 
             return $user;
         });
+    }
+
+    /** Recognize only BusinessFoundationSeeder's unchanged defaults; never delete or reassign them. */
+    private function verifiedBootstrapDefaults(User $user): array
+    {
+        $expected = [
+            'business_profiles' => [[
+                'name' => 'Hekima Bookshop', 'legal_name' => null, 'kra_pin' => null, 'email' => null,
+                'phone' => null, 'website' => null, 'address' => null, 'city' => null,
+                'country' => 'Kenya', 'currency' => 'KES', 'timezone' => 'Africa/Nairobi',
+                'prices_include_tax' => 1, 'receipt_prefix' => 'NS', 'receipt_header' => null,
+                'receipt_footer' => 'Thank you for shopping with Hekima Bookshop.', 'low_stock_threshold' => 10,
+            ]],
+            'branches' => [[
+                'name' => 'Main Shop', 'code' => 'MAIN', 'email' => null, 'phone' => null,
+                'address' => null, 'city' => 'Nairobi', 'is_main' => 1, 'is_active' => 1,
+            ]],
+            'tax_rates' => [
+                ['name' => 'VAT 16%', 'code' => 'VAT16', 'rate' => 16, 'is_default' => 1, 'is_active' => 1],
+                ['name' => 'Zero rated', 'code' => 'ZERO', 'rate' => 0, 'is_default' => 0, 'is_active' => 1],
+                ['name' => 'Exempt', 'code' => 'EXEMPT', 'rate' => 0, 'is_default' => 0, 'is_active' => 1],
+            ],
+        ];
+        $retained = [];
+        foreach ($expected as $table => $defaults) {
+            $rows = DB::table($table)->whereNull('bookshop_id')->orderBy('id')->lockForUpdate()->get();
+            foreach ($rows as $row) {
+                $values = array_diff_key((array) $row, array_flip(['id', 'bookshop_id', 'created_at', 'updated_at']));
+                $match = null;
+                foreach ($defaults as $index => $default) {
+                    if (array_diff_key($values, $default) || array_diff_key($default, $values)) {
+                        continue;
+                    }
+                    foreach ($default as $column => $value) {
+                        if (! array_key_exists($column, $values) || ($value === null ? $values[$column] !== null
+                            : ($column === 'rate' ? (float) $values[$column] !== (float) $value : (string) $values[$column] !== (string) $value))) {
+                            continue 2;
+                        }
+                    }
+                    $match = $index;
+                    break;
+                }
+                if ($match === null) {
+                    throw new RuntimeException("Unassigned {$table} contains customized or duplicate business settings. Adopt the legacy business before upgrading; no accounts changed.");
+                }
+                unset($defaults[$match]);
+                $retained[$table][] = (int) $row->id;
+            }
+        }
+        if (! $retained) {
+            return [];
+        }
+        $otherStaff = User::whereKeyNot($user->id)->whereNull('bookshop_id')
+            ->where(fn ($query) => $query->whereIn('role', [...Roles::TENANT_OWNER_ROLES, ...Roles::BRANCH_ROLES])->orWhereNotNull('staff_access_status'))
+            ->lockForUpdate()->first();
+        $branches = $retained['branches'] ?? [];
+        if ($otherStaff || DB::table('branch_user')->whereIn('branch_id', $branches)->where('user_id', '!=', $user->id)->exists()) {
+            throw new RuntimeException('Other accounts still use the legacy business setup. Adopt the business with its tenant owner before upgrading; no accounts changed.');
+        }
+        foreach (['inventory_balances', 'inventory_movements', 'purchase_orders', 'pos_sales'] as $table) {
+            if (DB::table($table)->whereIn('branch_id', $branches)->exists()) {
+                throw new RuntimeException('The legacy branch has business records. Reconcile its ownership before upgrading; no accounts changed.');
+            }
+        }
+
+        return $retained;
     }
 }

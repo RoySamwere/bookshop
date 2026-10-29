@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\User;
 use App\Support\Roles;
 use App\Support\Tenancy\Tenant;
+use Database\Seeders\BusinessFoundationSeeder;
 use Database\Seeders\SystemOwnerSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -149,6 +150,81 @@ class LegacyPlatformOwnerUpgradeTest extends TestCase
         $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
         $this->assertDatabaseHas('books', ['sku' => 'LEGACY', 'bookshop_id' => null]);
         $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public function test_untouched_bootstrap_defaults_do_not_block_original_platform_administrator(): void
+    {
+        $user = $this->legacy();
+        $credentials = $user->fresh()->only(['id', 'email', 'password', 'email_verified_at', 'remember_token']);
+        $this->seed(BusinessFoundationSeeder::class);
+        $before = [];
+        foreach (['business_profiles', 'branches', 'tax_rates', 'branch_user'] as $table) {
+            $before[$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+        }
+        $this->artisan('platform:upgrade-legacy-owner', ['--dry-run' => true])->assertSuccessful();
+        $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
+        $this->assertDatabaseCount('branch_user', 1);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->artisan('platform:upgrade-legacy-owner')->assertSuccessful();
+        $this->artisan('platform:upgrade-legacy-owner')->assertSuccessful();
+        $this->assertSame(Roles::PLATFORM_OWNER, $user->fresh()->role);
+        $this->assertNull($user->fresh()->bookshop_id);
+        $this->assertEquals($credentials, $user->fresh()->only(array_keys($credentials)));
+        foreach (['business_profiles', 'branches', 'tax_rates'] as $table) {
+            $this->assertSame($before[$table], DB::table($table)->get()->map(fn ($row) => (array) $row)->all());
+        }
+        $this->assertDatabaseCount('branch_user', 0);
+        $audit = AuditLog::where('action', 'platform.legacy_owner_upgraded')->sole();
+        foreach (['business_profiles', 'branches', 'tax_rates'] as $table) {
+            $this->assertSame(array_column($before[$table], 'id'), $audit->metadata['retained_bootstrap_defaults'][$table]);
+        }
+        $this->withHeader('Origin', 'http://localhost:5173');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])->assertOk()
+            ->assertJsonPath('data.user.account_type', 'platform')->assertJsonPath('data.user.bookshop', null);
+        $this->getJson('/api/v1/platform/overview')->assertOk();
+        $this->getJson('/api/v1/books')->assertForbidden();
+    }
+
+    public function test_customized_foundation_settings_still_require_business_adoption(): void
+    {
+        $user = $this->legacy();
+        $this->seed(BusinessFoundationSeeder::class);
+        foreach ([
+            ['business_profiles', 'name', 'Real business'],
+            ['business_profiles', 'email', 'business@example.test'],
+            ['branches', 'city', 'Mombasa'],
+            ['tax_rates', 'rate', 12],
+        ] as [$table, $column, $value]) {
+            $row = DB::table($table)->first();
+            DB::table($table)->where('id', $row->id)->update([$column => $value]);
+            $this->artisan('platform:upgrade-legacy-owner')->assertFailed();
+            $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
+            $this->assertDatabaseHas($table, ['id' => $row->id, $column => $value]);
+            DB::table($table)->where('id', $row->id)->update([$column => $row->$column]);
+        }
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public function test_bootstrap_defaults_with_other_legacy_staff_cannot_be_abandoned(): void
+    {
+        $user = $this->legacy();
+        User::factory()->create(['role' => Roles::CASHIER, 'bookshop_id' => null]);
+        $this->seed(BusinessFoundationSeeder::class);
+        $this->artisan('platform:upgrade-legacy-owner')->assertFailed();
+        $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
+        $this->assertDatabaseCount('branch_user', 2);
+    }
+
+    public function test_bootstrap_branch_referenced_by_assigned_inventory_is_not_treated_as_unused(): void
+    {
+        $user = $this->legacy();
+        $this->seed(BusinessFoundationSeeder::class);
+        $shop = Bookshop::factory()->create();
+        $book = DB::table('books')->insertGetId(['bookshop_id' => $shop->id, 'title' => 'Stock', 'sku' => 'USED', 'selling_price' => 10]);
+        DB::table('inventory_balances')->insert(['bookshop_id' => $shop->id, 'book_id' => $book, 'branch_id' => DB::table('branches')->whereNull('bookshop_id')->value('id'), 'quantity' => 1]);
+        $this->artisan('platform:upgrade-legacy-owner')->assertFailed();
+        $this->assertSame(Roles::SYSTEM_OWNER, $user->fresh()->role);
+        $this->assertDatabaseCount('inventory_balances', 1);
     }
 
     public function test_existing_cookie_session_reads_upgraded_role_without_reauthentication(): void

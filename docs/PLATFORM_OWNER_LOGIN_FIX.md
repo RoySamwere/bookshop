@@ -67,7 +67,25 @@ php artisan platform:upgrade-legacy-owner --replacement-owner="$REPLACEMENT_ADMI
 php artisan platform:upgrade-legacy-owner --dry-run
 ```
 
-If unassigned legacy business records exist, the upgrade refuses to leave their ownership unresolved. First reconcile those records using the existing `tenancy:adopt-legacy` workflow and a separate, verified tenant owner. Review its dry run and docs/MULTI_TENANCY.md before applying. Do not use the original platform administrator as the new business owner. Multiple businesses or missing replacement owners need an explicit business ownership decision; the command makes no guesses.
+Unchanged installation defaults from `BusinessFoundationSeeder` do not require creating a tenant. The upgrade recognizes only the exact default Hekima profile, Main Shop branch and standard VAT16/ZERO/EXEMPT rates (including unchanged contact, receipt and status fields). There must be no unassigned catalogue, inventory or transaction records, no other unassigned staff/applicants using these settings, and no other users or operational records referencing the default branch. It leaves those default rows unchanged and records their IDs in `retained_bootstrap_defaults` in the upgrade audit event. The original account's obsolete branch membership is detached. No replacement user or bookshop is created.
+
+If real unassigned legacy business records or customized settings exist, the upgrade refuses to leave their ownership unresolved. First reconcile those records using the existing `tenancy:adopt-legacy` workflow and a separate, verified tenant owner. Review its dry run and docs/MULTI_TENANCY.md before applying. Do not use the original platform administrator as the new business owner. Multiple businesses or missing replacement owners need an explicit business ownership decision; the command makes no guesses.
+
+For the existing hosting path reported on the VPS, after taking a database backup, the default-only repair is:
+
+```bash
+set -e
+cd /home/nifunzel/domains/hekimabookshop.co.ke/app
+git pull --ff-only origin main
+cd backend
+php artisan optimize:clear
+php artisan config:cache
+php artisan platform:upgrade-legacy-owner --dry-run
+php artisan platform:upgrade-legacy-owner
+php artisan platform:upgrade-legacy-owner --dry-run
+```
+
+The live account is not repaired by a Git pull alone. The non-dry-run command must succeed. Sign out and sign in again with the original credentials; `/platform` is the expected destination. If any validation fails, retain the error and reconcile it rather than changing roles with SQL or bypassing the checks.
 
 After release, sign in with the original administrator's unchanged credentials. Confirm `/platform` opens, refreshing it restores the console, `/dashboard` redirects to `/platform`, and a bookshop owner cannot enter the console. Verify a real tenant's normal inventory/POS workflow without inserting mock production transactions. The production account was not modified or tested remotely by this change.
 
