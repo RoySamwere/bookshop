@@ -1,9 +1,5 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Frontend development
 
-## This is NOT the Next.js you know
+This application uses React 19, TypeScript, Vite, Tailwind, and React Router. The former Next.js application was migrated; do not introduce Next.js imports, server components, or file-based routing assumptions.
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Use `npm run build` and `npm run test` to verify changes. Keep cookie credentials and CSRF handling in `src/lib/api.ts`. Never store authentication tokens in browser storage. Laravel enforces permissions and business rules. Preserve existing workflows while consulting `../docs/MIGRATION.md` for remaining work and release gates.

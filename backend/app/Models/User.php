@@ -173,6 +173,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             ...$this->only(['id', 'name', 'email', 'phone', 'role']),
+            'bookshop_id' => $this->bookshop_id,
             'role_label' => Roles::label($this->role),
             'is_active' => $this->is_active,
             'email_verified' => $this->hasVerifiedEmail(),

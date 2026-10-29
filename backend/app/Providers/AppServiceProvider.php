@@ -45,7 +45,7 @@ class AppServiceProvider extends ServiceProvider
         ]);
         RateLimiter::for('subscribe', fn (Request $request) => Limit::perMinute(5)->by('subscribe|'.$request->ip()));
 
-        // Emails link to the Next.js frontend, which posts back to the API.
+        // Emails link to the React frontend, which posts back to the API.
         ResetPassword::createUrlUsing(fn (User $user, string $token) => FrontendUrl::to('/reset-password', [
             'token' => $token, 'email' => $user->getEmailForPasswordReset(),
         ]));

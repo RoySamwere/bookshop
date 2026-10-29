@@ -8,6 +8,7 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
@@ -39,13 +40,24 @@ class AuthController extends Controller
         }
 
         $remember = $request->boolean('remember');
-        $token = $user->createToken($remember ? 'bookshop-web-remembered' : 'bookshop-web', ['*'], $this->tokenExpiry($remember))->plainTextToken;
+        if ($request->is('api/v1/*') && ! $request->hasSession()) {
+            return response()->json(['message' => 'SPA authentication requires a configured first-party origin and CSRF cookie.'], 400);
+        }
+        $token = null;
+        if ($request->hasSession()) {
+            Auth::guard('web')->login($user, $remember);
+            $request->session()->regenerate();
+            $request->session()->put('auth_last_activity_at', now()->timestamp);
+        } else {
+            // Compatibility for existing non-browser /api clients. The SPA never receives tokens.
+            $token = $user->createToken($remember ? 'bookshop-web-remembered' : 'bookshop-web', ['*'], $this->tokenExpiry($remember))->plainTextToken;
+        }
         $user->forceFill(['last_login_at' => now()])->save();
         AuditLog::record('auth.login', "{$user->name} signed in", $user, ['remember' => $remember], $user);
 
         return response()->json([
             'message' => 'Signed in successfully.',
-            'data' => ['token' => $token, 'user' => $user->authData()],
+            'data' => [...($token ? ['token' => $token] : []), 'user' => $user->authData()],
         ]);
     }
 
@@ -56,8 +68,16 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
         AuditLog::record('auth.logout', "{$request->user()->name} signed out", $request->user());
+        $token = $request->user()->currentAccessToken();
+        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+            $token->delete();
+        }
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json(['message' => 'Signed out successfully.']);
     }
@@ -87,7 +107,14 @@ class AuthController extends Controller
         $user->password = $request->input('password');
         $user->save();
         // Keep this session; sign out every other device.
-        $user->tokens()->whereKeyNot($user->currentAccessToken()->id)->delete();
+        $current = $user->currentAccessToken();
+        $user->tokens()->when($current instanceof \Laravel\Sanctum\PersonalAccessToken,
+            fn ($query) => $query->whereKeyNot($current->id))->delete();
+        if ($request->hasSession()) {
+            // Sanctum AuthenticateSession invalidates other cookie sessions on password mismatch.
+            $request->session()->put('password_hash_web', $user->getAuthPassword());
+            $request->session()->regenerate();
+        }
         AuditLog::record('auth.password_changed', "{$user->name} changed their password", $user);
 
         return response()->json(['message' => 'Password changed. Other devices have been signed out.']);
@@ -119,6 +146,7 @@ class AuthController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->password = $password;
+                $user->setRememberToken(\Illuminate\Support\Str::random(60));
                 $user->save();
                 $user->tokens()->delete();
                 event(new PasswordReset($user));

@@ -14,7 +14,15 @@ class EnsureAccountIsActive
 
         if (! $user?->canSignIn()) {
             // Tokens of deactivated or unknown-role accounts stop working immediately.
-            $user?->currentAccessToken()?->delete();
+            $token = $user?->currentAccessToken();
+            if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+                $token->delete();
+            }
+            if ($request->hasSession()) {
+                \Illuminate\Support\Facades\Auth::guard('web')->logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
 
             return response()->json(['message' => 'Your account is not authorised to access the system.'], 403);
         }

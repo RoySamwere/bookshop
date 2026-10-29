@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\User;
 use Illuminate\Support\Facades\URL;
 
-/** Builds links that open pages on the Next.js frontend. */
+/** Builds links that open pages on the React frontend. */
 final class FrontendUrl
 {
     public static function to(string $path, array $query = []): string
