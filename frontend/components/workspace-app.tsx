@@ -57,7 +57,6 @@ const money = (value: number) => `KSh ${value.toLocaleString('en-KE', { minimumF
 
 // Modules below still run on sample data; they connect to live records in later phases.
 const PREVIEW_MODULES: Record<string, string> = {
-  'Dashboard': 'Phase 5', 
   'Customers': 'Phase 4', 'Reports & Analytics': 'Phase 5', 'Expenses': 'Phase 5',
 }
 
@@ -173,7 +172,7 @@ export function WorkspaceApp() {
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
     : active === 'Suppliers' ? <SuppliersView setToast={notify} />
-    : <Dashboard active={active} setActive={navigateTo} userName={currentUser.name} />
+    : <Dashboard active={active} setActive={navigateTo} currentUser={currentUser} />
 
   return (
     <WorkspaceShell currentUser={currentUser} active={active} onNavigate={navigateTo} onSignOut={signOut}>
@@ -186,9 +185,9 @@ export function WorkspaceApp() {
   )
 }
 
-function Dashboard({ active, setActive, userName }: { active: string; setActive: (value: string) => void; userName: string }) {
+function Dashboard({ active, setActive, currentUser }: { active: string; setActive: (value: string) => void; currentUser: BookshopUser }) {
   if (active !== 'Dashboard') return <section className="page-placeholder"><div className="empty-icon"><Tags size={24} /></div><h1 tabIndex={-1}>{active}</h1><p>This workspace is ready for your daily operations. Use the dashboard or point of sale to get started.</p><button className="primary-button" onClick={() => setActive('Point of Sale')}>Open Point of Sale <ArrowUpRight size={16} /></button></section>
-  return <OverviewDashboard userName={userName} products={products} sales={sales} onNavigate={setActive} />
+  return <OverviewDashboard userName={currentUser.name} currentUser={currentUser} onNavigate={setActive} />
 }
 function ProductsBooksView({ setToast: _setToast }: { setToast: (message: string) => void }) {
   type BookRow={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;category_name?:string|null;subcategory_name?:string|null;is_active?:boolean}
