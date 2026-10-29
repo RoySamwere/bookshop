@@ -166,13 +166,24 @@ function PlansView() {
 
 function BookshopsView() {
   const user = useCurrentUser()
+  const client = useQueryClient()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const list = useQuery({ queryKey: ['platform', 'bookshops', search, status, page], queryFn: () => platformApi.bookshops({ search: search.trim() || undefined, status: status || undefined, page }), placeholderData: keepPreviousData })
   return <>
     <PageHeader eyebrow="PLATFORM" icon={<Store size={15} />} title="Bookshops" description="Every registered bookshop, its owner and subscription state." />
-    {hasPermission(user, 'platform.bookshops.onboard') && <div className="mb-4"><Link className={primaryButton} to="/platform/bookshops/new">Create bookshop</Link></div>}
+    {hasPermission(user, 'platform.bookshops.onboard') && <div className="mb-4"><button type="button" className={primaryButton} onClick={() => { setNotice(''); setCreateOpen(true) }}>Create bookshop</button></div>}
+    {notice && <p className="mb-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800" role="status">{notice}</p>}
+    {createOpen && hasPermission(user, 'platform.bookshops.onboard') && <Modal title="Create bookshop" description="Add a shop and its separate owner account." icon={<Store size={18} />} wide busy={creating} onClose={() => { if (!creating) setCreateOpen(false) }}>
+      <BookshopRegisterPage platformMode embedded onPendingChange={setCreating} onCancel={() => setCreateOpen(false)} onCreated={message => {
+        setCreateOpen(false); setNotice(message)
+        void client.invalidateQueries({ queryKey: ['platform'] })
+      }} />
+    </Modal>}
     <Card title="Directory" flush actions={<div className="flex flex-col gap-2 sm:flex-row">
       <label className="relative"><span className="sr-only">Search bookshops</span><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm sm:w-64" placeholder="Name, code or email" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></label>
       <label><span className="sr-only">Status</span><select className="h-10 rounded-xl border border-slate-200 px-3 text-sm" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">All statuses</option>{Object.entries(BOOKSHOP_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
