@@ -5,6 +5,7 @@ import { BookOpen, Loader2, PackageX, Plus, RefreshCw, ScanBarcode, Search, X } 
 import { errorMessage } from '../../lib/api'
 import { formatKes, posApi, toNumber, type PosCategory, type PosProduct } from '../../lib/pos-api'
 import { available } from '../../lib/pos-store'
+import { BrandMark } from '../brand-mark'
 
 // Bookcloth tones from the public website's shelf, one per category so a section is recognisable at a glance.
 const SPINES = ['#087df5', '#f67fbb', '#0a50bf', '#80b3ff', '#b32470']
@@ -83,18 +84,18 @@ export const PosCatalogue = forwardRef<CatalogueHandle, {
   const showingAll = !query && !categoryId
   return <section className="pos-catalogue flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Products">
     <h1 className="sr-only">Point of sale product catalogue</h1>
-    <div className="pos-catalogue-tools space-y-3 px-4 pb-3 pt-4 sm:px-6">
-      <label className="pos-framed flex h-[62px] items-center gap-3 rounded-2xl border-2 border-[#d9e3f3] bg-white px-4 shadow-[0_8px_25px_-16px_rgba(19,37,74,.35)] transition focus-within:border-[#13254a] focus-within:ring-4 focus-within:ring-blue-100">
+    <div className="pos-catalogue-tools space-y-2 px-3 pb-2 pt-3 sm:px-4">
+      <label className="pos-framed flex h-11 items-center gap-2 rounded-xl border border-[#d9e3f3] bg-white px-3 shadow-sm transition focus-within:border-[#13254a] focus-within:ring-4 focus-within:ring-blue-100">
         <ScanBarcode size={22} className="shrink-0 text-[#087df5]" aria-hidden="true" />
         <span className="sr-only">Scan a barcode or search products</span>
         <input ref={searchRef} value={query} onChange={event => { setQuery(event.target.value); setScanNote('') }} onKeyDown={event => void onSearchKey(event)}
-          className="min-w-0 flex-1 bg-transparent text-[16px] text-[#162c4c] outline-none placeholder:text-slate-400" placeholder="Scan a barcode, or search by title, ISBN or SKU"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-[#162c4c] outline-none placeholder:text-slate-400" placeholder="Scan a barcode, or search by title, ISBN or SKU"
           autoComplete="off" spellCheck={false} enterKeyHint="search" data-pos-search aria-describedby="pos-scan-note" />
         {loading && query ? <Loader2 size={18} className="animate-spin text-slate-400" aria-hidden="true" /> : query
           ? <button type="button" onClick={() => { setQuery(''); setScanNote(''); searchRef.current?.focus() }} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Clear search"><X size={17} /></button>
           : <kbd className="hidden rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 sm:block">F2</kbd>}
       </label>
-      <p id="pos-scan-note" role={scanNote ? 'status' : undefined} className={`min-h-[18px] px-1 text-[13px] ${scanNote ? 'text-amber-700' : 'text-slate-500'}`}>
+      <p id="pos-scan-note" role={scanNote ? 'status' : undefined} className={`min-h-[14px] px-1 text-[11px] ${scanNote ? 'text-amber-700' : 'text-slate-500'}`}>
         {scanNote || (loading ? 'Looking…' : `${total.toLocaleString('en-KE')} ${total === 1 ? 'product' : 'products'}${showingAll ? ' at this branch' : ' found'}`)}
       </p>
       {categories.length > 0 && <div className={`pos-rail -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:thin] ${railEnd ? 'at-end' : ''}`} role="group" aria-label="Filter by category"
@@ -102,14 +103,14 @@ export const PosCatalogue = forwardRef<CatalogueHandle, {
         {[{ id: null as number | null, name: 'All products' }, ...categories].map(category => {
           const selected = categoryId === category.id
           return <button key={category.id ?? 'all'} type="button" aria-pressed={selected} onClick={() => setCategoryId(category.id)}
-            className={`flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-[13px] font-semibold transition ${selected ? 'border-[#13254a] bg-[#13254a] text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'}`}>
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition ${selected ? 'border-[#13254a] bg-[#13254a] text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'}`}>
             {category.id && <span className="h-3.5 w-1 rounded-full" style={{ background: spineColour(category.id) }} aria-hidden="true" />}{category.name}
           </button>
         })}
       </div>}
     </div>
 
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 sm:px-6 lg:pb-6">
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-3">
       {error ? <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-100 bg-white px-6 py-12 text-center" role="alert">
         <p className="text-sm font-semibold text-slate-800">The product list did not load</p>
         <p className="max-w-sm text-sm text-slate-500">{error}</p>
@@ -120,7 +121,7 @@ export const PosCatalogue = forwardRef<CatalogueHandle, {
         <p className="max-w-xs text-sm text-slate-500">{showingAll ? 'Products appear here once they are added to the catalogue.' : 'Check the spelling, or scan the barcode instead.'}</p>
         {!showingAll && <button type="button" onClick={() => { setQuery(''); setCategoryId(null) }} className="mt-2 text-sm font-semibold text-[#087df5] hover:underline">Show all products</button>}
       </div> : <>
-        <ul className={`grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+        <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
           {rows.map(product => <li key={product.id}>
             <ProductTile product={product} quantity={inCart.get(product.id) ?? 0} locked={locked} onAdd={() => onAdd(product, 'tap')} />
           </li>)}
@@ -141,18 +142,21 @@ function ProductTile({ product, quantity, locked, onAdd }: { product: PosProduct
   const left = stock - quantity
   const code = product.isbn || product.sku
   return <button type="button" onClick={onAdd} disabled={out || locked}
-    aria-label={`Add ${product.title}, ${formatKes(toNumber(product.selling_price))}${out ? ', out of stock' : `, ${stock} in stock`}${quantity ? `, ${quantity} in this sale` : ''}`}
-    data-in-cart={quantity > 0} className="pos-product group relative flex h-full min-h-[132px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white py-3 pl-4 pr-3 text-left transition hover:border-blue-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 active:scale-[.985] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:shadow-none disabled:active:scale-100">
-    <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: spineColour(product.category_id), opacity: out ? 0.35 : 1 }} aria-hidden="true" />
-    {quantity > 0 && <span className="absolute right-2 top-2 rounded-full bg-[#087df5] px-2 py-0.5 text-[11px] font-bold tabular-nums text-white">×{quantity}</span>}
-    <span className={`block truncate pr-8 text-[11.5px] ${out ? 'text-slate-400' : 'text-slate-500'}`}>{product.subcategory || product.category || 'Product'}</span>
-    <span className={`mt-0.5 line-clamp-2 text-[14px] font-semibold leading-snug ${out ? 'text-slate-400' : 'text-[#162c4c]'}`}>{product.title}</span>
-    <span className="mt-1 block truncate text-[11.5px] tabular-nums text-slate-400">{code}</span>
-    <span className="mt-auto flex flex-wrap items-end justify-between gap-x-2 gap-y-0.5 pt-2.5">
-      <span className={`whitespace-nowrap text-[15px] font-bold tabular-nums ${out ? 'text-slate-400' : 'text-[#13254a]'}`}>{formatKes(toNumber(product.selling_price))}</span>
-      {out ? <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-semibold text-rose-600"><PackageX size={13} aria-hidden="true" /> Sold out</span>
-        : left <= 5 ? <span className="pos-low-stock whitespace-nowrap text-[11.5px] font-semibold tabular-nums">{left <= 0 ? 'All in sale' : `Only ${left} left`}</span>
-        : <span className="whitespace-nowrap text-[11.5px] tabular-nums text-slate-500">{stock} in stock</span>}
-    </span>
+    aria-label={`Add ${product.title}, ${formatKes(toNumber(product.selling_price))}${out ? ', out of stock' : `, ${stock} in stock`}`}
+    data-in-cart={quantity > 0}
+    className="group relative flex h-full min-h-[148px] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-blue-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-60">
+    <div className="flex h-[72px] w-full items-center justify-center overflow-hidden bg-slate-50">
+      {product.image_url ? <img src={product.image_url} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; event.currentTarget.nextElementSibling?.classList.remove('hidden') }} className="h-full w-full object-contain p-1.5" /> : null}
+      <span className={product.image_url ? 'hidden' : ''}><BrandMark size={48} /></span>
+    </div>
+    {quantity > 0 && <span className="absolute right-1.5 top-1.5 rounded-md bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">×{quantity}</span>}
+    <div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2 pt-1.5">
+      <span className="truncate text-[10px] text-slate-500">{product.subcategory || product.category || 'Product'}</span>
+      <span className="line-clamp-2 text-[12px] font-semibold leading-4 text-slate-800">{product.title}</span>
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-1 pt-2">
+        <strong className="text-[12px] font-bold tabular-nums text-slate-900">{formatKes(toNumber(product.selling_price))}</strong>
+        <span className={`text-[10px] ${out ? 'text-rose-600' : left <= 5 ? 'text-amber-700' : 'text-slate-500'}`}>{out ? 'Sold out' : left <= 5 ? `${left} left` : `${stock} in stock`}</span>
+      </div>
+    </div>
   </button>
 }
