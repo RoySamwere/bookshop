@@ -22,7 +22,7 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchError, setBranchError] = useState('')
   const [branch, setBranch] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState('available')
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [searchField,setSearchField]=useState('all')
