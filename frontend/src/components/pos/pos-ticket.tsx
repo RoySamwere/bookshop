@@ -200,9 +200,9 @@ function QuickAmount({ label, active, onClick }: { label: string; active: boolea
 
 /* -------------------------------------------------------------- receipt --------------------------------------------------------------- */
 
-export function ReceiptView({ receipt, expectedTotal, profile, reprint, onPrint, onNewSale }: {
+export function ReceiptView({ receipt, expectedTotal, profile, reprint, onPrint, onInvoice, onNewSale }: {
   receipt: PosReceipt; expectedTotal: number | null; profile: BusinessProfile | null; reprint?: boolean
-  onPrint: () => void; onNewSale: () => void
+  onPrint: () => void; onInvoice: () => void; onNewSale: () => void
 }) {
   const { sale, items } = receipt
   const total = toNumber(sale.total)
@@ -242,10 +242,11 @@ export function ReceiptView({ receipt, expectedTotal, profile, reprint, onPrint,
       </dl>
     </div>
 
-    <footer className="grid grid-cols-2 gap-2 border-t border-slate-100 px-5 pb-6 pt-4">
+    <footer className="grid grid-cols-1 gap-2 border-t border-slate-100 px-5 pb-6 pt-4 sm:grid-cols-3">
       <button type="button" onClick={() => { onPrint(); window.setTimeout(() => newSaleRef.current?.focus(), 0) }} className="flex h-14 items-center justify-center gap-2 rounded-xl border-2 border-slate-200 bg-white text-[15px] font-bold text-slate-700 hover:border-slate-300 hover:bg-slate-50">
         <Printer size={18} aria-hidden="true" /> Print receipt
       </button>
+      <button type="button" onClick={onInvoice} className="flex h-14 items-center justify-center gap-2 rounded-xl border-2 border-teal-200 bg-teal-50 text-[15px] font-bold text-teal-800 hover:bg-teal-100"><Printer size={18} /> Print invoice</button>
       <button ref={newSaleRef} type="button" onClick={onNewSale} className="flex h-14 items-center justify-center rounded-xl bg-[#087df5] text-[15px] font-bold text-white hover:bg-[#066cd6] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200">
         {reprint ? 'Back to sale' : 'Next customer'}
       </button>
