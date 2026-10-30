@@ -10,7 +10,7 @@ import { BrandMark } from '../brand-mark'
 
 /** The paper ticket: a white card with a torn bottom edge. */
 export function Ticket({ children, label }: { children: ReactNode; label: string }) {
-  return <section aria-label={label} className="pos-ticket relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1e8f4] bg-white shadow-[0_8px_35px_-22px_rgba(19,37,74,.3)]">{children}</section>
+  return <section aria-label={label} className="pos-ticket relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#e1e8f4] bg-white shadow-[0_8px_35px_-22px_rgba(19,37,74,.3)]">{children}</section>
 }
 
 const Kbd = ({ children }: { children: ReactNode }) => <kbd className="rounded border border-current/25 px-1 py-px text-[10.5px] font-semibold opacity-70">{children}</kbd>
@@ -33,9 +33,9 @@ export function SaleView({ cart, flashId, profile, onQuantity, onRemove, onHold,
   useEffect(() => { if (flashId) listRef.current?.querySelector(`[data-line="${flashId}"]`)?.scrollIntoView({ block: 'nearest' }) }, [flashId, cart])
 
   return <Ticket label="Current sale">
-    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 pb-4 pt-5">
+    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 pb-2 pt-3">
       <div>
-        <h2 className="text-[17px] font-bold text-[#13254a]">Current sale</h2>
+        <h2 className="text-[14px] font-bold text-[#13254a]">Current sale</h2>
         <p className="text-[13px] tabular-nums text-slate-500">{units ? `${units} ${units === 1 ? 'item' : 'items'} · ${cart.length} ${cart.length === 1 ? 'line' : 'lines'}` : 'Nothing added yet'}</p>
       </div>
       {cart.length > 0 && <div className="flex items-center gap-1.5">
@@ -53,18 +53,18 @@ export function SaleView({ cart, flashId, profile, onQuantity, onRemove, onHold,
       <span className="grid size-14 place-items-center rounded-2xl bg-slate-100 text-slate-400"><ScanBarcode size={26} aria-hidden="true" /></span>
       <p className="text-[15px] font-semibold text-slate-800">Ready for the next customer</p>
       <p className="max-w-[16rem] text-[13px] leading-relaxed text-slate-500">Scan a barcode or tap a product to start the sale.</p>
-    </div> : <ol ref={listRef} className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto px-5">
+    </div> : <ol ref={listRef} className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto px-3">
       {cart.map(line => <TicketLine key={line.product.id} line={line} flash={flashId === line.product.id} onQuantity={onQuantity} onRemove={onRemove} />)}
     </ol>}
 
-    <footer className="border-t border-slate-200 bg-[#fbfcff] px-5 pb-6 pt-5">
+    <footer className="border-t border-slate-200 bg-[#fbfcff] px-3 pb-3 pt-3">
       {vat && total > 0 && <div className="mb-1 flex justify-between text-[13px] tabular-nums text-slate-500"><span>Includes {vat.label}</span><span>{formatKes(vat.amount)}</span></div>}
       <div className="flex items-end justify-between gap-3">
         <span className="pb-1 text-[14px] font-semibold text-slate-600">Amount due</span>
-        <strong className="text-[34px] font-extrabold leading-none tracking-tight tabular-nums text-[#13254a]" aria-live="polite">{formatKes(total)}</strong>
+        <strong className="text-[23px] font-extrabold leading-none tracking-tight tabular-nums text-[#13254a]" aria-live="polite">{formatKes(total)}</strong>
       </div>
       <button type="button" onClick={onCharge} disabled={!cart.length}
-        className="mt-4 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#087df5] text-[17px] font-bold text-white shadow-[0_8px_20px_-8px_rgba(8,125,245,.7)] transition hover:bg-[#066cd6] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">
+        className="mt-3 flex h-11 w-full items-center justify-center gap-3 rounded-xl bg-[#087df5] text-[13px] font-bold text-white shadow-[0_8px_20px_-8px_rgba(8,125,245,.7)] transition hover:bg-[#066cd6] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">
         Charge {formatKes(total)} <span className="hidden text-white/80 sm:inline"><Kbd>F9</Kbd></span>
       </button>
     </footer>
@@ -82,12 +82,12 @@ function TicketLine({ line, flash, onQuantity, onRemove }: { line: CartLine; fla
     else setDraft(String(quantity))
   }
 
-  return <li data-line={product.id} className={`py-3 transition-colors duration-700 ${flash ? 'bg-blue-50/80' : ''}`}>
+  return <li data-line={product.id} className={`py-2 transition-colors duration-700 ${flash ? 'bg-blue-50/80' : ''}`}>
     <div className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-[14px] font-semibold leading-snug text-[#162c4c]">{product.title}</p>
+        <p className="line-clamp-2 text-[12px] font-semibold leading-snug text-[#162c4c]">{product.title}</p>
       </div>
-      <p className="shrink-0 pt-px text-[14px] font-bold tabular-nums text-[#13254a]">{formatKes(lineTotal(line))}</p>
+      <p className="shrink-0 pt-px text-[12px] font-bold tabular-nums text-[#13254a]">{formatKes(lineTotal(line))}</p>
     </div>
     <div className="mt-2 flex items-center gap-2">
       <div className="flex h-9 items-center rounded-lg border border-slate-200 bg-white">
