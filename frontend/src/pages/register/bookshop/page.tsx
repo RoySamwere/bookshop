@@ -14,11 +14,12 @@ import { COUNTRY_CURRENCIES, platformApi } from '../../../lib/tenancy-api'
 
 const story = { title: 'Run your bookshop on Hekima.', body: 'Register your shop in a few minutes: point of sale, stock, suppliers and staff, with your records kept private to your business.' }
 
+// Applicants can inspect the shared reference catalogue without a staff account.
 const FIELDS = ['owner_name', 'email', 'phone', 'password', 'bookshop_name', 'business_phone', 'business_location', 'country', 'currency', 'terms'] as const
 
 function RegistrationShell({ platformMode, embedded, children }: { platformMode: boolean; embedded: boolean; children: ReactNode }) {
   if (embedded) return <>{children}</>
-  return platformMode ? <Card title="Create bookshop" description="Create a separate bookshop owner account. The owner will verify their email before trading.">{children}</Card> : <AuthShell story={story} topline={<span>Already registered? <Link to="/login">Sign in</Link></span>}>{children}</AuthShell>
+  return platformMode ? <Card title="Create bookshop" description="Create a separate bookshop owner account. The owner will verify their email before trading.">{children}</Card> : <AuthShell story={story} topline={<span>Already registered? <Link to="/login">Sign in</Link> · <Link to="/products">Browse Products &amp; Books</Link></span>}>{children}</AuthShell>
 }
 
 export default function BookshopRegisterPage({ platformMode = false, embedded = false, onCreated, onPendingChange, onCancel }: {
