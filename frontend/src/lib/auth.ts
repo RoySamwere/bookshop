@@ -55,7 +55,7 @@ export async function login(email: string, password: string, remember = false) {
 }
 
 /** Owners who registered a bookshop but have not confirmed their email yet. */
-export const needsOnboarding = (user: BookshopUser) => user.account_type === 'bookshop' && Boolean(user.bookshop?.is_owner) && !user.email_verified
+export const needsOnboarding = (user: BookshopUser) => user.account_type === 'bookshop' && Boolean(user.bookshop?.is_owner) && user.bookshop?.status === 'pending_verification'
 
 /** Where a signed-in account belongs: platform staff to the console, staff to the workspace, everyone else to their account page. */
 export const homeFor = (user: BookshopUser) => {
