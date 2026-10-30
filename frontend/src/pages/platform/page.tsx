@@ -212,7 +212,7 @@ function BookshopDetailView() {
   const shop = useQuery({ queryKey: ['platform', 'bookshop', id], queryFn: () => platformApi.bookshop(id) })
   const [dialog, setDialog] = useState<'suspend' | 'reactivate' | null>(null)
   const [notice, setNotice] = useState('')
-  const resend = useMutation({ mutationFn: () => platformApi.resendOwnerVerification(id), onSuccess: result => setNotice(result.message), onError: error => setNotice(errorMessage(error)) })
+  const approve = useMutation({ mutationFn: () => platformApi.approve(id), onSuccess: result => { setNotice(result.message); void client.invalidateQueries({ queryKey: ['platform'] }) }, onError: error => setNotice(errorMessage(error)) })
 
   if (shop.isPending) return <LoadingState />
   if (shop.error) return <ErrorState message={errorMessage(shop.error)} onRetry={() => void shop.refetch()} />
@@ -224,7 +224,7 @@ function BookshopDetailView() {
     <PageHeader eyebrow={data.slug.toUpperCase()} icon={<Building2 size={15} />} title={data.name} description={`${data.location || 'No location'} · ${data.country} · ${data.currency}`}
       actions={<>
         <StatusPill status={data.status} />
-        {hasPermission(user, 'platform.bookshops.onboard') && data.owner && !data.owner.email_verified && <button className={secondaryButton} onClick={() => resend.mutate()} disabled={resend.isPending}>Resend owner verification</button>}
+        {user.role === 'platform_owner' && data.status === 'pending_verification' && <button className={primaryButton} onClick={() => approve.mutate()} disabled={approve.isPending}>{approve.isPending ? 'Approving…' : 'Approve & activate'}</button>}
         {hasPermission(user, 'platform.bookshops.suspend') && (data.status === 'suspended'
           ? <button className={primaryButton} onClick={() => setDialog('reactivate')}>Reactivate</button>
           : <button className={dangerButton} onClick={() => setDialog('suspend')}>Suspend</button>)}
@@ -234,13 +234,13 @@ function BookshopDetailView() {
     <div className="grid gap-6 lg:grid-cols-3">
       <Card title="Owner">{data.owner ? <dl className="grid gap-2 text-sm">
         <div><dt className="text-xs text-slate-400">Name</dt><dd className="m-0 font-medium">{data.owner.name}</dd></div>
-        <div><dt className="text-xs text-slate-400">Email</dt><dd className="m-0 break-all">{data.owner.email} <StatusBadge active={data.owner.email_verified} activeLabel="Verified" inactiveLabel="Unverified" /></dd></div>
+        <div><dt className="text-xs text-slate-400">Email</dt><dd className="m-0 break-all">{data.owner.email}</dd></div>
         <div><dt className="text-xs text-slate-400">Phone</dt><dd className="m-0">{data.owner.phone || '—'}</dd></div>
         <div><dt className="text-xs text-slate-400">Last sign-in</dt><dd className="m-0">{formatDate(data.owner.last_login_at ?? null, true)}</dd></div>
       </dl> : <p className="text-sm text-slate-500">No owner account.</p>}</Card>
       <Card title="Bookshop"><dl className="grid gap-2 text-sm">
         <div><dt className="text-xs text-slate-400">Registered</dt><dd className="m-0">{formatDate(data.registered_at, true)}</dd></div>
-        <div><dt className="text-xs text-slate-400">Verified</dt><dd className="m-0">{formatDate(data.verified_at, true)}</dd></div>
+        <div><dt className="text-xs text-slate-400">Approved</dt><dd className="m-0">{formatDate(data.verified_at, true)}</dd></div>
         <div><dt className="text-xs text-slate-400">Business contact</dt><dd className="m-0 break-all">{data.business_email || '—'} · {data.phone || '—'}</dd></div>
         <div><dt className="text-xs text-slate-400">Branches · staff accounts</dt><dd className="m-0">{data.branches_count ?? 0} · {data.staff_count ?? 0}</dd></div>
       </dl></Card>
