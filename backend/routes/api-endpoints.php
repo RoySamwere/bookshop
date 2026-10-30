@@ -135,6 +135,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/bookshops', [BookshopDirectoryController::class, 'store'])->middleware('permission:platform.bookshops.onboard');
         Route::get('/bookshops', [BookshopDirectoryController::class, 'index'])->middleware('permission:platform.bookshops.view');
         Route::get('/bookshops/{bookshop}', [BookshopDirectoryController::class, 'show'])->middleware('permission:platform.bookshops.view');
+        Route::patch('/bookshops/{bookshop}', [BookshopDirectoryController::class, 'update'])->middleware('permission:platform.bookshops.onboard');
         Route::post('/bookshops/{bookshop}/approve', [BookshopDirectoryController::class, 'approve'])->middleware('permission:platform.bookshops.onboard');
         Route::post('/bookshops/{bookshop}/suspend', [BookshopDirectoryController::class, 'suspend'])->middleware('permission:platform.bookshops.suspend');
         Route::post('/bookshops/{bookshop}/reactivate', [BookshopDirectoryController::class, 'reactivate'])->middleware('permission:platform.bookshops.suspend');

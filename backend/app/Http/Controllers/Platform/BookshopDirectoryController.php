@@ -84,6 +84,21 @@ class BookshopDirectoryController extends Controller
         ]]);
     }
 
+    /** Platform Owner edits tenant contact details without touching business records. */
+    public function update(Request $request, Bookshop $bookshop): JsonResponse
+    {
+        abort_unless($request->user()->role === Roles::PLATFORM_OWNER, 403);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'business_email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'location' => ['nullable', 'string', 'max:255'],
+        ]);
+        $bookshop->fill($data)->save();
+        AuditLog::record('platform.bookshop_updated', "Updated {$bookshop->name} business details", $bookshop, ['fields' => array_keys($data)], actor: $request->user(), bookshopId: $bookshop->id);
+        return response()->json(['message' => 'Bookshop details updated.', 'data' => $this->row($bookshop->fresh())]);
+    }
+
     public function suspend(Request $request, Bookshop $bookshop, SubscriptionService $subscriptions): JsonResponse
     {
         $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:500']]);

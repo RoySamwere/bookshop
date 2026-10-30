@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowLeft, Building2, CircleCheck, Gauge, History, LogOut, Menu, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
+import { Activity, ArrowLeft, Building2, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from '@/lib/navigation'
 import BrandLoader from '../../components/brand-loader'
 import { BrandMark } from '../../components/brand-mark'
@@ -173,6 +173,7 @@ function BookshopsView() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
+  const [selectedShop, setSelectedShop] = useState<number | null>(null)
   const list = useQuery({ queryKey: ['platform', 'bookshops', search, status, page], queryFn: () => platformApi.bookshops({ search: search.trim() || undefined, status: status || undefined, page }), placeholderData: keepPreviousData })
   return <>
     <PageHeader eyebrow="PLATFORM" icon={<Store size={15} />} title="Bookshops" description="Every registered bookshop, its owner and subscription state." />
@@ -191,18 +192,60 @@ function BookshopsView() {
       {list.isPending ? <LoadingState /> : list.error ? <ErrorState message={errorMessage(list.error)} onRetry={() => void list.refetch()} />
         : list.data.data.length === 0 ? <EmptyState icon={<Store size={22} />} title="No bookshops found" body="Try a different search or status." />
         : <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
-          <thead><tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400"><th className="px-6 py-3 font-semibold">Bookshop</th><th className="px-3 py-3 font-semibold">Owner</th><th className="px-3 py-3 font-semibold">Branches · staff</th><th className="px-3 py-3 font-semibold">Subscription</th><th className="px-3 py-3 font-semibold">Status</th></tr></thead>
+          <thead><tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400"><th className="px-6 py-3 font-semibold">Bookshop</th><th className="px-3 py-3 font-semibold">Owner</th><th className="px-3 py-3 font-semibold">Branches · staff</th><th className="px-3 py-3 font-semibold">Subscription</th><th className="px-3 py-3 font-semibold">Status</th><th className="px-3 py-3 font-semibold">Actions</th></tr></thead>
           <tbody className="divide-y divide-slate-100">{list.data.data.map(shop => <tr key={shop.id} className="hover:bg-slate-50">
             <td className="px-6 py-3"><Link to={`/platform/bookshops/${shop.id}`} className="font-semibold text-slate-900 hover:text-[#087df5]">{shop.name}</Link><small className="block text-xs text-slate-400">{shop.slug} · {shop.country}</small></td>
             <td className="px-3 py-3">{shop.owner ? <><span className="text-slate-700">{shop.owner.name}</span><small className="block text-xs text-slate-400">{shop.owner.email}{!shop.owner.email_verified && ' · unverified'}</small></> : '—'}</td>
             <td className="px-3 py-3 text-slate-600">{shop.branches_count ?? 0} · {shop.staff_count ?? 0}</td>
             <td className="px-3 py-3 capitalize text-slate-600">{shop.subscription ? `${shop.subscription.status.replace('_', ' ')}${shop.subscription.trial_days_left !== null ? ` · ${shop.subscription.trial_days_left}d left` : ''}` : '—'}</td>
             <td className="px-3 py-3"><StatusPill status={shop.status} /></td>
+            <td className="px-3 py-3"><button type="button" className={`${secondaryButton} h-9 px-3`} title={`View and manage ${shop.name}`} aria-label={`View and manage ${shop.name}`} onClick={() => setSelectedShop(shop.id)}><Eye size={16} /></button></td>
           </tr>)}</tbody>
         </table></div>}
       {list.data && <Pagination meta={list.data.meta} onPage={setPage} />}
     </Card>
+    {selectedShop !== null && <BookshopManageModal id={selectedShop} onClose={() => setSelectedShop(null)} /> }
   </>
+}
+
+function BookshopManageModal({ id, onClose }: { id: number; onClose: () => void }) {
+  const user = useCurrentUser()
+  const client = useQueryClient()
+  const detail = useQuery({ queryKey: ['platform', 'bookshop', id], queryFn: () => platformApi.bookshop(id) })
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ name: '', business_email: '', phone: '', location: '' })
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const save = useMutation({
+    mutationFn: () => platformApi.updateBookshop(id, form),
+    onSuccess: result => { setNotice(result.message); setEditing(false); void client.invalidateQueries({ queryKey: ['platform'] }) },
+    onError: e => setError(errorMessage(e)),
+  })
+  const approve = useMutation({
+    mutationFn: () => platformApi.approve(id),
+    onSuccess: result => { setNotice(result.message); void client.invalidateQueries({ queryKey: ['platform'] }) },
+    onError: e => setError(errorMessage(e)),
+  })
+  const shop = detail.data
+  return <Modal title={shop ? `Manage ${shop.name}` : 'Manage bookshop'} description="Review registration, update business details and manage activation." wide onClose={onClose} busy={save.isPending || approve.isPending}>
+    {detail.isPending ? <LoadingState /> : detail.error ? <ErrorState message={errorMessage(detail.error)} onRetry={() => void detail.refetch()} /> : shop && <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2"><StatusPill status={shop.status} /><Link className={secondaryButton} to={`/platform/bookshops/${id}`} onClick={onClose}>Full management page</Link></div>
+      {notice && <FormAlert tone="success" message={notice} />}
+      {error && <FormAlert message={error} />}
+      <div className="grid gap-2 text-sm"><p><strong>Owner:</strong> {shop.owner?.name || '—'} ({shop.owner?.email || '—'})</p><p><strong>Registered:</strong> {formatDate(shop.registered_at, true)}</p><p><strong>Branches / staff:</strong> {shop.branches_count ?? 0} / {shop.staff_count ?? 0}</p></div>
+      {editing ? <form className="grid gap-3" onSubmit={e => { e.preventDefault(); save.mutate() }}>
+        <Field label="Bookshop name"><input required className={inputClass} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Business email"><input type="email" className={inputClass} value={form.business_email} onChange={e => setForm({ ...form, business_email: e.target.value })} /></Field>
+        <Field label="Phone"><input className={inputClass} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
+        <Field label="Location"><input className={inputClass} value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></Field>
+        <div className="flex gap-2"><button className={primaryButton} type="submit" disabled={save.isPending}>Save changes</button><button type="button" className={secondaryButton} onClick={() => setEditing(false)}>Cancel</button></div>
+      </form> : <div className="grid gap-2 text-sm"><p><strong>Bookshop:</strong> {shop.name}</p><p><strong>Business email:</strong> {shop.business_email || '—'}</p><p><strong>Phone:</strong> {shop.phone || '—'}</p><p><strong>Location:</strong> {shop.location || '—'}</p></div>}
+      {user.role === 'platform_owner' && <div className="flex flex-wrap gap-2">
+        {!editing && <button type="button" className={secondaryButton} onClick={() => { setForm({ name: shop.name, business_email: shop.business_email || '', phone: shop.phone || '', location: shop.location || '' }); setEditing(true); setError('') }}><Pencil size={16} /> Edit details</button>}
+        {shop.status === 'pending_verification' && <button type="button" className={primaryButton} disabled={approve.isPending} onClick={() => approve.mutate()}>Approve & activate</button>}
+      </div>}
+    </div>}
+  </Modal>
 }
 
 function BookshopDetailView() {
