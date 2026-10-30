@@ -13,7 +13,7 @@ import { canOpenSection } from '../workspace-shell'
 import { PosCatalogue, type CatalogueHandle } from './pos-catalogue'
 import { HeldSalesPanel, ShortcutsPanel, TodayPanel } from './pos-panels'
 import { ReceiptView, SaleView, TenderView, tenderIsValid } from './pos-ticket'
-import { printReceipt, receiptHtml } from './receipt-print'
+import { printReceipt, receiptHtml, invoiceHtml } from './receipt-print'
 
 type Stage = 'sale' | 'tender' | 'receipt'
 type Panel = 'held' | 'today' | 'shortcuts' | null
@@ -224,6 +224,16 @@ export function PosTerminal({ currentUser, notify, onExit, onNavigate }: { curre
     } catch (e) { notify(errorMessage(e)) }
   }
 
+  function printInvoice(shown: ShownReceipt) {
+    const name = window.prompt('Customer name for invoice:', 'Walk-in customer')
+    if (name === null) return
+    const email = window.prompt('Customer email (optional):', '')
+    if (email === null) return
+    const address = window.prompt('Customer billing address (optional):', '')
+    if (address === null) return
+    printReceipt(invoiceHtml(shown.data, profile, { name: name.trim() || 'Walk-in customer', email: email.trim(), address: address.trim() }))
+  }
+
   function print(shown: ShownReceipt) {
     printReceipt(receiptHtml(shown.data, profile, { shopName: brand.name, branch: shown.data.sale.branch_name || branchName(branch), cashier: shown.data.sale.cashier_name || currentUser.name }))
   }
@@ -251,7 +261,7 @@ export function PosTerminal({ currentUser, notify, onExit, onNavigate }: { curre
 
   const shownReceipt = stage === 'receipt' ? receipt : null
   const ticket = shownReceipt
-    ? <ReceiptView receipt={shownReceipt.data} expectedTotal={shownReceipt.expectedTotal} profile={profile} reprint={shownReceipt.reprint} onPrint={() => print(shownReceipt)} onNewSale={startNewSale} />
+    ? <ReceiptView receipt={shownReceipt.data} expectedTotal={shownReceipt.expectedTotal} profile={profile} reprint={shownReceipt.reprint} onPrint={() => print(shownReceipt)} onInvoice={() => printInvoice(shownReceipt)} onNewSale={startNewSale} />
     : stage === 'tender'
       ? <TenderView cart={cart} method={method} received={received} reference={reference} busy={busy} error={tenderError}
           onMethod={value => { setMethod(value); setTenderError('') }} onReceived={setReceived} onReference={setReference}
