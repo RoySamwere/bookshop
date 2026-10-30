@@ -8,7 +8,7 @@ export type PosBranch = { id: number; name: string }
 export type PosCategory = { id: number; name: string }
 export type PosProduct = {
   id: number; title: string; sku: string; isbn: string | null; selling_price: string | number
-  available: number | string; category: string | null; subcategory: string | null; category_id?: number | null
+  available: number | string; category: string | null; subcategory: string | null; category_id?: number | null; image_url?: string | null
 }
 export type PosProductPage = { data: PosProduct[]; current_page: number; last_page: number; total: number }
 
