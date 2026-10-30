@@ -12,7 +12,7 @@ class InventoryController extends Controller
 {
     public function index(Request $request) {
         $tenant=Tenant::requireId();
-        $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
+        $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:available,low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
         $branches=$user->isOwner() ? null : $user->branchIds();
         // Every catalogued product is visible in inventory, including zero-stock items.
@@ -31,10 +31,11 @@ class InventoryController extends Controller
                 ->orWhere('b.isbn','like',"%{$search}%")));
         $summary = (clone $query)->selectRaw('COALESCE(SUM(COALESCE(i.quantity,0)), 0) as units, COALESCE(SUM(COALESCE(i.quantity,0) * b.selling_price), 0) as value, COUNT(*) as stock_lines, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level THEN 1 ELSE 0 END), 0) as low, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0 THEN 1 ELSE 0 END), 0) as out_of_stock')->first();
         $result = $query
+            ->when($request->query('status') === 'available', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0'))
             ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level'))
             ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0'))
             ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, br.name as branch_name')
-            ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
+            ->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) DESC')->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
     public function bulkReceive(Request $request, InventoryService $service) {
