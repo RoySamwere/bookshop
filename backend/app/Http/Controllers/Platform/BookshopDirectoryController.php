@@ -25,10 +25,23 @@ class BookshopDirectoryController extends Controller
         // Reuse registration without replacing the platform operator's authenticated session.
         $owner = $registration->register($request->validated());
         $owner->forceFill(['created_by' => $request->user()->id])->save();
-        $sent = SafeMail::send(fn () => $owner->sendEmailVerificationNotification());
         AuditLog::record('platform.bookshop_created', 'Created a bookshop and its separate owner account', $owner->bookshop, actor: $request->user(), bookshopId: $owner->bookshop_id);
 
-        return response()->json(['message' => $sent ? 'Bookshop created. The owner must verify their email.' : 'Bookshop created. Verification email could not be sent; use resend verification.', 'data' => $owner->bookshop->summary()], 201);
+        return response()->json(['message' => 'Bookshop created. Awaiting Platform Owner approval.', 'data' => $owner->bookshop->summary()], 201);
+    }
+
+    public function approve(Request $request, Bookshop $bookshop): JsonResponse
+    {
+        abort_unless($request->user()->role === Roles::PLATFORM_OWNER, 403);
+        abort_unless($bookshop->status === Bookshop::STATUS_PENDING, 422, 'Only pending bookshops can be approved.');
+        abort_unless($bookshop->owner, 422, 'This bookshop has no owner account.');
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $bookshop) {
+            $bookshop->forceFill(['status' => Bookshop::STATUS_ACTIVE, 'verified_at' => now()])->save();
+            AuditLog::record('platform.bookshop_approved', "Approved {$bookshop->name}", $bookshop, actor: $request->user(), bookshopId: $bookshop->id);
+        });
+
+        return response()->json(['message' => 'Bookshop approved and activated.', 'data' => $this->row($bookshop->fresh())]);
     }
 
     public function index(Request $request): JsonResponse
@@ -91,8 +104,7 @@ class BookshopDirectoryController extends Controller
         $data = $request->validate(['note' => ['nullable', 'string', 'max:500']]);
         abort_unless($bookshop->isSuspended(), 422, 'This bookshop is not suspended.');
 
-        $ownerVerified = (bool) $bookshop->owner?->hasVerifiedEmail();
-        $bookshop->forceFill(['status' => $ownerVerified ? Bookshop::STATUS_ACTIVE : Bookshop::STATUS_PENDING, 'suspended_at' => null, 'suspension_reason' => null])->save();
+        $bookshop->forceFill(['status' => $bookshop->verified_at ? Bookshop::STATUS_ACTIVE : Bookshop::STATUS_PENDING, 'suspended_at' => null, 'suspension_reason' => null])->save();
         $last = $bookshop->subscription?->events()->where('to_status', \App\Models\BookshopSubscription::SUSPENDED)->latest('id')->value('from_status');
         if ($bookshop->subscription && $last) {
             $subscriptions->transition($bookshop->subscription, $last, $request->user(), 'Bookshop reactivated by platform');
