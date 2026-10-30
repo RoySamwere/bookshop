@@ -9,6 +9,7 @@ export function SessionManager() {
   const pathname = usePathname()
   const { user } = useAuth()
   const protectedPage = pathname === '/account' || pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+    || pathname === '/platform' || pathname.startsWith('/platform/')
   useEffect(() => {
     if (!protectedPage || !user) return
     return startSessionMonitor(reason => {

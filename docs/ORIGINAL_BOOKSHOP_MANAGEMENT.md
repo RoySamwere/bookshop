@@ -74,6 +74,25 @@ The existing Customers, Reports & Analytics and Expenses screens remain previews
 
 ## Verification
 
+### Platform overview 401 after several minutes
+
+`SessionManager` previously monitored `/dashboard` and `/account`, but excluded `/platform`. Active platform users therefore never sent the `/auth/activity` heartbeat, and Laravel correctly rejected their session after ten minutes since login. The monitor now covers `/platform` and all its subpages. Real interaction extends the session; overview polling does not. Truly idle users retain the existing ten-minute expiry and return to login with their platform URL preserved. Authentication, CSRF and tenant restrictions remain enforced.
+
+Deploy and publish the new frontend bundle, then sign in again; an already expired session cannot be revived. For the reported VPS checkout:
+
+```bash
+set -e
+cd /home/nifunzel/domains/hekimabookshop.co.ke/app
+git pull --ff-only origin main
+cd frontend
+npm ci
+VITE_API_URL=/api/v1 npm run build
+```
+
+Publish `frontend/dist` using the existing hosting process. If the site serves a separate `public_html` copy, building `frontend/dist` alone does not update it. Preserve `public_html/index.php` and `.htaccess` when publishing the frontend. This session fix needs no production environment or credential changes and no new database migration.
+
+Checks cover the platform root/subpages, signed-out/public routes, monitor cleanup, active platform cookie sessions beyond ten minutes and rejection of idle sessions. Browser verification observed login and refresh restoration, overview HTTP 200 and periodic activity HTTP 204 after real interaction. The MySQL-specific compatibility migration was also guarded so it does not execute `SHOW COLUMNS` in SQLite tests; MySQL behavior is unchanged. Existing registration/onboarding tests that still expect the older email-only activation workflow fail against the recently merged platform-approval flow; that flow is outside this session fix.
+
 ### MySQL shop-creation 500 correction
 
 MySQL error 1406 (`Data too long for column 'registration_source'`) occurs when registration writes `bookshop_registration` (21 characters) into the original `VARCHAR(20)`. Migration `2026_11_01_000002_widen_bookshop_registration_fields` expands that column to 64 characters. It also expands `branches.city` and `business_profiles.city` to 255 characters to match the existing registration location validation. Existing values, credentials, IDs and nullability are preserved. Its down method intentionally retains the wider columns to avoid truncating valid data.

@@ -12,6 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // This compatibility migration uses MySQL-specific SQL. The later portable
+        // widening migration also handles SQLite test databases and other drivers.
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
         if (! Schema::hasColumn('users', 'registration_source')) {
             return;
         }
@@ -28,7 +33,7 @@ return new class extends Migration
         }
 
         if (! preg_match('/^varchar\\((\\d+)\\)$/i', $column->Type)) {
-            throw new \RuntimeException('Unexpected users.registration_source type; inspect it before altering.');
+            throw new RuntimeException('Unexpected users.registration_source type; inspect it before altering.');
         }
 
         $nullable = $column->Null === 'YES' ? 'NULL' : 'NOT NULL';

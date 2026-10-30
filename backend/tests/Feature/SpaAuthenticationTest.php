@@ -61,6 +61,22 @@ class SpaAuthenticationTest extends TestCase
         $this->getJson('/api/v1/auth/me')->assertOk();
     }
 
+    public function test_platform_activity_keeps_cookie_session_alive_but_overview_reads_do_not(): void
+    {
+        $owner = User::factory()->create(['role' => Roles::PLATFORM_OWNER]);
+        $this->postJson('/api/v1/auth/login', ['email' => $owner->email, 'password' => 'password'])->assertOk();
+        $this->travel(9)->minutes();
+        $this->postJson('/api/v1/auth/activity')->assertNoContent();
+        $this->travel(9)->minutes();
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/v1/platform/overview')->assertOk();
+        $this->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.account_type', 'platform');
+        $this->travel(1)->minutes();
+        $this->getJson('/api/v1/platform/overview')->assertUnauthorized()->assertJsonPath('reason', 'idle');
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/v1/auth/activity')->assertUnauthorized();
+    }
+
     public function test_spa_can_change_password_with_a_transient_sanctum_token(): void
     {
         $user = User::factory()->create();
