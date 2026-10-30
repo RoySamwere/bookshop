@@ -1,0 +1,12 @@
+# Vite writes content-hashed filenames into /assets, so each file can be cached permanently;
+# a new deploy changes the names. Scoped to this folder so it never replaces the site's routing rules.
+<IfModule mod_headers.c>
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresDefault "access plus 1 year"
+</IfModule>
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/javascript text/javascript text/css image/svg+xml
+</IfModule>

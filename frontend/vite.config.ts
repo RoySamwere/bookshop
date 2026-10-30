@@ -19,7 +19,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Charts are a large vendor dependency of the dashboard; keep them in their own long-cached chunk.
-        manualChunks: id => /node_modules[\\/](recharts|d3-|victory-vendor)/.test(id) ? 'charts' : undefined,
+        // React gets its own chunk first, otherwise Rollup pulls it into `charts` and every page (even login) must download the charts.
+        manualChunks: id => /node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id) ? 'react'
+          : /node_modules[\\/](recharts|d3-|victory-vendor)/.test(id) ? 'charts' : undefined,
       },
     },
   },
