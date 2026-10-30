@@ -56,6 +56,7 @@ export const platformApi = {
   overview: async () => (await api<{ data: PlatformOverview }>('/platform/overview')).data,
   bookshops: (query: { search?: string; status?: string; page?: number }) => api<Paginated<PlatformBookshop>>('/platform/bookshops', { query }),
   bookshop: async (id: number) => (await api<{ data: PlatformBookshopDetails }>(`/platform/bookshops/${id}`)).data,
+  updateBookshop: (id: number, body: { name: string; business_email: string; phone: string; location: string }) => api<Saved<PlatformBookshop>>(`/platform/bookshops/${id}`, { method: 'PATCH', body }),
   approve: (id: number) => api<Saved<PlatformBookshop>>(`/platform/bookshops/${id}/approve`, { method: 'POST' }),
   suspend: (id: number, reason: string) => api<Saved<PlatformBookshop>>(`/platform/bookshops/${id}/suspend`, { method: 'POST', body: { reason } }),
   reactivate: (id: number, note: string) => api<Saved<PlatformBookshop>>(`/platform/bookshops/${id}/reactivate`, { method: 'POST', body: { note: note || null } }),
