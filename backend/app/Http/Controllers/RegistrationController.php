@@ -92,16 +92,14 @@ class RegistrationController extends Controller
         $user->markEmailAsVerified();
         event(new Verified($user));
         AuditLog::record('auth.email_verified', "{$user->name} verified their email address", $user, actor: $user);
-        $activated = $this->activateOwnedBookshop($user);
 
         return response()->json([
             'message' => match (true) {
-                $activated => 'Email verified. Your bookshop is active and ready to set up.',
                 $user->hasPendingStaffRequest() => 'Email verified. Your staff access request is now ready for review.',
                 default => 'Email verified. You can now sign in.',
             },
             'status' => 'verified',
-            'next' => $user->role === Roles::BOOKSHOP_OWNER ? '/onboarding/setup' : null,
+            'next' => $user->role === Roles::BOOKSHOP_OWNER ? '/onboarding/verify-email' : null,
         ]);
     }
 
@@ -133,19 +131,6 @@ class RegistrationController extends Controller
         return response()->json([
             'message' => $sent ? "A new verification link has been sent to {$user->email}." : 'We could not send the email right now. Try again later.',
         ], $sent ? 200 : 503);
-    }
-
-    /** A registering owner's bookshop goes live once their email address is confirmed. */
-    private function activateOwnedBookshop(User $user): bool
-    {
-        $bookshop = $user->role === Roles::BOOKSHOP_OWNER ? Bookshop::where('owner_user_id', $user->id)->first() : null;
-        if (! $bookshop || $bookshop->status !== Bookshop::STATUS_PENDING) {
-            return false;
-        }
-        $bookshop->forceFill(['status' => Bookshop::STATUS_ACTIVE, 'verified_at' => now()])->save();
-        AuditLog::record('bookshop.activated', "{$bookshop->name} was activated after the owner verified their email", $bookshop, actor: $user);
-
-        return true;
     }
 
     /** Only the bookshop the applicant named reviews their request. */

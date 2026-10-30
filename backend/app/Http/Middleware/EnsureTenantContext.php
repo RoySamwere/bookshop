@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Bookshop workspace gate. The tenant is the signed-in user's own bookshop; it must exist and not be
- * suspended. Business operations also need a verified email and an activated bookshop, while
+ * suspended. Business operations require platform approval and an activated bookshop, while
  * 'tenant:onboarding' routes stay open to owners who are still finishing registration.
  */
 class EnsureTenantContext
@@ -31,11 +31,8 @@ class EnsureTenantContext
         }
 
         if ($mode !== 'onboarding') {
-            if (! $user->hasVerifiedEmail()) {
-                return $this->deny('Verify your email address to start using the workspace.', 'email_unverified');
-            }
             if (! $bookshop->isActive()) {
-                return $this->deny('This bookshop is not active yet. The owner must verify their email address first.', 'bookshop_pending');
+                return $this->deny('This bookshop is awaiting Platform Owner approval.', 'bookshop_pending');
             }
         }
 

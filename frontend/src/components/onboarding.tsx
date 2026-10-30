@@ -11,7 +11,7 @@ import { ApiError, errorMessage } from '../lib/api'
 import { logout, resendMyVerification, type BookshopUser } from '../lib/auth'
 import { bookshopApi, COUNTRY_CURRENCIES, type BookshopProfilePayload } from '../lib/tenancy-api'
 
-const story = { title: 'Set up your bookshop.', body: 'Confirm your email, check your shop details and invite your team. Your records stay private to your bookshop.' }
+const story = { title: 'Set up your bookshop.', body: 'Wait for platform approval, check your shop details and invite your team. Your records stay private to your bookshop.' }
 
 /** Onboarding is for bookshop owners; everyone else is sent where they belong. */
 function OwnerGate({ children }: { children: (user: BookshopUser) => ReactNode }) {
@@ -54,21 +54,12 @@ function VerifyEmailScreen({ user }: { user: BookshopUser }) {
     finally { setPending(false) }
   }
 
-  if (user.email_verified) return <AuthShell story={story}>
-    <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><CircleCheck size={24} /></span>
-    <AuthHeading title="Email verified">{user.bookshop?.name} is active. Finish a few setup steps to start selling.</AuthHeading>
-    <Link to="/onboarding/setup" className={`${primaryButton} w-full`}>Continue setup <ArrowUpRight size={16} /></Link>
-  </AuthShell>
+  if (user.bookshop?.status === 'active') return <Navigate replace to="/onboarding/setup" />
 
   return <AuthShell story={story}>
-    <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-600"><MailWarning size={24} /></span>
-    <AuthHeading title="Confirm your email">We sent a link to <strong>{user.email}</strong>. Open it to activate {user.bookshop?.name}. Until then you can review your shop details, but sales and stock stay locked.</AuthHeading>
-    {notice && <FormAlert tone={notice.tone} message={notice.message} />}
-    <div className="mt-6 grid gap-3 sm:grid-cols-2">
-      <button type="button" className={`${primaryButton} w-full`} onClick={() => void client.invalidateQueries({ queryKey: ['auth', 'me'] })}><RefreshCw size={16} /> I&apos;ve verified</button>
-      <button type="button" className={`${secondaryButton} w-full`} onClick={() => void resend()} disabled={pending}>{pending ? 'Sending…' : 'Resend the email'}</button>
-    </div>
-    <p className="hk-auth-alt"><Link to="/onboarding/bookshop" className="hk-auth-link">Review shop details</Link></p>
+    <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-600"><ShieldAlert size={24} /></span>
+    <AuthHeading title="Awaiting Platform Owner approval">Your bookshop {user.bookshop?.name} is registered. The Platform Owner will review and activate it. No email verification is required.</AuthHeading>
+    <button type="button" className={`${primaryButton} mt-5 w-full`} onClick={() => void client.invalidateQueries({ queryKey: ['auth', 'me'] })}><RefreshCw size={16} /> Check approval status</button>
     <SignOutLink />
   </AuthShell>
 }
@@ -83,7 +74,7 @@ function SetupScreen({ user }: { user: BookshopUser }) {
   if (details.error) return <AuthShell story={story}><ErrorState message={errorMessage(details.error)} onRetry={() => void details.refetch()} /></AuthShell>
   const shop = details.data
   const steps = [
-    { done: shop.onboarding.email_verified, title: 'Confirm your email address', body: 'Activates your bookshop.', icon: <MailWarning size={18} />, to: '/onboarding/verify-email', action: 'Verify' },
+    { done: shop.status === 'active', title: 'Platform Owner approval', body: 'The Platform Owner activates your bookshop.', icon: <MailWarning size={18} />, to: '/onboarding/verify-email', action: 'Verify' },
     { done: shop.onboarding.profile_completed, title: 'Check your shop details', body: 'Name, phone, location and currency used on receipts.', icon: <Store size={18} />, to: '/onboarding/bookshop', action: 'Edit details' },
     { done: shop.onboarding.has_branch, title: 'Your main branch', body: `${shop.counts.branches} branch${shop.counts.branches === 1 ? '' : 'es'} set up. Add more in Settings.`, icon: <Building2 size={18} />, to: '/dashboard?section=Settings', action: 'Branches' },
     { done: shop.onboarding.has_staff, title: 'Invite your team', body: 'Give cashiers and managers their own sign-in, limited to their branches.', icon: <Users size={18} />, to: '/dashboard?section=My%20Bookshop', action: 'Invite' },
@@ -96,12 +87,12 @@ function SetupScreen({ user }: { user: BookshopUser }) {
       {steps.map(step => <li key={step.title} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <span className={`mt-0.5 ${step.done ? 'text-emerald-600' : 'text-slate-300'}`} aria-label={step.done ? 'Done' : 'To do'}>{step.done ? <CircleCheck size={20} /> : <Circle size={20} />}</span>
         <div className="min-w-0 flex-1"><p className="m-0 text-sm font-semibold text-slate-900">{step.title}</p><p className="m-0 mt-0.5 text-xs text-slate-500">{step.body}</p></div>
-        {!step.done && (shop.onboarding.email_verified || step.to.startsWith('/onboarding')) && <Link to={step.to} className="shrink-0 text-xs font-semibold text-[#087df5]">{step.action}</Link>}
+        {!step.done && (shop.status === 'active' || step.to.startsWith('/onboarding')) && <Link to={step.to} className="shrink-0 text-xs font-semibold text-[#087df5]">{step.action}</Link>}
       </li>)}
     </ol>
-    {shop.onboarding.email_verified
+    {shop.status === 'active'
       ? <Link to="/dashboard" className={`${primaryButton} mt-6 w-full`}>Open my dashboard <ArrowUpRight size={16} /></Link>
-      : <p className="mt-6 text-center text-sm text-slate-500">Confirm your email to open the dashboard.</p>}
+      : <p className="mt-6 text-center text-sm text-slate-500">Wait for Platform Owner approval to open the dashboard.</p>}
   </AuthShell>
 }
 

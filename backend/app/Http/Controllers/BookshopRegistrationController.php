@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Requests\BookshopRegistrationRequest;
 use App\Models\PlatformSetting;
 use App\Services\BookshopRegistrationService;
-use App\Support\SafeMail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
@@ -19,7 +18,6 @@ class BookshopRegistrationController extends Controller
         }
 
         $owner = $registration->register($request->validated());
-        $sent = SafeMail::send(fn () => $owner->sendEmailVerificationNotification());
 
         // Browser sign-ups continue straight into onboarding; unverified owners only reach onboarding routes.
         if ($request->hasSession()) {
@@ -29,12 +27,10 @@ class BookshopRegistrationController extends Controller
         }
 
         return response()->json([
-            'message' => $sent
-                ? 'Your bookshop has been created. Check your email for a link to verify your address.'
-                : 'Your bookshop has been created, but we could not send the verification email right now. You can request a new link shortly.',
+            'message' => 'Your bookshop has been registered and is awaiting Platform Owner approval.',
             'data' => [
                 'email' => $owner->email,
-                'verification_email_sent' => $sent,
+                'verification_email_sent' => false,
                 'signed_in' => $request->hasSession(),
                 'next' => '/onboarding/verify-email',
                 'bookshop' => $owner->bookshop->only(['id', 'name', 'slug', 'status']),
