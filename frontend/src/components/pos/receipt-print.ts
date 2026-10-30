@@ -77,7 +77,7 @@ export function invoiceHtml(receipt: PosReceipt, profile: BusinessProfile | null
   <table class="totals"><tr><td>Subtotal</td><td class="num">${escape(formatKes(subtotal))}</td></tr>${vat ? `<tr><td>${escape(vat.label)} (${escape(vat.rate)}%)</td><td class="num">${escape(formatKes(vat.amount))}</td></tr>` : ''}<tr class="grand"><td>TOTAL AMOUNT</td><td class="num">${escape(formatKes(total))}</td></tr></table>
   <footer><div><b>PAYMENT DETAILS</b><br>Paid by ${escape(METHOD_LABELS[sale.payment_method] || sale.payment_method)}${sale.payment_reference ? `<br>Reference: ${escape(sale.payment_reference)}` : ''}<br>Amount due: KSh 0.00</div><i>Knowledge is Wisdom</i></footer>
   </body></html>`
-
+}
 
 /** Prints through a hidden frame, so popup blockers cannot stop it and the till stays in view. */
 export function printReceipt(html: string) {
