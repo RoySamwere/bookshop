@@ -12,7 +12,7 @@ class InventoryController extends Controller
 {
     public function index(Request $request) {
         $tenant=Tenant::requireId();
-        $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'status'=>'nullable|in:available,low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
+        $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'search_field'=>'nullable|in:all,title,sku,isbn', 'min_available'=>'nullable|integer|min:0', 'max_available'=>'nullable|integer|min:0', 'sort'=>'nullable|in:available_desc,available_asc,title_asc,title_desc,sku_asc', 'status'=>'nullable|in:available,low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
         $branches=$user->isOwner() ? null : $user->branchIds();
         // Every catalogued product is visible in inventory, including zero-stock items.
@@ -26,16 +26,32 @@ class InventoryController extends Controller
             ->where('b.is_active',true)->where('br.is_active',true)
             ->when($branches!==null,fn($q)=>$q->whereIn('br.id',$branches))
             ->when($request->query('branch_id'),fn($q,$id)=>$q->where('br.id',$id))
-            ->when($request->query('search'),fn($q,$search)=>$q->where(fn($q)=>
-                $q->where('b.title','like',"%{$search}%")->orWhere('b.sku','like',"%{$search}%")
-                ->orWhere('b.isbn','like',"%{$search}%")));
+            ->when($request->query('search'), function($q,$search) use ($request) {
+                $terms=preg_split('/\\s+/',trim($search),-1,PREG_SPLIT_NO_EMPTY);
+                $field=$request->query('search_field','all');
+                foreach ($terms as $term) {
+                    $escaped=addcslashes($term,'%_\\\\');
+                    $like='%'.$escaped.'%';
+                    $q->where(function($inner) use($field,$like) {
+                        if($field==='all'||$field==='title')$inner->orWhere('b.title','like',$like);
+                        if($field==='all'||$field==='sku')$inner->orWhere('b.sku','like',$like);
+                        if($field==='all'||$field==='isbn')$inner->orWhere('b.isbn','like',$like);
+                    });
+                }
+            })
+            ->when($request->filled('min_available'),fn($q)=>$q->whereRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) >= ?',[(int)$request->query('min_available')]))
+            ->when($request->filled('max_available'),fn($q)=>$q->whereRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) <= ?',[(int)$request->query('max_available')]));
         $summary = (clone $query)->selectRaw('COALESCE(SUM(COALESCE(i.quantity,0)), 0) as units, COALESCE(SUM(COALESCE(i.quantity,0) * b.selling_price), 0) as value, COUNT(*) as stock_lines, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level THEN 1 ELSE 0 END), 0) as low, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0 THEN 1 ELSE 0 END), 0) as out_of_stock')->first();
         $result = $query
             ->when($request->query('status') === 'available', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0'))
             ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level'))
             ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0'))
             ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, br.name as branch_name')
-            ->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) DESC')->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
+            ->when($request->query('sort','available_desc')==='available_desc',fn($q)=>$q->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) DESC'))
+            ->when($request->query('sort')==='available_asc',fn($q)=>$q->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) ASC'))
+            ->when($request->query('sort')==='title_desc',fn($q)=>$q->orderBy('b.title','desc'))
+            ->when($request->query('sort')==='sku_asc',fn($q)=>$q->orderBy('b.sku'))
+            ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
     public function bulkReceive(Request $request, InventoryService $service) {
