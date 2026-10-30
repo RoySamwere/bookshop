@@ -11,8 +11,14 @@ import './pages/pos.css'
 import './pages/shop-theme.css'
 import './pages/pos-theme.css'
 import { clearLegacyCredentials } from './lib/api'
+import { reloadOnceForFreshAssets } from './lib/lazy-page'
 
 clearLegacyCredentials()
+
+// Vite fires this when a page's supporting files (shared JS or CSS) fail to load, usually after a redeploy.
+window.addEventListener('vite:preloadError', event => {
+  if (reloadOnceForFreshAssets()) event.preventDefault()
+})
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter><QueryClientProvider client={queryClient}><AuthProvider><AppRoutes /></AuthProvider></QueryClientProvider></BrowserRouter>,

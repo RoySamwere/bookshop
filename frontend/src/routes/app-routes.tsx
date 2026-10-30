@@ -1,29 +1,31 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { Link, Navigate, Route, Routes } from 'react-router-dom'
 import BrandLoader from '../components/brand-loader'
 import { SessionManager } from '../components/session-manager'
 import { ProtectedRoute } from './protected-route'
+import { PageLoadBoundary } from '../components/page-load-boundary'
+import { lazyPage } from '../lib/lazy-page'
 
-const Home = lazy(() => import('../pages/page'))
-const Login = lazy(() => import('../pages/login/page'))
-const Register = lazy(() => import('../pages/register/page'))
-const Forgot = lazy(() => import('../pages/forgot-password/page'))
-const Reset = lazy(() => import('../pages/reset-password/page'))
-const Verify = lazy(() => import('../pages/verify-email/page'))
-const Terms = lazy(() => import('../pages/terms/page'))
-const Account = lazy(() => import('../pages/account/page'))
-const Dashboard = lazy(() => import('../pages/dashboard/page'))
-const Catalog = lazy(() => import('../pages/dashboard/catalog/page'))
-const PublicProducts = lazy(() => import('../pages/public-products/page'))
-const RegisterBookshop = lazy(() => import('../pages/register/bookshop/page'))
-const OnboardingVerify = lazy(() => import('../pages/onboarding/verify-email/page'))
-const OnboardingSetup = lazy(() => import('../pages/onboarding/setup/page'))
-const OnboardingBookshop = lazy(() => import('../pages/onboarding/bookshop/page'))
-const AcceptInvitation = lazy(() => import('../pages/accept-invitation/page'))
-const Platform = lazy(() => import('../pages/platform/page'))
+const Home = lazyPage(() => import('../pages/page'))
+const Login = lazyPage(() => import('../pages/login/page'))
+const Register = lazyPage(() => import('../pages/register/page'))
+const Forgot = lazyPage(() => import('../pages/forgot-password/page'))
+const Reset = lazyPage(() => import('../pages/reset-password/page'))
+const Verify = lazyPage(() => import('../pages/verify-email/page'))
+const Terms = lazyPage(() => import('../pages/terms/page'))
+const Account = lazyPage(() => import('../pages/account/page'))
+const Dashboard = lazyPage(() => import('../pages/dashboard/page'))
+const Catalog = lazyPage(() => import('../pages/dashboard/catalog/page'))
+const PublicProducts = lazyPage(() => import('../pages/public-products/page'))
+const RegisterBookshop = lazyPage(() => import('../pages/register/bookshop/page'))
+const OnboardingVerify = lazyPage(() => import('../pages/onboarding/verify-email/page'))
+const OnboardingSetup = lazyPage(() => import('../pages/onboarding/setup/page'))
+const OnboardingBookshop = lazyPage(() => import('../pages/onboarding/bookshop/page'))
+const AcceptInvitation = lazyPage(() => import('../pages/accept-invitation/page'))
+const Platform = lazyPage(() => import('../pages/platform/page'))
 
 export function AppRoutes() {
-  return <><SessionManager /><Suspense fallback={<BrandLoader />}><Routes>
+  return <><SessionManager /><PageLoadBoundary><Suspense fallback={<BrandLoader />}><Routes>
     <Route path="/" element={<Home />} />
     <Route path="/login" element={<Login />} />
     <Route path="/register" element={<Register />} />
@@ -46,5 +48,5 @@ export function AppRoutes() {
     </Route>
     <Route element={<ProtectedRoute permission="catalog.view" />}><Route path="/dashboard/catalog" element={<Catalog />} /></Route>
     <Route path="*" element={<main className="p-8"><h1>Page not found</h1><Link to="/">Return home</Link></main>} />
-  </Routes></Suspense></>
+  </Routes></Suspense></PageLoadBoundary></>
 }
