@@ -5,10 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#13254A" />
     <title>Hekima Bookshop</title>
+    <script>
+      // Runs before the app. If the app's own files fail to download (for example ERR_CONNECTION_RESET),
+      // the app cannot start and cannot show an error itself: reload once, then show #boot-fallback.
+      (function () {
+        var KEY = 'hekima:boot-reload-at', handled = false
+        function show() {
+          var box = document.getElementById('boot-fallback')
+          if (box) box.hidden = false
+          else document.addEventListener('DOMContentLoaded', show)
+        }
+        function failed() {
+          if (handled || window.__hekimaStarted) return
+          handled = true
+          var last = 0
+          try { last = Number(sessionStorage.getItem(KEY) || 0) } catch (e) {}
+          if (Date.now() - last > 30000) {
+            try { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return } catch (e) {}
+          }
+          show()
+        }
+        window.addEventListener('error', function (event) {
+          var el = event.target, url = el && (el.src || el.href)
+          if (url && /\/assets\//.test(url) && (el.tagName === 'SCRIPT' || el.tagName === 'LINK')) failed()
+        }, true)
+        // A download that stalls without an error: offer the reload after 20 seconds.
+        setTimeout(function () { if (!window.__hekimaStarted && !handled) { handled = true; show() } }, 20000)
+      })()
+    </script>
     <link rel="icon" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Libre+Caslon+Display&display=swap" rel="stylesheet" />
   </head>
-  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+  <body>
+    <div id="root"><div id="boot-fallback" hidden style="min-height:100dvh;display:grid;place-items:center;padding:24px;background:#F5F7FC;font-family:Figtree,system-ui,sans-serif;color:#14213D;text-align:center">
+      <div style="max-width:420px">
+        <h1 style="margin:0 0 8px;font-size:22px">Hekima didn&rsquo;t finish loading</h1>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#4A5670">The connection dropped while the app was downloading. Check your internet connection, then reload.</p>
+        <button type="button" onclick="location.reload()" style="height:46px;padding:0 22px;border:0;border-radius:12px;background:#0A63E0;color:#fff;font-size:15px;font-weight:600;cursor:pointer">Reload page</button>
+      </div>
+    </div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
