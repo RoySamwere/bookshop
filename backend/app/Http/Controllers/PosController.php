@@ -32,7 +32,7 @@ class PosController extends Controller
         $search=isset($data['search'])?trim($data['search']):null;
         $allowed=$this->branches($request);
         abort_if(!in_array((int)$data['branch_id'],$allowed,true),403,'Branch access denied.');
-        $imageColumn = collect(['image_url', 'cover_image_url', 'image_path', 'cover_image', 'image'])->first(fn ($column) => Schema::hasColumn('books', $column));
+        $imageColumn = collect(['cover_url', 'image_url', 'cover_image_url', 'image_path', 'cover_image', 'image'])->first(fn ($column) => Schema::hasColumn('books', $column));
         return DB::table('books as b')->where('b.bookshop_id',Tenant::requireId())->leftJoin('inventory_balances as i',function($join)use($data){
             $join->on('i.book_id','=','b.id')->where('i.branch_id','=',$data['branch_id']);
         })->leftJoin('product_subcategories as sub','sub.id','=','b.product_subcategory_id')
