@@ -14,6 +14,7 @@ const Terms = lazy(() => import('../pages/terms/page'))
 const Account = lazy(() => import('../pages/account/page'))
 const Dashboard = lazy(() => import('../pages/dashboard/page'))
 const Catalog = lazy(() => import('../pages/dashboard/catalog/page'))
+const PublicProducts = lazy(() => import('../pages/public-products/page'))
 const RegisterBookshop = lazy(() => import('../pages/register/bookshop/page'))
 const OnboardingVerify = lazy(() => import('../pages/onboarding/verify-email/page'))
 const OnboardingSetup = lazy(() => import('../pages/onboarding/setup/page'))
@@ -27,6 +28,7 @@ export function AppRoutes() {
     <Route path="/login" element={<Login />} />
     <Route path="/register" element={<Register />} />
     <Route path="/register/bookshop" element={<RegisterBookshop />} />
+    <Route path="/products" element={<PublicProducts />} />
     <Route path="/accept-invitation" element={<AcceptInvitation />} />
     {/* Onboarding and the platform console check the account type themselves. */}
     <Route path="/onboarding/verify-email" element={<OnboardingVerify />} />
