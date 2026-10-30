@@ -220,13 +220,13 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   useEffect(()=>{if(!uploadOpen)return;api<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>('/product-hierarchy').then(setHierarchy).catch(e=>setUploadError(e instanceof Error?e.message:'Could not load categories'))},[uploadOpen])
-  async function downloadTemplate(){const headers=['Category','Subcategory','Product Name','SKU','Cost Price','Selling Price'];const csv=[headers.join(','),'Exercise Books,Single Lined,Example Exercise Book,EXAMPLE-001,25,40'].join('\\r\\n');const url=URL.createObjectURL(new Blob(['\\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='hekima-products-template.csv';link.click();URL.revokeObjectURL(url)}
+  async function downloadTemplate(){const headers=['Category','Subcategory','Product Name','SKU','Cost Price','Selling Price'];const csv=[headers.join(','),[hierarchy[0]?.name??'',hierarchy[0]?.subcategories[0]?.name??'','Example Product','EXAMPLE-001','25','40'].map(v=>'"'+v.replaceAll('"','""')+'"').join(',')].join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='hekima-products-template.csv';link.click();URL.revokeObjectURL(url)}
   async function readProducts(file:File|undefined){setUploadRows([]);setUploadError('');if(!file)return;try{
-    if(!/\\.csv$/i.test(file.name))throw Error('Choose a CSV (.csv) file')
+    if(!/\.csv$/i.test(file.name))throw Error(`Choose a .csv file. Selected: ${file.name}`)
     if(file.size>5_000_000)throw Error('CSV file must be no larger than 5 MB')
-    const text=(await file.text()).replace(/^\\uFEFF/,'')
+    const text=(await file.text()).replace(/^\uFEFF/,'')
     const records:string[][]=[];let row:string[]=[],cell='',quoted=false
-    for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(ch===','&&!quoted){row.push(cell.trim());cell=''}else if((ch==='\\n'||ch==='\\r')&&!quoted){if(ch==='\\r'&&text[i+1]==='\\n')i++;row.push(cell.trim());if(row.some(v=>v))records.push(row);row=[];cell=''}else cell+=ch}
+    for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(ch===','&&!quoted){row.push(cell.trim());cell=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cell.trim());if(row.some(v=>v))records.push(row);row=[];cell=''}else cell+=ch}
     if(quoted)throw Error('Invalid CSV: unclosed quoted field')
     row.push(cell.trim());if(row.some(v=>v))records.push(row)
     if(records.length<2)throw Error('CSV contains no product rows')
