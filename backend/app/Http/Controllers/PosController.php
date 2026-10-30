@@ -33,9 +33,7 @@ class PosController extends Controller
         $allowed=$this->branches($request);
         abort_if(!in_array((int)$data['branch_id'],$allowed,true),403,'Branch access denied.');
         $imageColumn = collect(['cover_url', 'image_url', 'cover_image_url', 'image_path', 'cover_image', 'image'])->first(fn ($column) => Schema::hasColumn('books', $column));
-        return DB::table('books as b')->where('b.bookshop_id',Tenant::requireId())->leftJoin('inventory_balances as i',function($join)use($data){
-            $join->on('i.book_id','=','b.id')->where('i.branch_id','=',$data['branch_id']);
-        })->leftJoin('product_subcategories as sub','sub.id','=','b.product_subcategory_id')
+        return DB::table('inventory_balances as i')->join('books as b','b.id','=','i.book_id')->where('b.bookshop_id',Tenant::requireId())->where('i.bookshop_id',Tenant::requireId())->where('i.branch_id',$data['branch_id'])->leftJoin('product_subcategories as sub','sub.id','=','b.product_subcategory_id')
         ->leftJoin('product_categories as cat','cat.id','=','sub.product_category_id')
         ->where('b.is_active',true)
         ->when($search,function($q,$search){$q->where(function($q)use($search){
@@ -47,7 +45,7 @@ class PosController extends Controller
         ->selectRaw('CASE WHEN COALESCE(i.quantity,0)>COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0)-COALESCE(i.reserved,0) ELSE 0 END as available')
         // A scanned barcode (exact SKU or ISBN) is always the first result.
         ->when($search,fn($q,$search)=>$q->orderByRaw('CASE WHEN b.sku = ? OR b.isbn = ? THEN 0 ELSE 1 END',[$search,$search]))
-        ->orderBy('b.title')->paginate(30);
+        ->orderByRaw('GREATEST(COALESCE(i.quantity,0)-COALESCE(i.reserved,0),0) DESC')->orderBy('b.title')->paginate(30);
     }
 
     public function sales(Request $request) {
