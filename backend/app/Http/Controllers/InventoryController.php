@@ -15,14 +15,12 @@ class InventoryController extends Controller
         $request->validate(['branch_id'=>['nullable','integer',Tenant::exists('branches')], 'search'=>'nullable|string|max:255', 'search_field'=>'nullable|in:all,title,sku,isbn', 'min_available'=>'nullable|integer|min:0', 'max_available'=>'nullable|integer|min:0', 'sort'=>'nullable|in:available_desc,available_asc,title_asc,title_desc,sku_asc', 'status'=>'nullable|in:available,low,out', 'per_page'=>'nullable|integer|in:10,20,30,50,100,200']);
         $user=$request->user();
         $branches=$user->isOwner() ? null : $user->branchIds();
-        // Every catalogued product is visible in inventory, including zero-stock items.
-        // Only accessible branches are included; no synthetic inventory movements are created.
-        $query = DB::table('books as b')
-            ->crossJoin('branches as br')
-            ->leftJoin('inventory_balances as i', function($join) {
-                $join->on('i.book_id','=','b.id')->on('i.branch_id','=','br.id');
-            })
-            ->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
+        // Only products explicitly assigned to a shop through inventory receiving
+        // are visible here. A zero balance remains visible for stock history/restocking.
+        $query = DB::table('inventory_balances as i')
+            ->join('books as b','b.id','=','i.book_id')
+            ->join('branches as br','br.id','=','i.branch_id')
+            ->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)->where('i.bookshop_id',$tenant)
             ->where('b.is_active',true)->where('br.is_active',true)
             ->when($branches!==null,fn($q)=>$q->whereIn('br.id',$branches))
             ->when($request->query('branch_id'),fn($q,$id)=>$q->where('br.id',$id))
