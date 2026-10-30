@@ -180,7 +180,7 @@ export function WorkspaceApp() {
     : active === PROFILE_SECTION ? <ProfileView currentUser={currentUser} onUpdated={setCurrentUser} notify={notify} />
     : active === 'Point of Sale' ? <PosTerminal currentUser={currentUser} notify={notify} onExit={() => navigateTo(canOpenSection(currentUser, 'Dashboard') ? 'Dashboard' : firstSection(currentUser))} onNavigate={navigateTo} />
     : active === 'Sales History' ? <SalesHistoryView />
-    : active === 'Products & Books' ? <ProductsBooksView setToast={notify} onAssign={book => { setStockSelection(book); navigateTo('Inventory & Stock') }} canAssign={hasPermission(currentUser, 'inventory.manage') && canOpenSection(currentUser, 'Inventory & Stock')} />
+    : active === 'Products & Books' ? <ProductsBooksView setToast={notify} onAssign={book => { setStockSelection(book); navigateTo('Inventory & Stock') }} canAssign={hasPermission(currentUser, 'inventory.manage') && canOpenSection(currentUser, 'Inventory & Stock')} canEdit={hasPermission(currentUser, 'catalog.manage')} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} stockSelection={stockSelection} onSelectionConsumed={() => setStockSelection(null)} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
     : active === 'Suppliers' ? <SuppliersView setToast={notify} />
