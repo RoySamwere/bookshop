@@ -9,7 +9,7 @@ export function receiptDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-/** Plain HTML sized for an 80 mm thermal roll; also prints legibly on A4. */
+/** Responsive receipt for thermal rolls (58/80 mm) and ordinary printer paper. */
 export function receiptHtml(receipt: PosReceipt, profile: BusinessProfile | null, details: { shopName: string; branch?: string; cashier?: string }) {
   const { sale, items } = receipt
   const total = toNumber(sale.total)
@@ -18,12 +18,23 @@ export function receiptHtml(receipt: PosReceipt, profile: BusinessProfile | null
   const subtotal = vat ? total - vat.amount : total
   const lines = items.map(item => `<tr><td>${escape(item.title)}</td><td class="num">${escape(item.quantity)}</td><td class="num">${escape(formatKes(toNumber(item.unit_price)))}</td><td class="num">${escape(formatKes(toNumber(item.line_total)))}</td></tr>`).join('')
   return `<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${escape(sale.receipt_number)}</title><style>
-    @page { size: 80mm auto; margin: 4mm; }
-    body { font: 11px/1.45 'Courier New', monospace; color:#111; width:72mm; margin:0 auto; }
+    @page { margin: 4mm; }
+    * { box-sizing: border-box; }
+    html,body { max-width:100%; margin:0; padding:0; }
+    body { font: 11px/1.45 'Courier New', monospace; color:#111; width:100%; max-width:80mm; margin:0 auto; overflow-wrap:anywhere; }
+    @media print { body { max-width:100%; } }
+    @media screen { body { padding:12px; } }
     h1 { font-size:16px; margin:0; text-align:center; font-weight:900; }
     .center{text-align:center}.small{font-size:10px}.line{border-top:1px dashed #222;margin:9px 0}
-    table{width:100%;border-collapse:collapse;font-size:10px}th{text-align:left;border-bottom:1px dashed #222}
-    td{padding:4px 1px;vertical-align:top;overflow-wrap:anywhere}.num{text-align:right}
+    table{width:100%;border-collapse:collapse;font-size:clamp(8px,2vw,10px);table-layout:fixed}
+    th{text-align:left;border-bottom:1px dashed #222;overflow-wrap:anywhere}
+    th:first-child,td:first-child{width:43%;text-align:left}
+    th:nth-child(2),td:nth-child(2){width:10%}
+    th:nth-child(3),td:nth-child(3){width:23%}
+    th:nth-child(4),td:nth-child(4){width:24%}
+    td{padding:4px 1px;vertical-align:top;overflow-wrap:anywhere}
+    .num{text-align:right;white-space:normal;font-variant-numeric:tabular-nums}
+    .sum{table-layout:auto}.sum td:first-child{width:auto}.sum td:last-child{text-align:right}
     .sum td{padding:3px 0}.grand td{border-top:1px dashed #222;font-size:14px;font-weight:bold;padding-top:7px}
     .footer{margin-top:18px;text-align:center}
   </style></head><body>
@@ -50,7 +61,7 @@ export function receiptHtml(receipt: PosReceipt, profile: BusinessProfile | null
   </body></html>`
 }
 
-/** A4 invoice for an already completed and paid POS transaction. */
+/** Responsive invoice for A4, Letter, A5 and other printer page sizes. */
 export function invoiceHtml(receipt: PosReceipt, profile: BusinessProfile | null, customer: { name: string; email?: string; address?: string; phone?: string }) {
   const { sale, items } = receipt
   const total = toNumber(sale.total)
@@ -59,16 +70,28 @@ export function invoiceHtml(receipt: PosReceipt, profile: BusinessProfile | null
   const invoiceNumber = 'INV-' + sale.receipt_number
   const rows = items.map(item => `<tr><td>${escape(item.title)}</td><td class="num">${escape(item.quantity)}</td><td class="num">${escape(formatKes(toNumber(item.unit_price)))}</td><td class="num">${escape(formatKes(toNumber(item.line_total)))}</td></tr>`).join('')
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(invoiceNumber)}</title><style>
-  @page{size:A4;margin:17mm}body{font:13px/1.55 Arial,sans-serif;color:#171717;margin:0}
-  header{display:flex;justify-content:space-between;gap:24px;align-items:start;margin-bottom:42px}
+  @page{margin:12mm}
+  *{box-sizing:border-box}
+  html,body{width:100%;max-width:100%;margin:0;padding:0}
+  body{font:13px/1.55 Arial,sans-serif;color:#171717;overflow-wrap:anywhere}
+  header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px;align-items:start;margin-bottom:28px}
+  header>div{flex:1 1 210px;min-width:0}
+  @media print{header,footer,.bill,tr{break-inside:avoid}thead{display:table-header-group}}
+  @media screen{body{max-width:210mm;margin:auto;padding:18px}}
+  @media(max-width:500px){header{display:block}header .right{text-align:left;margin-top:15px}h2{text-align:left!important}}
+  
   h1{font-size:24px;margin:0}h2{font-size:27px;font-weight:500;margin:0;text-align:right}
   .muted{color:#555;font-size:12px}.right{text-align:right}.label{font-weight:700;font-size:12px}
   .bill{margin-bottom:38px;border-top:2px solid #222;padding-top:12px;max-width:310px;white-space:pre-line}
-  table{width:100%;border-collapse:collapse}thead{background:#171717;color:white}
-  th{text-align:left;padding:12px 9px;font-size:12px}td{border-bottom:1px solid #e5e5e5;padding:12px 9px}
-  .num{text-align:right;white-space:nowrap}.totals{margin:26px 0 0 auto;width:300px}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  thead{background:#171717;color:white}
+  th{text-align:left;padding:9px 5px;font-size:11px;overflow-wrap:anywhere}
+  th:first-child{width:43%}th:nth-child(2){width:10%}th:nth-child(3){width:23%}th:nth-child(4){width:24%}
+  td{border-bottom:1px solid #e5e5e5;padding:9px 5px;overflow-wrap:anywhere}
+  .num{text-align:right;white-space:normal;font-variant-numeric:tabular-nums}
+  .totals{margin:22px 0 0 auto;width:min(100%,320px);table-layout:auto}
   .totals td{padding:7px;border:0}.grand{font-weight:700;font-size:18px;border-top:2px solid #171717}
-  footer{margin-top:65px;display:flex;justify-content:space-between;align-items:end;gap:20px}
+  footer{margin-top:42px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:16px}
   .paid{display:inline-block;padding:5px 12px;border:2px solid #167044;color:#167044;font-weight:800;letter-spacing:2px}
   </style></head><body><header><div><h1>${escape(profile?.name || 'HEKIMA BOOKSHOP')}</h1><div class="muted">${escape([profile?.address,profile?.city,profile?.country].filter(Boolean).join(', '))}<br>${profile?.email ? `Email: ${escape(profile.email)}<br>` : ''}${profile?.phone ? `Phone: ${escape(profile.phone)}<br>` : ''}${profile?.kra_pin ? `VAT/PIN: ${escape(profile.kra_pin)}` : ''}</div></div>
   <div class="right"><h2>INVOICE</h2><div><b>Invoice No:</b> ${escape(invoiceNumber)}</div><div><b>Date:</b> ${escape(receiptDate(sale.created_at))}</div><div><b>Receipt:</b> ${escape(sale.receipt_number)}</div><span class="paid">PAID</span></div></header>
