@@ -17,7 +17,7 @@ type Book = { id: number; title: string; sku: string; is_active: boolean; catego
 type StockPage = { data: StockRow[]; current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null; summary: { units: number; value: number; stock_lines: number; low: number; out_of_stock: number } }
 const money = (value: number) => `KSh ${Number(value).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function InventoryView({ currentUser, notify }: { currentUser: BookshopUser; notify: (message: string) => void }) {
+export function InventoryView({ currentUser, notify, stockSelection, onSelectionConsumed }: { currentUser: BookshopUser; notify: (message: string) => void; stockSelection?: { id: number; title: string; sku: string; is_active: boolean } | null; onSelectionConsumed?: () => void }) {
   const canManage = currentUser.permissions.includes('inventory.manage')
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchError, setBranchError] = useState('')
@@ -32,6 +32,7 @@ export function InventoryView({ currentUser, notify }: { currentUser: BookshopUs
   const [loading, setLoading] = useState(true)
   const [reload, setReload] = useState(0)
   const [receipt, setReceipt] = useState<{ book?: Book; branchId?: number } | null>(null)
+  useEffect(() => { if (stockSelection && currentUser.permissions.includes('inventory.manage')) { setReceipt({ book: stockSelection }); onSelectionConsumed?.() } }, [stockSelection, currentUser.permissions, onSelectionConsumed])
 
   const loadBranches = useCallback(async () => {
     setBranchError('')
