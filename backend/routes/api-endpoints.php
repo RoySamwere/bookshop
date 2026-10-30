@@ -37,6 +37,24 @@ Route::post('/auth/email/resend', [RegistrationController::class, 'resend'])->mi
 Route::post('/auth/register/bookshop', [BookshopRegistrationController::class, 'register'])->middleware('throttle:register');
 Route::post('/auth/invitations/accept', [StaffInvitationController::class, 'accept'])->middleware('throttle:5,1');
 
+// Shared, read-only reference hierarchy. Never query tenant-owned books or inventory here.
+Route::get('/public/products-catalogue', function (\Illuminate\Http\Request $request) {
+    $data = $request->validate(['search' => 'nullable|string|max:100']);
+    $search = trim($data['search'] ?? '');
+    $categories = \Illuminate\Support\Facades\DB::table('product_categories')
+        ->select('id', 'name')->orderBy('name')->get();
+    $subcategories = \Illuminate\Support\Facades\DB::table('product_subcategories')
+        ->select('id', 'product_category_id', 'name')->orderBy('name')->get();
+    $rows = $categories->map(function ($category) use ($subcategories, $search) {
+        $children = $subcategories->where('product_category_id', $category->id)
+            ->filter(fn ($child) => $search === '' || stripos($child->name, $search) !== false || stripos($category->name, $search) !== false)
+            ->map(fn ($child) => ['id' => $child->id, 'name' => $child->name])->values();
+        if ($search !== '' && stripos($category->name, $search) === false && $children->isEmpty()) return null;
+        return ['id' => $category->id, 'name' => $category->name, 'subcategories' => $children];
+    })->filter()->values();
+    return response()->json(['data' => $rows])->header('Cache-Control', 'public, max-age=300');
+})->middleware('throttle:60,1');
+
 // Public website: launch notification signups.
 Route::post('/public/launch-subscribers', [LaunchSubscriberController::class, 'store'])->middleware('throttle:subscribe');
 
