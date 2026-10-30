@@ -6,6 +6,7 @@ use App\Services\InventoryService;
 use App\Support\Tenancy\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -31,6 +32,7 @@ class PosController extends Controller
         $search=isset($data['search'])?trim($data['search']):null;
         $allowed=$this->branches($request);
         abort_if(!in_array((int)$data['branch_id'],$allowed,true),403,'Branch access denied.');
+        $imageColumn = collect(['image_url', 'cover_image_url', 'image_path', 'cover_image', 'image'])->first(fn ($column) => Schema::hasColumn('books', $column));
         return DB::table('books as b')->where('b.bookshop_id',Tenant::requireId())->leftJoin('inventory_balances as i',function($join)use($data){
             $join->on('i.book_id','=','b.id')->where('i.branch_id','=',$data['branch_id']);
         })->leftJoin('product_subcategories as sub','sub.id','=','b.product_subcategory_id')
@@ -41,6 +43,7 @@ class PosController extends Controller
         });})
         ->when($data['category_id']??null,fn($q,$category)=>$q->where('cat.id',$category))
         ->select('b.id','b.title','b.sku','b.isbn','b.selling_price','sub.name as subcategory','cat.name as category','cat.id as category_id')
+        ->selectRaw($imageColumn ? 'b.`'.$imageColumn.'` as image_url' : 'NULL as image_url')
         ->selectRaw('CASE WHEN COALESCE(i.quantity,0)>COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0)-COALESCE(i.reserved,0) ELSE 0 END as available')
         // A scanned barcode (exact SKU or ISBN) is always the first result.
         ->when($search,fn($q,$search)=>$q->orderByRaw('CASE WHEN b.sku = ? OR b.isbn = ? THEN 0 ELSE 1 END',[$search,$search]))
