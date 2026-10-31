@@ -10,7 +10,6 @@ import { hasPermission, roleLabel, type BookshopUser, type Permission } from '..
 import { notificationsApi, type AppNotification } from '../lib/workspace-api'
 import { formatDate } from './ui-kit'
 import { BrandMark } from './brand-mark'
-import { brand } from '../lib/brand'
 import { returnToPlatform } from '../lib/tenancy-api'
 
 export const PROFILE_SECTION = 'My Profile'
@@ -219,7 +218,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       aria-label="Main navigation" inert={(mobile && !drawerOpen) || searchOpen}>
       <div className="sidebar-brand">
         <BrandMark size={46} className="flex-none" />
-        <div className="sidebar-brand-copy"><strong>{brand.shortName}<span>Bookshop</span></strong></div>
+        <div className="sidebar-brand-copy"><strong>{bookshopName}</strong><small className="block text-[10px] font-medium tracking-wide opacity-65">Powered by Nifunze Bookshop</small></div>
         <button className="sidebar-collapse" onClick={toggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} aria-controls="app-navigation">{collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}</button>
         <button className="header-icon drawer-close" aria-label="Close navigation" onClick={() => setDrawerOpen(false)}><X size={21} /></button>
       </div>
