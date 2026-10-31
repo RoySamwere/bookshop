@@ -97,7 +97,7 @@ class InventoryController extends Controller
         $seen=[];
         foreach($data['rows'] as $row) {
             $key=$row['book_id'].':'.$row['branch_id'];
-            if(isset($seen[$key])) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate product and branch in stocktake.']);
+            if(isset($seen[$key])) throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Duplicate product and branch in stocktake.']);
             $seen[$key]=true;
         }
         $changed=DB::transaction(function()use($data,$user,$branches,$tenant,$service){
@@ -111,9 +111,9 @@ class InventoryController extends Controller
                     ->where('i.bookshop_id',$tenant)->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
                     ->where('i.book_id',$bookId)->where('i.branch_id',$branchId)
                     ->select('i.quantity','i.reserved','b.title')->lockForUpdate()->first();
-                if(!$balance) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Product or stock location is no longer available. Download a new stocktake.']);
-                if((int)$balance->quantity!==(int)$row['expected_quantity']) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Stock changed for '.$balance->title.' since download. Download a new stocktake to avoid overwriting sales or receipts.']);
-                if((int)$row['counted_quantity']<(int)$balance->reserved) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Counted stock for '.$balance->title.' is below reserved quantity.']);
+                if(!$balance) throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Product or stock location is no longer available. Download a new stocktake.']);
+                if((int)$balance->quantity!==(int)$row['expected_quantity']) throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Stock changed for '.$balance->title.' since download. Download a new stocktake to avoid overwriting sales or receipts.']);
+                if((int)$row['counted_quantity']<(int)$balance->reserved) throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Counted stock for '.$balance->title.' is below reserved quantity.']);
                 $delta=(int)$row['counted_quantity']-(int)$balance->quantity;
                 if($delta!==0){$service->change($bookId,$branchId,$delta,'adjustment',$user->id,'STOCKTAKE', $data['reason']);$count++;}
             }
