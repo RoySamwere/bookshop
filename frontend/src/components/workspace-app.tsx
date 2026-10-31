@@ -212,7 +212,7 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
   const [uploadOpen,setUploadOpen]=useState(false)
   const [uploadBusy,setUploadBusy]=useState(false)
   const [uploadError,setUploadError]=useState('')
-  const [uploadRows,setUploadRows]=useState<{title:string;sku:string;product_subcategory_id:number;cost_price:number;selling_price:number}[]>([])
+  const [uploadRows,setUploadRows]=useState<{title:string;sku:string;category_name:string;subcategory_name:string;cost_price:number;selling_price:number}[]>([])
   const [hierarchy,setHierarchy]=useState<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>([])
   const [editing,setEditing]=useState<BookRow|null>(null)
   const [saving,setSaving]=useState(false)
@@ -249,9 +249,9 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
       const group=hierarchy.find(c=>clean(c.name)===clean(cat))
       const match=group?.subcategories.find(x=>clean(x.name)===clean(sub))
       if(!cat)problems.push('Category is blank')
-      else if(!group)problems.push('Category "'+cat+'" not found. Available: '+hierarchy.map(x=>x.name).slice(0,10).join(', '))
+
       if(!sub)problems.push('Subcategory is blank')
-      else if(group&&!match)problems.push('Subcategory "'+sub+'" does not belong to "'+group.name+'". Available: '+group.subcategories.map(x=>x.name).slice(0,10).join(', '))
+
       if(!title)problems.push('Product Name is blank')
       if(!sku)problems.push('SKU is blank')
       for(const [label,value] of [['Cost Price',cost],['Selling Price',selling]]){
@@ -259,14 +259,14 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
         else if(!Number.isFinite(Number(value))||Number(value)<0)problems.push(label+' "'+value+'" is invalid; enter a number like 150.50 without KES or commas')
       }
       if(problems.length){errors.push('Row '+line+': '+problems.join('; '));return}
-      rows.push({title,sku,product_subcategory_id:match!.id,cost_price:Number(cost),selling_price:Number(selling)})
+      rows.push({title,sku,category_name:group?.name??cat,subcategory_name:match?.name??sub,cost_price:Number(cost),selling_price:Number(selling)})
     })
     if(errors.length)throw Error('Correct these rows before uploading:\n'+errors.slice(0,40).join('\n')+(errors.length>40?'\n...and '+(errors.length-40)+' more rows.':''))
     if(rows.length>200)throw Error('Upload up to 200 products per batch')
     if(new Set(rows.map(r=>r.sku.toLowerCase())).size!==rows.length)throw Error('Duplicate SKU found in CSV')
     setUploadRows(rows)
   }catch(e){setUploadError(e instanceof Error?e.message:'Could not read CSV')}}
-    async function submitProducts(){if(!uploadRows.length||uploadBusy)return;setUploadBusy(true);setUploadError('');try{await api('/books-bulk-create',{method:'POST',body:{rows:uploadRows}});setToast(`${uploadRows.length} products added to your catalogue`);setUploadOpen(false);setUploadRows([]);setPage(1);await load()}catch(e){setUploadError(e instanceof Error?e.message:'Upload failed')}finally{setUploadBusy(false)}}
+    async function submitProducts(){if(!uploadRows.length||uploadBusy)return;setUploadBusy(true);setUploadError('');try{await api('/books-bulk-create',{method:'POST',body:{rows:uploadRows}});setToast(`${uploadRows.length} products added, including any new categories and subcategories`);setUploadOpen(false);setUploadRows([]);setPage(1);await load()}catch(e){setUploadError(e instanceof Error?e.message:'Upload failed')}finally{setUploadBusy(false)}}
   async function saveProduct(event: React.FormEvent) { event.preventDefault(); if (!editing || saving) return; setSaving(true);setEditError('');try { await api(`/books/${editing.id}`,{method:'PATCH',body:{title:editing.title,sku:editing.sku,isbn:editing.isbn||null,cover_url:editing.cover_url||null,cost_price:Number(editing.cost_price??0),selling_price:Number(editing.selling_price),reorder_level:Number(editing.reorder_level??10)}});setEditing(null);setToast('Product details saved');await load() }catch(e){setEditError(e instanceof Error?e.message:'Unable to save product')}finally{setSaving(false)} }
   const load=useCallback(async()=>{
     setLoading(true)
