@@ -43,13 +43,13 @@ class ReorderSuggestionService
         return $this->products($bookshopId, $branchId, ['search' => $search, 'limit' => $limit, 'all' => true]);
     }
 
-    /** One row per product with stock, reorder settings, open orders and last purchase details. */
+    /** Only products actually assigned to this shop branch's inventory, including zero balances.\n     * The global/catalogue-only products must never be treated as low-stock shop items.\n     */
     public function products(int $bookshopId, int $branchId, array $filters = []): Collection
     {
         $settings = PurchasingSettings::for($bookshopId);
         $search = trim((string) ($filters['search'] ?? ''));
         $query = DB::table('books as b')
-            ->leftJoin('inventory_balances as i', fn ($join) => $join->on('i.book_id', '=', 'b.id')->where('i.branch_id', '=', $branchId))
+            ->join('inventory_balances as i', fn ($join) => $join->on('i.book_id', '=', 'b.id')->where('i.branch_id', '=', $branchId)->where('i.bookshop_id', '=', $bookshopId))
             ->leftJoin('product_reorder_settings as r', fn ($join) => $join->on('r.book_id', '=', 'b.id')->where('r.bookshop_id', '=', $bookshopId))
             ->where('b.bookshop_id', $bookshopId)
             ->where('b.is_active', true)
