@@ -241,8 +241,27 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
     const indexes=keys.map(k=>header.indexOf(k))
     if(indexes.some(i=>i<0))throw Error('CSV columns must be: Category, Subcategory, Product Name, SKU, Cost Price, Selling Price')
     const rows:typeof uploadRows=[],errors:string[]=[]
-    records.slice(1).forEach((record,i)=>{const [cat,sub,title,sku,cost,selling]=indexes.map(n=>record[n]?.trim()??'');const group=hierarchy.find(c=>c.name.toLowerCase()===cat.toLowerCase());const match=group?.subcategories.find(x=>x.name.toLowerCase()===sub.toLowerCase());if(!match||!title||!sku||cost===''||selling===''||!Number.isFinite(Number(cost))||!Number.isFinite(Number(selling))||Number(cost)<0||Number(selling)<0){errors.push(String(i+2));return}rows.push({title,sku,product_subcategory_id:match.id,cost_price:Number(cost),selling_price:Number(selling)})})
-    if(errors.length)throw Error('Check category, subcategory, product, SKU and prices on CSV rows: '+errors.slice(0,15).join(', '))
+    const clean=(value:string)=>value.trim().replace(/\s+/g,' ').toLowerCase()
+    records.slice(1).forEach((record,i)=>{
+      const line=i+2
+      const [cat,sub,title,sku,cost,selling]=indexes.map(n=>record[n]?.trim()??'')
+      const problems:string[]=[]
+      const group=hierarchy.find(c=>clean(c.name)===clean(cat))
+      const match=group?.subcategories.find(x=>clean(x.name)===clean(sub))
+      if(!cat)problems.push('Category is blank')
+      else if(!group)problems.push('Category "'+cat+'" not found. Available: '+hierarchy.map(x=>x.name).slice(0,10).join(', '))
+      if(!sub)problems.push('Subcategory is blank')
+      else if(group&&!match)problems.push('Subcategory "'+sub+'" does not belong to "'+group.name+'". Available: '+group.subcategories.map(x=>x.name).slice(0,10).join(', '))
+      if(!title)problems.push('Product Name is blank')
+      if(!sku)problems.push('SKU is blank')
+      for(const [label,value] of [['Cost Price',cost],['Selling Price',selling]]){
+        if(!value)problems.push(label+' is blank')
+        else if(!Number.isFinite(Number(value))||Number(value)<0)problems.push(label+' "'+value+'" is invalid; enter a number like 150.50 without KES or commas')
+      }
+      if(problems.length){errors.push('Row '+line+': '+problems.join('; '));return}
+      rows.push({title,sku,product_subcategory_id:match!.id,cost_price:Number(cost),selling_price:Number(selling)})
+    })
+    if(errors.length)throw Error('Correct these rows before uploading:\n'+errors.slice(0,40).join('\n')+(errors.length>40?'\n...and '+(errors.length-40)+' more rows.':''))
     if(rows.length>200)throw Error('Upload up to 200 products per batch')
     if(new Set(rows.map(r=>r.sku.toLowerCase())).size!==rows.length)throw Error('Duplicate SKU found in CSV')
     setUploadRows(rows)
