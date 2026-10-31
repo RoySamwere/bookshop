@@ -56,7 +56,7 @@ export function StockTakingView({currentUser,notify}:{currentUser:BookshopUser;n
     setBusy(true);setError('')
     try{
       const ExcelJS=(await import('exceljs')).default
-      const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(await file.arrayBuffer())
+      const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(new Uint8Array(await file.arrayBuffer()) as never)
       const sheet=workbook.getWorksheet('Stock Count')
       if(!sheet)throw Error('Select a Hekima stocktake workbook with a Stock Count sheet.')
       if(headings.some((h,i)=>String(sheet.getRow(1).getCell(i+1).value??'').trim()!==h))throw Error('Stocktake columns were changed. Download a fresh template.')
