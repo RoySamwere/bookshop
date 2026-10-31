@@ -102,6 +102,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/catalog/{table}', [CatalogController::class, 'createLookup'])->middleware('permission:catalog.manage');
         Route::get('/suppliers', [CatalogController::class, 'suppliers'])->middleware('permission:suppliers.view');
         Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
+        Route::post('/inventory/catalogue-stock-summary', [InventoryController::class, 'catalogueStockSummary'])->middleware('permission:inventory.view');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
         Route::get('/inventory/movements', [InventoryController::class, 'movements'])->middleware('permission:inventory.view');
         Route::post('/inventory/bulk-receive', [InventoryController::class, 'bulkReceive'])->middleware('permission:inventory.manage');
