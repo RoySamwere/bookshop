@@ -193,12 +193,12 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const results = visibleSections.filter(section => `${section.label} ${section.description}`.toLowerCase().includes(search.toLowerCase()))
   const groups = [
     { name: 'Sell', labels: ['Dashboard', 'Point of Sale', 'Sales History'] },
-    { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Suppliers'] },
+    { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Stock Taking', 'Suppliers'] },
     { name: 'People', labels: ['Customers', 'Users'] },
     { name: 'Insights', labels: ['Reports & Analytics', 'Expenses'] },
     { name: 'Admin', labels: ['My Bookshop', 'Audit Log', 'Settings'] },
   ]
-  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
+  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Stock Taking': 'Stock taking', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
 
   function navButton(section: typeof sections[number]) {
     const Icon = section.icon
