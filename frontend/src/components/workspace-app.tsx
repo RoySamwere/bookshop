@@ -7,6 +7,7 @@ import { WorkspaceShell, PROFILE_SECTION, canOpenSection, firstSection } from '.
 import { OverviewDashboard } from './overview-dashboard'
 import { UsersView } from './users-view'
 import { InventoryView } from './inventory-view'
+import { StockTakingView } from './stock-taking-view'
 import { PosTerminal } from './pos/pos-terminal'
 import { SalesHistoryView } from './sales-history-view'
 import { SettingsView } from './settings-view'
@@ -182,6 +183,7 @@ export function WorkspaceApp() {
     : active === 'Sales History' ? <SalesHistoryView />
     : active === 'Products & Books' ? <ProductsBooksView setToast={notify} onAssign={book => { setStockSelection(book); navigateTo('Inventory & Stock') }} canAssign={hasPermission(currentUser, 'inventory.manage') && canOpenSection(currentUser, 'Inventory & Stock')} canEdit={hasPermission(currentUser, 'catalog.manage')} />
     : active === 'Inventory & Stock' ? <InventoryView currentUser={currentUser} notify={notify} stockSelection={stockSelection} onSelectionConsumed={() => setStockSelection(null)} />
+    : active === 'Stock Taking' ? <StockTakingView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
     : active === 'Suppliers' ? <SuppliersView setToast={notify} />
     : <Dashboard active={active} setActive={navigateTo} currentUser={currentUser} />
