@@ -68,6 +68,59 @@ class InventoryController extends Controller
             ->groupBy('i.book_id')->get();
         return response()->json($rows);
     }
+    public function stocktakeSnapshot(Request $request) {
+        $tenant=Tenant::requireId();
+        $user=$request->user();
+        $branches=$user->isOwner()?null:$user->branchIds();
+        $rows=DB::table('inventory_balances as i')
+            ->join('books as b','b.id','=','i.book_id')
+            ->join('branches as br','br.id','=','i.branch_id')
+            ->where('i.bookshop_id',$tenant)->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
+            ->where('b.is_active',true)->where('br.is_active',true)
+            ->when($branches!==null,fn($q)=>$q->whereIn('i.branch_id',$branches))
+            ->select('i.book_id','i.branch_id','b.sku','b.title','br.name as branch_name','i.quantity','i.reserved')
+            ->orderBy('br.name')->orderBy('b.title')->get();
+        return response()->json(['rows'=>$rows,'generated_at'=>now()->toIso8601String()]);
+    }
+    public function stocktakeApply(Request $request, InventoryService $service) {
+        $data=$request->validate([
+            'rows'=>'required|array|min:1|max:500',
+            'rows.*.book_id'=>'required|integer',
+            'rows.*.branch_id'=>'required|integer',
+            'rows.*.expected_quantity'=>'required|integer|min:0',
+            'rows.*.counted_quantity'=>'required|integer|min:0|max:2147483647',
+            'reason'=>'required|string|min:5|max:1000',
+        ]);
+        $user=$request->user();
+        $branches=$user->isOwner()?null:$user->branchIds();
+        $tenant=Tenant::requireId();
+        $seen=[];
+        foreach($data['rows'] as $row) {
+            $key=$row['book_id'].':'.$row['branch_id'];
+            if(isset($seen[$key])) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Duplicate product and branch in stocktake.']);
+            $seen[$key]=true;
+        }
+        $changed=DB::transaction(function()use($data,$user,$branches,$tenant,$service){
+            $count=0;
+            foreach($data['rows'] as $row) {
+                $bookId=(int)$row['book_id'];$branchId=(int)$row['branch_id'];
+                if($branches!==null && !in_array($branchId,$branches,true)) abort(403,'Branch access denied.');
+                $balance=DB::table('inventory_balances as i')
+                    ->join('books as b','b.id','=','i.book_id')
+                    ->join('branches as br','br.id','=','i.branch_id')
+                    ->where('i.bookshop_id',$tenant)->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
+                    ->where('i.book_id',$bookId)->where('i.branch_id',$branchId)
+                    ->select('i.quantity','i.reserved','b.title')->lockForUpdate()->first();
+                if(!$balance) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Product or stock location is no longer available. Download a new stocktake.']);
+                if((int)$balance->quantity!==(int)$row['expected_quantity']) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Stock changed for '.$balance->title.' since download. Download a new stocktake to avoid overwriting sales or receipts.']);
+                if((int)$row['counted_quantity']<(int)$balance->reserved) throw \\Illuminate\\Validation\\ValidationException::withMessages(['rows'=>'Counted stock for '.$balance->title.' is below reserved quantity.']);
+                $delta=(int)$row['counted_quantity']-(int)$balance->quantity;
+                if($delta!==0){$service->change($bookId,$branchId,$delta,'adjustment',$user->id,'STOCKTAKE', $data['reason']);$count++;}
+            }
+            return $count;
+        });
+        return response()->json(['adjusted'=>$changed,'message'=>'Stocktake adjustments saved.']);
+    }
     public function bulkReceive(Request $request, InventoryService $service) {
         $data=$request->validate([
             'branch_id'=>['required','integer',Tenant::exists('branches')->where('is_active',true)],
