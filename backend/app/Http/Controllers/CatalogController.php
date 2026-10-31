@@ -94,7 +94,7 @@ class CatalogController extends Controller
                 }
             });
             fclose($out);
-        },'hekima-products-all.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
+        },'nifunze-products-all.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
     public function importBooks(Request $request) {
         $tenant=Tenant::requireId();
@@ -179,7 +179,7 @@ class CatalogController extends Controller
         return response()->json(DB::table($table)->find($id),201);
     }
     public function suppliers(Request $request) {
-        return DB::table('suppliers')->where('bookshop_id',Tenant::requireId())->when($request->query('search'),fn($q,$s)=>$q->where('name','like',"%{$s}%"))->orderBy('name')->paginate(20);
+        return DB::table('suppliers')->where('bookshop_id',Tenant::requireId())->when($request->query('search'),fn($q,$s)=>$q->where('name','like',"%{$s}%"))->when($request->boolean('active_only'),fn($q)=>$q->where('is_active',true))->orderBy('name')->paginate(min(200,max(1,(int)$request->query('per_page',20))));
     }
     public function storeSupplier(Request $request) {
         $tenant=Tenant::requireId();

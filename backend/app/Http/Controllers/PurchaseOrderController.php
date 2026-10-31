@@ -73,7 +73,7 @@ class PurchaseOrderController extends Controller
         $branches = DB::table('branches')->whereIn('id', $rows->pluck('branch_id')->all() ?: [0])->pluck('name', 'id');
         $users = DB::table('users')->whereIn('id', $rows->pluck('created_by')->filter()->all() ?: [0])->pluck('name', 'id');
         $lines = DB::table('purchase_order_items')->whereIn('purchase_order_id', $rows->pluck('id')->all() ?: [0])
-            ->groupBy('purchase_order_id')->selectRaw('purchase_order_id, COUNT(*) as lines, SUM(quantity) as ordered, SUM(received_quantity) as received, SUM(cancelled_quantity) as cancelled')
+            ->groupBy('purchase_order_id')->selectRaw('purchase_order_id, COUNT(*) as line_count, SUM(quantity) as ordered, SUM(received_quantity) as received, SUM(cancelled_quantity) as cancelled')
             ->get()->keyBy('purchase_order_id');
         $settings = PurchasingSettings::for(Tenant::requireId());
         $page->setCollection($rows->map(fn ($order) => [
@@ -81,14 +81,18 @@ class PurchaseOrderController extends Controller
             'supplier' => ['id' => (int) $order->supplier_id, 'name' => $suppliers[$order->supplier_id]->name ?? null, 'email' => $suppliers[$order->supplier_id]->email ?? null],
             'branch' => ['id' => (int) $order->branch_id, 'name' => $branches[$order->branch_id] ?? null],
             'created_by_name' => $users[$order->created_by] ?? null,
-            'line_count' => (int) ($lines[$order->id]->lines ?? 0),
+            'line_count' => (int) ($lines[$order->id]->line_count ?? 0),
             'ordered_quantity' => (int) ($lines[$order->id]->ordered ?? 0),
             'received_quantity' => (int) ($lines[$order->id]->received ?? 0),
             'outstanding_quantity' => max(0, (int) ($lines[$order->id]->ordered ?? 0) - (int) ($lines[$order->id]->received ?? 0) - (int) ($lines[$order->id]->cancelled ?? 0)),
             'actions' => $this->orders->allowedActions($order, $request->user(), $settings),
         ]));
 
-        return response()->json($page);
+        // People who have created orders here, for the "Created by" filter.
+        $creators = DB::table('users')->whereIn('id', $this->orders->query(Tenant::requireId(), $this->branches($request))->whereNotNull('created_by')->distinct()->select('created_by'))
+            ->orderBy('name')->get(['id', 'name']);
+
+        return response()->json([...$page->toArray(), 'creators' => $creators]);
     }
 
     public function summary(Request $request, PurchaseOrderReportService $reports): JsonResponse

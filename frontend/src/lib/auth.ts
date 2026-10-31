@@ -6,6 +6,7 @@ export type Permission =
   | 'pos.access' | 'sales.view' | 'returns.process'
   | 'catalog.view' | 'catalog.manage' | 'inventory.view' | 'inventory.manage'
   | 'suppliers.view' | 'suppliers.manage' | 'customers.view' | 'customers.manage'
+  | 'purchases.view' | 'purchases.manage' | 'purchases.approve' | 'purchases.confirm'
   | 'reports.view' | 'finance.view' | 'expenses.manage'
   | 'users.view' | 'users.manage' | 'branches.view' | 'branches.manage'
   | 'settings.view' | 'settings.manage' | 'audit.view'

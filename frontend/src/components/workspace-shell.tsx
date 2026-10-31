@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, CheckCheck, ChevronDown, ChevronLeft,
+  ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, CheckCheck, ChevronDown, ChevronLeft, ClipboardList,
   ChevronRight, FileText, History, LayoutDashboard, LogOut, Menu, Plus, Search, Settings,
   ShieldCheck, ShoppingCart, Store, Truck, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
@@ -22,6 +22,7 @@ const sections = [
   { label: 'Inventory & Stock', description: 'Stock levels and replenishment', icon: Boxes, permission: 'inventory.view' },
   { label: 'Stock Taking', description: 'Count, export and reconcile stock', icon: CheckCheck, permission: 'inventory.view' },
   { label: 'Suppliers', description: 'Your suppliers and publishing partners', icon: Truck, permission: 'suppliers.view' },
+  { label: 'Purchase Orders', description: 'Reorder suggestions, LPOs and receiving', icon: ClipboardList, permission: 'purchases.view' },
   { label: 'Customers', description: 'Your customer directory', icon: Users, permission: 'customers.view' },
   { label: 'Reports & Analytics', description: 'Sales and performance insights', icon: BarChart3, permission: 'reports.view' },
   { label: 'Expenses', description: 'Shop expenses', icon: WalletCards, group: 'workspace', permission: 'expenses.manage' },
@@ -193,12 +194,12 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const results = visibleSections.filter(section => `${section.label} ${section.description}`.toLowerCase().includes(search.toLowerCase()))
   const groups = [
     { name: 'Sell', labels: ['Dashboard', 'Point of Sale', 'Sales History'] },
-    { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Stock Taking', 'Suppliers'] },
+    { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Stock Taking', 'Suppliers', 'Purchase Orders'] },
     { name: 'People', labels: ['Customers', 'Users'] },
     { name: 'Insights', labels: ['Reports & Analytics', 'Expenses'] },
     { name: 'Admin', labels: ['My Bookshop', 'Audit Log', 'Settings'] },
   ]
-  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Stock Taking': 'Stock taking', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
+  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Stock Taking': 'Stock taking', 'Purchase Orders': 'Purchase orders', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
 
   function navButton(section: typeof sections[number]) {
     const Icon = section.icon

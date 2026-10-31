@@ -160,22 +160,35 @@ return new class extends Migration
         Schema::dropIfExists('purchase_order_email_attempts');
         Schema::dropIfExists('purchase_order_events');
         Schema::dropIfExists('purchase_order_sequences');
-        Schema::table('goods_receipt_items', fn (Blueprint $t) => $t->dropColumn(['damaged_quantity', 'notes']));
-        Schema::table('goods_receipts', function (Blueprint $t) {
-            $t->dropUnique(['bookshop_id', 'submission_key']);
-            $t->dropColumn(['delivery_note_number', 'received_on', 'notes', 'submission_key']);
-        });
-        Schema::table('purchase_order_items', function (Blueprint $t) {
-            $t->dropConstrainedForeignId('product_unit_id');
-            $t->dropColumn(['description', 'sku', 'isbn', 'unit_label', 'units_per_package', 'cancelled_quantity', 'discount', 'line_total', 'position']);
-        });
-        Schema::table('purchase_orders', function (Blueprint $t) {
-            $t->dropUnique(['bookshop_id', 'lpo_number']);
-            $t->dropIndex(['bookshop_id', 'status']);
-            $t->dropIndex(['bookshop_id', 'expected_date']);
-            foreach (['submitted_by', 'approved_by', 'confirmed_by', 'cancelled_by'] as $fk) $t->dropConstrainedForeignId($fk);
-            $t->dropColumn(['lpo_number', 'order_date', 'delivery_location', 'payment_terms', 'internal_notes', 'supplier_notes', 'currency', 'tax_rate', 'prices_include_tax', 'subtotal', 'discount_total', 'tax_total', 'total', 'version', 'rejection_reason', 'cancellation_reason', 'submitted_at', 'approved_at', 'confirmed_at', 'cancelled_at', 'completed_at', 'delivery_method', 'email_status', 'email_last_attempt_at', 'email_sent_at', 'pdf_path', 'pdf_generated_at']);
-        });
-        Schema::table('suppliers', fn (Blueprint $t) => $t->dropColumn(['payment_terms', 'lead_time_days']));
+
+        // MySQL may use the new composite indexes for the bookshop_id foreign keys; give them back their own index first.
+        foreach (['purchase_orders', 'goods_receipts'] as $table) {
+            if (! Schema::hasIndex($table, "{$table}_bookshop_id_fk_index")) {
+                Schema::table($table, fn (Blueprint $t) => $t->index('bookshop_id', "{$table}_bookshop_id_fk_index"));
+            }
+        }
+        $this->dropColumns('goods_receipt_items', ['damaged_quantity', 'notes']);
+        if (Schema::hasIndex('goods_receipts', 'goods_receipts_bookshop_id_submission_key_unique')) {
+            Schema::table('goods_receipts', fn (Blueprint $t) => $t->dropUnique(['bookshop_id', 'submission_key']));
+        }
+        $this->dropColumns('goods_receipts', ['delivery_note_number', 'received_on', 'notes', 'submission_key']);
+        if (Schema::hasColumn('purchase_order_items', 'product_unit_id')) {
+            Schema::table('purchase_order_items', fn (Blueprint $t) => $t->dropConstrainedForeignId('product_unit_id'));
+        }
+        $this->dropColumns('purchase_order_items', ['description', 'sku', 'isbn', 'unit_label', 'units_per_package', 'cancelled_quantity', 'discount', 'line_total', 'position']);
+        foreach (['purchase_orders_bookshop_id_lpo_number_unique' => 'dropUnique', 'purchase_orders_bookshop_id_status_index' => 'dropIndex', 'purchase_orders_bookshop_id_expected_date_index' => 'dropIndex'] as $index => $method) {
+            if (Schema::hasIndex('purchase_orders', $index)) Schema::table('purchase_orders', fn (Blueprint $t) => $t->{$method}($index));
+        }
+        foreach (['submitted_by', 'approved_by', 'confirmed_by', 'cancelled_by'] as $column) {
+            if (Schema::hasColumn('purchase_orders', $column)) Schema::table('purchase_orders', fn (Blueprint $t) => $t->dropConstrainedForeignId($column));
+        }
+        $this->dropColumns('purchase_orders', ['lpo_number', 'order_date', 'delivery_location', 'payment_terms', 'internal_notes', 'supplier_notes', 'currency', 'tax_rate', 'prices_include_tax', 'subtotal', 'discount_total', 'tax_total', 'total', 'version', 'rejection_reason', 'cancellation_reason', 'submitted_at', 'approved_at', 'confirmed_at', 'cancelled_at', 'completed_at', 'delivery_method', 'email_status', 'email_last_attempt_at', 'email_sent_at', 'pdf_path', 'pdf_generated_at']);
+        $this->dropColumns('suppliers', ['payment_terms', 'lead_time_days']);
+    }
+
+    private function dropColumns(string $table, array $columns): void
+    {
+        $present = array_values(array_filter($columns, fn ($column) => Schema::hasColumn($table, $column)));
+        if ($present) Schema::table($table, fn (Blueprint $t) => $t->dropColumn($present));
     }
 };

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Bell, BookOpen, Boxes, Download, PackagePlus, Plus, Search, Eye, Pencil, Trash2 } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import type { BookshopUser } from '../lib/auth'
+import { addBrandedInfoSheet, applyPrintBranding, downloadBrandedTable, downloadWorkbook, newBrandedWorkbook, safeCell, styleBrandedHeader } from '../lib/branded-export'
 import { branchesApi, type Branch } from '../lib/workspace-api'
 import { EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, Pagination } from './ui-kit'
 
@@ -76,14 +77,14 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
   useEffect(()=>{if(!bulkOpen)return;api<{data:{id:number;name:string}[]}>('/suppliers',{query:{per_page:100}}).then(x=>setBulkSuppliers(x.data)).catch(e=>setBulkError(errorMessage(e)))},[bulkOpen])
   async function bulkTemplate(){
     if(!categories.length){setBulkError('Categories are still loading. Please try again.');return}
-    const ExcelJS=(await import('exceljs')).default
-    const wb=new ExcelJS.Workbook()
-    const ws=wb.addWorksheet('Stock Upload')
+    const shopName=currentUser.bookshop?.name
+    const wb=await newBrandedWorkbook('Stock upload template',shopName)
+    const ws=wb.addWorksheet('Stock Upload',{properties:{tabColor:{argb:'FF0071F9'}}})
     const lists=wb.addWorksheet('Lists')
     const headers=['Category','Subcategory','Product Name','SKU','Cost Price','Selling Price','Quantity']
     ws.addRow(headers)
-    ws.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}}
-    ws.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F766E'}}
+    styleBrandedHeader(ws.getRow(1))
+    applyPrintBranding(ws,'Stock upload',shopName)
     ws.columns=[{width:34},{width:32},{width:54},{width:20},{width:18},{width:18},{width:16}]
     lists.getCell('A1').value='Categories'
     categories.forEach((c,i)=>{lists.getCell(i+2,1).value=c.name})
@@ -93,7 +94,7 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
     lists.getCell('B1').value='Category'
     lists.getCell('C1').value='Dropdown range'
     categories.forEach((c,i)=>{
-      const key=`HekimaSub_${i+1}`
+      const key=`NifunzeSub_${i+1}`
       lists.getCell(i+2,2).value=c.name
       lists.getCell(i+2,3).value=key
       const col=4+i
@@ -110,9 +111,13 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
     }
     lists.state='visible'
     ws.views=[{state:'frozen',ySplit:1}]
-    const buffer=await wb.xlsx.writeBuffer()
-    const url=URL.createObjectURL(new Blob([buffer as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}))
-    const link=document.createElement('a');link.href=url;link.download='hekima-stock-upload.xlsx';link.click();URL.revokeObjectURL(url)
+    addBrandedInfoSheet(wb,'Instructions','Stock upload template',[
+      'Fill one product per row on the Stock Upload sheet, starting on row 2. Keep the header row unchanged.',
+      'Choose Category and Subcategory from the dropdowns. Quantity must be a whole number above zero.',
+      'Existing SKUs receive more stock; new SKUs are added to your catalogue.',
+      'Upload the saved .xlsx in Inventory → Bulk upload, then choose the branch and supplier.',
+    ],shopName)
+    await downloadWorkbook(wb,'stock-upload.xlsx')
   }
   async function readBulk(file:File|undefined){
     setBulkRows([]);setBulkError('');if(!file)return
@@ -123,7 +128,7 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
       const wb=new ExcelJS.Workbook()
       await wb.xlsx.load(await file.arrayBuffer() as never)
       const ws=wb.getWorksheet('Stock Upload')
-      if(!ws)throw new Error('Use the downloaded Hekima Excel template.')
+      if(!ws)throw new Error('Use the downloaded Nifunze Excel template.')
       const rows:{title:string;sku:string;cost_price:number;selling_price:number;quantity:number;product_subcategory_id:number}[]=[]
       const value=(row:number,col:number)=>String(ws.getRow(row).getCell(col).text??'').trim()
       for(let i=2;i<=ws.rowCount;i++){
@@ -156,10 +161,11 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
   }
   function exportPage() {
     if (!result) return
-    const cell = (value: unknown) => `"${String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`
-    const rows = [['Product', 'SKU', 'Branch', 'On hand', 'Reserved', 'Available', 'Reorder level'], ...result.data.map(row => [row.title, row.sku, row.branch_name, row.quantity, row.reserved, row.quantity - row.reserved, row.reorder_level])]
-    const url = URL.createObjectURL(new Blob([rows.map(row => row.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a'); link.href = url; link.download = 'hekima-stock-page.csv'; link.click(); URL.revokeObjectURL(url)
+    void downloadBrandedTable({
+      filename: `stock-page-${new Date().toLocaleDateString('en-CA')}.xlsx`, sheetName: 'Stock', title: 'Inventory & stock', bookshopName: currentUser.bookshop?.name,
+      columns: [{ header: 'Product', width: 46 }, { header: 'SKU', width: 20 }, { header: 'Branch', width: 24 }, { header: 'On hand', width: 12, numFmt: '0' }, { header: 'Reserved', width: 12, numFmt: '0' }, { header: 'Available', width: 12, numFmt: '0' }, { header: 'Reorder level', width: 14, numFmt: '0' }],
+      rows: result.data.map(row => [safeCell(row.title), safeCell(row.sku), safeCell(row.branch_name), Number(row.quantity), Number(row.reserved), Number(row.quantity) - Number(row.reserved), Number(row.reorder_level)]),
+    }).catch(error => notify(errorMessage(error)))
   }
   const summary = result?.summary
   return <div className="min-w-0 space-y-5 bg-[#f8fafc] px-3 py-5 sm:px-6">

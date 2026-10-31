@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api'
 import { businessApi, type BusinessProfile } from '../lib/workspace-api'
 import { invoiceHtml, printReceipt, receiptHtml } from './pos/receipt-print'
 import type { PosReceipt } from '../lib/pos-api'
+import { downloadBrandedTable, safeCell } from '../lib/branded-export'
 
 type Sale={id:number;receipt_number:string;branch_name:string;cashier_name:string;payment_method:string;payment_reference:string|null;total:string;amount_received:string;change_due:string;created_at:string;status:string}
 type Summary={transactions:number;revenue:string;cash:string;mpesa:string;card:string}
@@ -13,7 +14,7 @@ type Result={data:Sale[];current_page:number;last_page:number;total:number;summa
 type Detail={sale:Sale;items:{title:string;sku:string;quantity:number;unit_price:string;line_total:string}[]}
 const money=(n:number|string)=>'KSh '+Number(n||0).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2})
 const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
-export function SalesHistoryView(){
+export function SalesHistoryView({bookshopName}:{bookshopName?:string|null}={}){
  const [date,setDate]=useState(today)
  const [search,setSearch]=useState('')
  const [term,setTerm]=useState('')
@@ -32,9 +33,11 @@ export function SalesHistoryView(){
  useEffect(()=>{void businessApi.get().then(setProfile).catch(()=>{})},[])
  async function view(id:number){try{setDetail(await api<Detail>(`/pos/sales/${id}`));setCustomerName('Walk-in customer');setCustomerEmail('');setCustomerAddress('')}catch(e){setError(errorMessage(e))}}
  function asReceipt():PosReceipt|null {return detail ? {sale:{...detail.sale,branch_id:0,cashier_id:0,subtotal:detail.sale.total} as PosReceipt['sale'],items:detail.items}:null}
- function printDocument(type:'receipt'|'invoice'){const data=asReceipt();if(!data)return;printReceipt(type==='receipt'?receiptHtml(data,profile,{shopName:profile?.name||'Hekima Bookshop',branch:detail?.sale.branch_name,cashier:detail?.sale.cashier_name}):invoiceHtml(data,profile,{name:customerName,email:customerEmail,address:customerAddress}))}
+ function printDocument(type:'receipt'|'invoice'){const data=asReceipt();if(!data)return;printReceipt(type==='receipt'?receiptHtml(data,profile,{shopName:profile?.name||bookshopName||'Nifunze Bookshop',branch:detail?.sale.branch_name,cashier:detail?.sale.cashier_name}):invoiceHtml(data,profile,{name:customerName,email:customerEmail,address:customerAddress}))}
  function emailInvoice(){if(!detail||!customerEmail.trim())return;const subject=encodeURIComponent('Invoice INV-'+detail.sale.receipt_number);const body=encodeURIComponent('Hello '+customerName+',\\n\\nPlease find your paid invoice INV-'+detail.sale.receipt_number+' for '+money(detail.sale.total)+'.\\n\\nKindly contact us if you need a PDF copy.');window.location.href='mailto:'+encodeURIComponent(customerEmail.trim())+'?subject='+subject+'&body='+body}
- function exportCsv(){if(!result)return;const rows=[['Receipt','Date','Branch','Cashier','Method','Reference','Total','Status'],...result.data.map(s=>[s.receipt_number,s.created_at,s.branch_name,s.cashier_name,s.payment_method,s.payment_reference||'',s.total,s.status])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`hekima-sales-${date||'all'}-page-${page}.csv`;a.click();URL.revokeObjectURL(url)}
+ function exportCsv(){if(!result)return;void downloadBrandedTable({filename:`sales-${date||'all'}-page-${page}.xlsx`,sheetName:'Sales',title:'Sales history',bookshopName:bookshopName||profile?.name,subtitle:date?`Sales on ${date}`:'All dates',
+  columns:[{header:'Receipt',width:18},{header:'Date',width:20},{header:'Branch',width:22},{header:'Cashier',width:22},{header:'Method',width:12},{header:'Reference',width:20},{header:'Total',width:14,numFmt:'#,##0.00'},{header:'Status',width:12}],
+  rows:result.data.map(s=>[safeCell(s.receipt_number),safeCell(s.created_at),safeCell(s.branch_name),safeCell(s.cashier_name),safeCell(s.payment_method),safeCell(s.payment_reference||''),Number(s.total),safeCell(s.status)])}).catch(e=>setError(errorMessage(e)))}
  const summary=result?.summary
  return <div className="products-page">
   <div className="page-heading compact"><div><div className="eyebrow">PHASE 03 · SALES OPERATIONS</div><h1 tabIndex={-1}>Sales History</h1><p>Review completed transactions, print receipts and prepare paid invoices.</p></div><div className="heading-actions"><button className="secondary-button" disabled={!result?.data.length} onClick={exportCsv}><Download size={16}/> Export current page</button></div></div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { ClipboardCheck, Download, RefreshCw, Upload } from 'lucide-react'
 import { api, errorMessage } from '../lib/api'
 import type { BookshopUser } from '../lib/auth'
+import { addBrandedInfoSheet, applyPrintBranding, downloadWorkbook, newBrandedWorkbook, styleBrandedHeader } from '../lib/branded-export'
 
 type StockLine = {book_id:number;branch_id:number;sku:string;title:string;branch_name:string;quantity:number;reserved:number}
 type CountLine = StockLine & {expected_quantity:number;counted_quantity:number}
@@ -28,28 +29,25 @@ export function StockTakingView({currentUser,notify}:{currentUser:BookshopUser;n
     if(!snapshot)return
     setBusy(true);setError('')
     try{
-      const ExcelJS=(await import('exceljs')).default
-      const workbook=new ExcelJS.Workbook()
-      const sheet=workbook.addWorksheet('Stock Count')
+      const shopName=currentUser.bookshop?.name
+      const workbook=await newBrandedWorkbook('Stock count',shopName)
+      const sheet=workbook.addWorksheet('Stock Count',{properties:{tabColor:{argb:'FF0071F9'}}})
       sheet.addRow(headings)
       sheet.columns=[{width:13},{width:13},{width:23},{width:46},{width:25},{width:20},{width:14},{width:20}]
       for(const item of snapshot.rows){const row=sheet.addRow([item.book_id,item.branch_id,item.sku,item.title,item.branch_name,Number(item.quantity),Number(item.reserved),null]);row.getCell(8).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2CC'}};row.getCell(8).numFmt='0'}
-      sheet.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}}
-      sheet.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F766E'}}
+      styleBrandedHeader(sheet.getRow(1))
       sheet.views=[{state:'frozen',ySplit:1}]
       sheet.autoFilter={from:'A1',to:'H1'}
-      const guide=workbook.addWorksheet('Instructions')
-      guide.addRow(['HEKIMA STOCK TAKING — OFFLINE COUNT'])
-      guide.addRow(['Generated at',snapshot.generated_at])
-      guide.addRow(['Enter whole-number physical counts in the yellow Physical Count column (H).'])
-      guide.addRow(['Leave H blank for items not counted; blank items will not be updated.'])
-      guide.addRow(['Do not edit Book ID, Branch ID or System Quantity.'])
-      guide.addRow(['Upload this .xlsx file when online. Review differences before applying.'])
-      guide.addRow(['If sales or receipts changed system quantities after export, reconciliation will stop and require a new snapshot.'])
-      guide.getColumn(1).width=105;guide.getColumn(2).width=36
-      const buffer=await workbook.xlsx.writeBuffer()
-      const blob=new Blob([buffer as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})
-      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='hekima-stocktake-'+new Date().toISOString().slice(0,10)+'.xlsx';a.click();URL.revokeObjectURL(url)
+      applyPrintBranding(sheet,'Stock count',shopName)
+      addBrandedInfoSheet(workbook,'Instructions','Stock taking · offline count',[
+        ['Generated at',snapshot.generated_at],
+        'Enter whole-number physical counts in the yellow Physical Count column (H).',
+        'Leave H blank for items not counted; blank items will not be updated.',
+        'Do not edit Book ID, Branch ID or System Quantity.',
+        'Upload this .xlsx file when online. Review differences before applying.',
+        'If sales or receipts changed system quantities after export, reconciliation will stop and require a new snapshot.',
+      ],shopName)
+      await downloadWorkbook(workbook,'stocktake-'+new Date().toLocaleDateString('en-CA')+'.xlsx')
     }catch(e){setError(errorMessage(e))}finally{setBusy(false)}
   }
   async function upload(file:File){
@@ -58,7 +56,7 @@ export function StockTakingView({currentUser,notify}:{currentUser:BookshopUser;n
       const ExcelJS=(await import('exceljs')).default
       const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(new Uint8Array(await file.arrayBuffer()) as never)
       const sheet=workbook.getWorksheet('Stock Count')
-      if(!sheet)throw Error('Select a Hekima stocktake workbook with a Stock Count sheet.')
+      if(!sheet)throw Error('Select a Nifunze stocktake workbook with a Stock Count sheet.')
       if(headings.some((h,i)=>String(sheet.getRow(1).getCell(i+1).value??'').trim()!==h))throw Error('Stocktake columns were changed. Download a fresh template.')
       const imported:CountLine[]=[];const seen=new Set<string>()
       for(let n=2;n<=sheet.rowCount;n++){
