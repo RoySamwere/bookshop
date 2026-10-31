@@ -5,8 +5,8 @@
 const clean = (value: string | undefined) => (value || '').trim()
 
 export const brand = {
-  name: clean(import.meta.env.VITE_BRAND_NAME) || 'Hekima Bookshop',
-  shortName: clean(import.meta.env.VITE_BRAND_SHORT_NAME) || 'Hekima',
+  name: clean(import.meta.env.VITE_BRAND_NAME) || 'Nifunze Bookshop',
+  shortName: clean(import.meta.env.VITE_BRAND_SHORT_NAME) || 'Nifunze',
   description: 'Books, learning materials and educational resources for readers and learners of every age.',
   contact: {
     email: clean(import.meta.env.VITE_CONTACT_EMAIL),
