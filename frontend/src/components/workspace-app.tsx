@@ -209,6 +209,31 @@ function Dashboard({ active, setActive, currentUser }: { active: string; setActi
 function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToast: (message: string) => void; onAssign: (book: { id: number; title: string; sku: string; is_active: boolean }) => void; canAssign: boolean; canEdit: boolean }) {
   type BookRow={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;cost_price?:string|number;reorder_level?:number;cover_url?:string|null;category_name?:string|null;subcategory_name?:string|null;is_active?:boolean}
   const [books,setBooks]=useState<BookRow[]>([])
+  const [catalogueTab,setCatalogueTab]=useState<'mine'|'shared'>('shared')
+  const [sharedBooks,setSharedBooks]=useState<{id:number;title:string;sku:string;isbn:string|null;brand:string|null;category:string|null;subcategory:string|null}[]>([])
+  const [sharedLoading,setSharedLoading]=useState(false)
+  const [sharedError,setSharedError]=useState('')
+  const [sharedPage,setSharedPage]=useState(1)
+  const [sharedLastPage,setSharedLastPage]=useState(1)
+  const [adopting,setAdopting]=useState<number|null>(null)
+  useEffect(()=>{
+    if(catalogueTab!=='shared')return
+    let active=true;setSharedLoading(true)
+    api<{data:typeof sharedBooks;last_page:number}>('/public/products',{query:{search,page:sharedPage}})
+      .then(r=>{if(active){setSharedBooks(r.data);setSharedLastPage(Math.max(1,r.last_page));setSharedError('')}})
+      .catch(e=>{if(active)setSharedError(e instanceof Error?e.message:'Unable to load shared products')})
+      .finally(()=>{if(active)setSharedLoading(false)})
+    return()=>{active=false}
+  },[catalogueTab,search,sharedPage])
+  async function adoptProduct(id:number){
+    setAdopting(id)
+    try{const result=await api<{already_added:boolean}>('/books/adopt-public',{method:'POST',body:{source_id:id}})
+      setToast(result.already_added?'Already in your shop':'Product added to your shop. Set its price and opening stock.')
+      setCatalogueTab('mine');setPage(1);await load()
+    }catch(e){setSharedError(e instanceof Error?e.message:'Unable to add product')}
+    finally{setAdopting(null)}
+  }
+
   const [stockTotals,setStockTotals]=useState<Record<number,{quantity:number;reserved:number;stock_locations:number}>>({})
   const [stockLoading,setStockLoading]=useState(false)
   const [stockError,setStockError]=useState('')
@@ -291,6 +316,9 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
 
   useEffect(()=>{const t=window.setTimeout(()=>{setPage(1);setSearch(query.trim())},250);return()=>window.clearTimeout(t)},[query])
   return <main className="mx-auto w-full min-w-0 max-w-[1600px] space-y-4 px-2 pb-8 sm:px-4">
+    <div className="flex flex-wrap gap-2"><button type="button" onClick={()=>setCatalogueTab('shared')} className={catalogueTab==='shared'?'rounded-lg bg-teal-700 px-4 py-2 font-semibold text-white':'rounded-lg border px-4 py-2'}>Shared Product Catalogue</button><button type="button" onClick={()=>setCatalogueTab('mine')} className={catalogueTab==='mine'?'rounded-lg bg-teal-700 px-4 py-2 font-semibold text-white':'rounded-lg border px-4 py-2'}>My Shop Products</button></div>
+    {catalogueTab==='shared'&&<section className="rounded-xl border bg-white p-5"><h2 className="text-lg font-bold">Products available to all bookshops</h2><p className="mb-4 text-sm text-slate-500">Browse products uploaded by other bookshops and add them to your own shop. Prices and stock remain private.</p><input aria-label="Search shared products" value={query} onChange={e=>{setQuery(e.target.value);setSharedPage(1)}} placeholder="Search name, SKU, ISBN or brand" className="mb-4 w-full rounded-lg border p-3"/>{sharedError&&<p role="alert" className="text-red-700">{sharedError}</p>}{sharedLoading?<p>Loading products…</p>:<div className="grid gap-3 md:grid-cols-2">{sharedBooks.map(b=><div key={b.id} className="rounded-lg border p-4"><strong>{b.title}</strong><p className="text-sm text-slate-500">{[b.brand,b.category,b.subcategory,b.sku].filter(Boolean).join(' · ')}</p>{canEdit&&<button type="button" disabled={adopting===b.id} onClick={()=>void adoptProduct(b.id)} className="mt-3 rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{adopting===b.id?'Adding…':'Add to My Shop'}</button>}</div>)}</div>}<div className="mt-4 flex justify-between"><button disabled={sharedPage<=1} onClick={()=>setSharedPage(p=>p-1)}>Previous</button><span>Page {sharedPage} of {sharedLastPage}</span><button disabled={sharedPage>=sharedLastPage} onClick={()=>setSharedPage(p=>p+1)}>Next</button></div></section>}
+    <div className={catalogueTab==='mine'?'contents':'hidden'}>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Catalogue</p><h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Products &amp; Books</h1><p className="mt-1 text-sm text-slate-500">Your shop's registered products, all in one place.</p></div>
       <div className="rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm"><p className="text-xs font-medium text-slate-500">Total products</p><p className="text-2xl font-bold tabular-nums text-slate-900">{count.toLocaleString('en-KE')}</p></div>
@@ -306,6 +334,7 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
     </section>
     {uploadOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3"><section role="dialog" aria-modal="true" aria-label="Upload catalogue products" className="w-full max-w-lg space-y-4 rounded-xl bg-white p-5 shadow-2xl"><div><h2 className="text-lg font-bold">Upload products to catalogue</h2><p className="mt-1 text-xs text-slate-500">Upload initial products without adding stock. Shop owners can find them and use Assign to stock to receive quantities separately.</p></div><button type="button" onClick={()=>void downloadTemplate()} disabled={!hierarchy.length} className="rounded-lg border border-teal-300 px-3 py-2 text-xs font-semibold text-teal-800">Download CSV template</button><label className="block space-y-1 text-xs font-semibold">Select completed CSV file (.csv)<input type="file" accept=".csv,text/csv" onChange={e=>void readProducts(e.target.files?.[0])} className="block w-full rounded-lg border border-slate-200 p-2 text-xs"/></label>{uploadRows.length>0&&<p className="text-xs text-emerald-700">{uploadRows.length} valid products ready. Existing SKUs will be rejected; no stock quantities will change.</p>}{uploadError&&<p role="alert" className="text-xs text-rose-700">{uploadError}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={uploadBusy} onClick={()=>setUploadOpen(false)} className="rounded-lg border px-4 py-2 text-xs">Cancel</button><button type="button" disabled={uploadBusy||!uploadRows.length} onClick={()=>void submitProducts()} className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{uploadBusy?'Uploading…':`Upload ${uploadRows.length} products`}</button></div></section></div>}
     {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3" role="presentation" onMouseDown={event => { if(event.target===event.currentTarget&&!saving)setEditing(null) }}><section role="dialog" aria-modal="true" aria-label="Edit product" className="w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl max-h-[90vh]"><h2 className="text-lg font-bold">Edit product</h2><p className="mb-4 text-xs text-slate-500">Update catalogue details. Receive stock separately to maintain inventory movement history.</p><form onSubmit={event => void saveProduct(event)} className="grid gap-3">{([['title','Product name'],['sku','SKU'],['isbn','ISBN'],['cover_url','Product image URL'],['cost_price','Cost price'],['selling_price','Selling price'],['reorder_level','Reorder level']] as const).map(([key,label])=><label key={key} className="grid gap-1 text-xs font-semibold text-slate-700">{label}<input className="rounded-lg border border-slate-200 px-3 py-2 text-sm" required={key==='title'||key==='sku'} type={key==='cost_price'||key==='selling_price'||key==='reorder_level'?'number':key==='cover_url'?'url':'text'} min={key==='cost_price'||key==='selling_price'||key==='reorder_level'?0:undefined} step={key==='reorder_level'?'1':key==='cost_price'||key==='selling_price'?'0.01':undefined} value={String(editing[key]??'')} onChange={e=>setEditing({...editing,[key]:e.target.value})}/></label>)}{editError&&<p role="alert" className="text-xs text-rose-600">{editError}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={saving} className="rounded-lg border px-4 py-2 text-sm" onClick={()=>setEditing(null)}>Cancel</button><button disabled={saving} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white">{saving?'Saving…':'Save product'}</button></div></form></section></div>}
+    </div>
   </main>
 }
 
