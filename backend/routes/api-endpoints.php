@@ -37,6 +37,27 @@ Route::post('/auth/email/resend', [RegistrationController::class, 'resend'])->mi
 Route::post('/auth/register/bookshop', [BookshopRegistrationController::class, 'register'])->middleware('throttle:register');
 Route::post('/auth/invitations/accept', [StaffInvitationController::class, 'accept'])->middleware('throttle:5,1');
 
+// Public product discovery: explicitly whitelisted descriptive fields only.
+// Never expose tenant identity, pricing, inventory, suppliers, or private book records.
+Route::get('/public/products', function (\Illuminate\Http\Request $request) {
+    $data = $request->validate(['search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1|max:10000']);
+    $search = trim($data['search'] ?? '');
+    $query = \Illuminate\Support\Facades\DB::table('books as b')
+        ->leftJoin('product_subcategories as s', 's.id', '=', 'b.product_subcategory_id')
+        ->leftJoin('product_categories as c', 'c.id', '=', 's.product_category_id')
+        ->where('b.is_active', true)
+        ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
+            ->where('b.title', 'like', '%'.$search.'%')
+            ->orWhere('b.sku', 'like', '%'.$search.'%')
+            ->orWhere('b.isbn', 'like', '%'.$search.'%')
+            ->orWhere('b.brand', 'like', '%'.$search.'%')
+            ->orWhere('c.name', 'like', '%'.$search.'%')
+            ->orWhere('s.name', 'like', '%'.$search.'%')))
+        ->select('b.title', 'b.sku', 'b.isbn', 'b.brand', 'c.name as category', 's.name as subcategory')
+        ->distinct()->orderBy('b.title')->orderBy('b.sku');
+    return response()->json($query->paginate(24));
+})->middleware('throttle:60,1');
+
 // Shared, read-only reference hierarchy. Never query tenant-owned books or inventory here.
 Route::get('/public/products-catalogue', function (\Illuminate\Http\Request $request) {
     $data = $request->validate(['search' => 'nullable|string|max:100']);
