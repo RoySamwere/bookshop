@@ -12,6 +12,31 @@ use Illuminate\Support\Facades\DB;
  */
 class CatalogController extends Controller
 {
+    /** Copy a public product description into this shop without sharing inventory or prices. */
+    public function adoptPublicProduct(Request $request) {
+        $tenant = Tenant::requireId();
+        $data = $request->validate(['source_id' => 'required|integer|min:1']);
+        $source = DB::table('books')->where('id', $data['source_id'])->where('is_active', true)->first();
+        abort_unless($source, 404);
+        $existing = DB::table('books')->where('bookshop_id', $tenant)
+            ->where(function ($q) use ($source) {
+                $q->where('sku', $source->sku);
+                if ($source->isbn) $q->orWhere('isbn', $source->isbn);
+            })->first();
+        if ($existing) return response()->json(['id' => $existing->id, 'already_added' => true]);
+        $allowed = ['title','subtitle','isbn','sku','brand','product_subcategory_id','edition','language','curriculum','grade','description','cover_url','ruling_style','page_count','paper_size','binding_type'];
+        $fields = [];
+        foreach ($allowed as $field) if (property_exists($source, $field)) $fields[$field] = $source->$field;
+        $fields['bookshop_id'] = $tenant;
+        $fields['cost_price'] = 0;
+        $fields['selling_price'] = 0;
+        $fields['reorder_level'] = 5;
+        $fields['is_active'] = true;
+        $fields['created_at'] = now();
+        $fields['updated_at'] = now();
+        $id = DB::table('books')->insertGetId($fields);
+        return response()->json(['id' => $id, 'already_added' => false], 201);
+    }
     public function books(Request $request) {
         $request->validate([
             'search'=>'nullable|string|max:255','per_page'=>'nullable|integer|in:10,20,30,50,100,200',
