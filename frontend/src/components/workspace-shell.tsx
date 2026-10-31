@@ -21,6 +21,7 @@ const sections = [
   { label: 'Sales History', description: 'Receipts and transactions', icon: FileText, permission: 'sales.view' },
   { label: 'Products & Books', description: 'Browse and manage your catalogue', icon: BookOpen, permission: 'catalog.view' },
   { label: 'Inventory & Stock', description: 'Stock levels and replenishment', icon: Boxes, permission: 'inventory.view' },
+  { label: 'Stock Taking', description: 'Count, export and reconcile stock', icon: CheckCheck, permission: 'inventory.view' },
   { label: 'Suppliers', description: 'Your suppliers and publishing partners', icon: Truck, permission: 'suppliers.view' },
   { label: 'Customers', description: 'Your customer directory', icon: Users, permission: 'customers.view' },
   { label: 'Reports & Analytics', description: 'Sales and performance insights', icon: BarChart3, permission: 'reports.view' },
