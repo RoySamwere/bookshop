@@ -209,6 +209,7 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
 }
 
 function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSaved }: { initial: { book?: Book; branchId?: number }; branches: Branch[]; canCreateProduct: boolean; onClose: () => void; onSaved: (message: string) => void }) {
+  const [step,setStep] = useState(1)
   const [book, setBook] = useState<Book | null>(initial.book ?? null)
   const [branch, setBranch] = useState(String(initial.branchId ?? branches[0]?.id ?? ''))
   const [quantity, setQuantity] = useState('')
@@ -261,6 +262,7 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   async function save(event: FormEvent) {
     event.preventDefault()
     if (submitting.current) return
+    if(step!==3)return
     if (!book) { setError(new ApiError('Select a product to receive.', 422)); return }
     if (!supplierId) { setError(new ApiError('Select a supplier from the list.', 422)); return }
     submitting.current = true; setBusy(true); setError(null)
@@ -271,17 +273,18 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
     finally { submitting.current = false; setBusy(false) }
   }
   return <Modal variant="original" title="Receive stock" description="Add a delivery or opening stock to a branch." icon={<PackagePlus size={21} />} busy={busy || creating} onClose={onClose}>
+    <div className="mb-5 grid grid-cols-3 gap-2" aria-label="Stock receiving steps">{['1. Product','2. Stock details','3. Review'].map((name,index)=><div key={name} className={`rounded-lg px-2 py-3 text-center text-xs font-semibold ${step===index+1?'bg-teal-700 text-white':step>index+1?'bg-teal-50 text-teal-800':'bg-slate-100 text-slate-500'}`}>{name}</div>)}</div>
     <form onSubmit={save}>
       <FormAlert message={error?.message ?? ''} />
       <FormAlert tone="success" message={productMessage} />
       <fieldset disabled={busy || creating} className="space-y-4 disabled:opacity-70">
-        {book ? <div className="stock-product-selected"><strong>{book.title}</strong><span>{book.sku}</span><button type="button" className="text-button" onClick={() => { setBook(null); setSearch(''); setAddingProduct(false); setProductMessage(''); setError(null) }}>Change product</button>{error?.field('book_id') && <p className="mt-2 text-xs text-rose-600">{error.field('book_id')}</p>}</div> : <div>
+        {step===1 && (book ? <div className="stock-product-selected"><strong>{book.title}</strong><span>{book.sku}</span><button type="button" className="text-button" onClick={() => { setBook(null); setSearch(''); setAddingProduct(false); setProductMessage(''); setError(null) }}>Change product</button>{error?.field('book_id') && <p className="mt-2 text-xs text-rose-600">{error.field('book_id')}</p>}</div> : <div>
           <Field label="Find a product" hint="Search the entire Products & Books catalogue by product, SKU, category, subcategory, brand or exercise-book specification. Results appear only after you type a search."><input className={inputClass} value={search} maxLength={255} disabled={addingProduct} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => { setSearch(e.target.value); setBookPage(1);setBooks([]); setSearchError(''); setSearching(Boolean(e.target.value.trim())) }} placeholder="Type to find or add a product…" /></Field>
           {!addingProduct && Boolean(search.trim()) && <div className="stock-product-results" aria-live="polite">{searching || completedSearch !== search.trim() ? <p>Searching…</p> : searchError ? <ErrorState message={searchError} onRetry={() => setRetry(n => n + 1)} /> : books.length ? books.map(item => <button type="button" key={item.id} disabled={!item.is_active} className="stock-product-option" onClick={() => { setBook(item); setError(null) }}><strong>{item.title}</strong><span>{[item.category_name,item.subcategory_name,item.brand,item.ruling_style,item.page_count?`${item.page_count} pages`:null,item.sku].filter(Boolean).join(' · ')}{!item.is_active?' · Inactive — activate in Products & Books first':''}</span></button>) : <div className="stock-product-missing"><p>No product matches “{search.trim()}”.</p>{canCreateProduct ? <button type="button" className="secondary-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Add “{search.trim()}” as a new product</button> : <p>Ask a catalogue manager to add this product.</p>}</div>}<div className="flex items-center justify-between gap-2 px-3 py-2 text-xs"><span>{bookTotal} matching products · page {bookPage} of {bookLastPage}</span><div className="flex gap-2"><button type="button" className="secondary-button" disabled={bookPage<=1} onClick={()=>setBookPage(p=>p-1)}>Previous</button><button type="button" className="secondary-button" disabled={bookPage>=bookLastPage} onClick={()=>setBookPage(p=>p+1)}>Next</button></div></div></div>}
           {!addingProduct && canCreateProduct && search.trim() && !searching && completedSearch === search.trim() && !searchError && books.length > 0 && !books.some(item => item.title.toLowerCase() === search.trim().toLowerCase() || item.sku.toLowerCase() === search.trim().toLowerCase()) && <button type="button" className="text-button" onClick={() => { setAddingProduct(true); setError(null) }}><Plus size={15} /> Not listed? Add “{search.trim()}”</button>}
           {addingProduct && <AddReceiptProduct initialName={search.trim()} creating={creating} onBusy={setCreating} onCancel={() => setAddingProduct(false)} onCreated={item => { setBook(item); setAddingProduct(false); setError(null); setProductMessage('Product added. Enter the quantity below to receive stock.') }} />}
-        </div>}
-        <div className="grid gap-4 sm:grid-cols-2"><Field label="Receiving branch" error={error?.field('branch_id')}><select required className={inputClass} value={branch} onChange={e => setBranch(e.target.value)}><option value="">Choose branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
+        </div>)}
+        {step===2 && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Receiving branch" error={error?.field('branch_id')}><select required className={inputClass} value={branch} onChange={e => setBranch(e.target.value)}><option value="">Choose branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
         <Field label="Received as"><select className={inputClass} value={unitId} onChange={e=>setUnitId(e.target.value)}><option value="">Individual piece (×1)</option>{units.map(u=><option key={u.id} value={u.id}>{u.name} (×{u.pieces_per_unit})</option>)}</select></Field>
         {canCreateProduct && <div className="grid gap-4 sm:grid-cols-2"><Field label="Buying price (KES, optional)" error={error?.field('buying_price')}><input className={inputClass} type="number" min="0" step="0.01" value={buyingPrice} onChange={e=>setBuyingPrice(e.target.value)} placeholder="Leave unchanged"/></Field><Field label="Selling price (KES, optional)" error={error?.field('selling_price')}><input className={inputClass} type="number" min="0" step="0.01" value={sellingPrice} onChange={e=>setSellingPrice(e.target.value)} placeholder="Leave unchanged"/></Field></div>}
@@ -295,10 +298,13 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
             {!suppliers.some(x=>x.name.toLowerCase().includes(supplierQuery.toLowerCase()))&&<p className="px-3 py-2 text-sm">No matching suppliers. Register one on the Suppliers page.</p>}
           </div>}
         </div>
+        </>}
+        {step===3 && <><div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm space-y-2"><h3 className="font-bold text-slate-900">Review stock receipt</h3><p><strong>Product:</strong> {book?.title}</p><p><strong>Branch:</strong> {branches.find(b=>String(b.id)===branch)?.name}</p><p><strong>Quantity:</strong> {quantity} {unitId?units.find(u=>String(u.id)===unitId)?.name:"individual pieces"} ({Number(quantity||0)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} pieces)</p><p><strong>Supplier:</strong> {suppliers.find(s=>String(s.id)===supplierId)?.name||"Not selected"}</p>{buyingPrice!==""&&<p><strong>Buying price:</strong> KES {buyingPrice}</p>}{sellingPrice!==""&&<p><strong>Selling price:</strong> KES {sellingPrice}</p>}</div>
         <Field label="Delivery note or invoice number (optional)" error={error?.field('reference')}><input className={inputClass} maxLength={255} value={reference} onChange={e => setReference(e.target.value)} placeholder="Delivery note or invoice number" /></Field>
         <Field label="Notes (optional)" error={error?.field('notes')}><textarea className={`${inputClass} h-20 py-3`} maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opening stock, delivery details…" /></Field>
+        </>}
       </fieldset>
-      <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5"><button type="button" className={secondaryButton} disabled={busy || creating} onClick={onClose}>Cancel</button><button type="submit" className={primaryButton} disabled={busy || creating || !book}>{busy ? 'Receiving…' : 'Receive stock'}</button></div>
+      <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-5"><button type="button" className={secondaryButton} disabled={busy||creating} onClick={onClose}>Cancel</button>{step>1&&<button type="button" className={secondaryButton} disabled={busy||creating} onClick={()=>{setError(null);setStep(n=>n-1)}}>Back</button>}{step<3?<button type="button" className={primaryButton} disabled={busy||creating||addingProduct} onClick={()=>{if(step===1&&!book){setError(new ApiError('Select or create a product to continue.',422));return}if(step===2&&(!branch||!quantity||!Number.isInteger(Number(quantity))||Number(quantity)<1||!supplierId)){setError(new ApiError('Select a branch and supplier, and enter a valid quantity.',422));return}setError(null);setStep(n=>n+1)}}>Continue</button>:<button type="submit" className={primaryButton} disabled={busy||creating||!book}>{busy?'Receiving…':'Confirm & receive stock'}</button>}</div>
     </form>
   </Modal>
 }
