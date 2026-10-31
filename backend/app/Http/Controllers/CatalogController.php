@@ -183,8 +183,19 @@ class CatalogController extends Controller
     }
     public function storeSupplier(Request $request) {
         $tenant=Tenant::requireId();
-        $data=$request->validate(['name'=>'required|string|max:255','contact_person'=>'nullable|string|max:255','email'=>'nullable|email','phone'=>'nullable|string|max:50','address'=>'nullable|string','tax_pin'=>'nullable|string|max:50']);
+        $data=$request->validate($this->supplierRules());
         $id=DB::table('suppliers')->insertGetId(array_merge($data,['bookshop_id'=>$tenant,'created_at'=>now(),'updated_at'=>now()]));
         return response()->json(DB::table('suppliers')->find($id),201);
+    }
+    public function updateSupplier(Request $request,int $supplier) {
+        $tenant=Tenant::requireId();
+        abort_unless(DB::table('suppliers')->where('bookshop_id',$tenant)->where('id',$supplier)->exists(),404);
+        $data=$request->validate([...$this->supplierRules(),'is_active'=>'sometimes|boolean']);
+        DB::table('suppliers')->where('bookshop_id',$tenant)->where('id',$supplier)->update(array_merge($data,['updated_at'=>now()]));
+        return response()->json(DB::table('suppliers')->find($supplier));
+    }
+    /** Supplier details used across receiving and purchase orders (email for LPOs, payment terms, lead time). */
+    private function supplierRules(): array {
+        return ['name'=>'required|string|max:255','contact_person'=>'nullable|string|max:255','email'=>'nullable|email:rfc','phone'=>'nullable|string|max:50','address'=>'nullable|string','tax_pin'=>'nullable|string|max:50','payment_terms'=>'nullable|string|max:120','lead_time_days'=>'nullable|integer|min:0|max:365'];
     }
 }

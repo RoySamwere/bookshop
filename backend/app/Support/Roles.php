@@ -29,6 +29,8 @@ final class Roles
         'pos.access', 'sales.view', 'returns.process',
         'catalog.view', 'catalog.manage', 'inventory.view', 'inventory.manage',
         'suppliers.view', 'suppliers.manage', 'customers.view', 'customers.manage',
+        // Purchase orders: view, create/edit/receive, approve, confirm & send to suppliers.
+        'purchases.view', 'purchases.manage', 'purchases.approve', 'purchases.confirm',
         'reports.view', 'finance.view', 'expenses.manage',
         'users.view', 'users.manage', 'branches.view', 'branches.manage',
         'settings.view', 'settings.manage', 'audit.view',
@@ -77,6 +79,7 @@ final class Roles
                 'workspace.access', 'dashboard.view', 'pos.access', 'sales.view', 'returns.process',
                 'catalog.view', 'catalog.manage', 'inventory.view', 'inventory.manage',
                 'suppliers.view', 'suppliers.manage', 'customers.view', 'customers.manage',
+                'purchases.view', 'purchases.manage', 'purchases.approve', 'purchases.confirm',
                 'reports.view', 'expenses.manage', 'users.view', 'users.manage',
                 'branches.view', 'settings.view', 'audit.view',
             ],
@@ -87,6 +90,7 @@ final class Roles
             'permissions' => [
                 'workspace.access', 'dashboard.view', 'pos.access', 'sales.view', 'returns.process',
                 'catalog.view', 'inventory.view', 'suppliers.view', 'customers.view', 'customers.manage',
+                'purchases.view', 'purchases.approve',
                 'reports.view', 'users.view', 'branches.view', 'settings.view',
             ],
         ],
@@ -104,6 +108,7 @@ final class Roles
             'permissions' => [
                 'workspace.access', 'dashboard.view', 'catalog.view', 'catalog.manage',
                 'inventory.view', 'inventory.manage', 'suppliers.view', 'suppliers.manage',
+                'purchases.view', 'purchases.manage',
             ],
         ],
         self::CUSTOMER => [

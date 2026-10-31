@@ -37,16 +37,16 @@ class InventoryController extends Controller
                     });
                 }
             })
-            ->when($request->filled('min_available'),fn($q)=>$q->whereRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) >= ?',[(int)$request->query('min_available')]))
-            ->when($request->filled('max_available'),fn($q)=>$q->whereRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) <= ?',[(int)$request->query('max_available')]));
+            ->when($request->filled('min_available'),fn($q)=>$q->whereRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) >= ?',[(int)$request->query('min_available')]))
+            ->when($request->filled('max_available'),fn($q)=>$q->whereRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) <= ?',[(int)$request->query('max_available')]));
         $summary = (clone $query)->selectRaw('COALESCE(SUM(COALESCE(i.quantity,0)), 0) as units, COALESCE(SUM(COALESCE(i.quantity,0) * b.selling_price), 0) as value, COUNT(*) as stock_lines, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level THEN 1 ELSE 0 END), 0) as low, COALESCE(SUM(CASE WHEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0 THEN 1 ELSE 0 END), 0) as out_of_stock')->first();
         $result = $query
             ->when($request->query('status') === 'available', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0'))
             ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level'))
             ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0'))
             ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, br.name as branch_name')
-            ->when($request->query('sort','available_desc')==='available_desc',fn($q)=>$q->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) DESC'))
-            ->when($request->query('sort')==='available_asc',fn($q)=>$q->orderByRaw('GREATEST(COALESCE(i.quantity,0) - COALESCE(i.reserved,0),0) ASC'))
+            ->when($request->query('sort','available_desc')==='available_desc',fn($q)=>$q->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) DESC'))
+            ->when($request->query('sort')==='available_asc',fn($q)=>$q->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) ASC'))
             ->when($request->query('sort')==='title_desc',fn($q)=>$q->orderBy('b.title','desc'))
             ->when($request->query('sort')==='sku_asc',fn($q)=>$q->orderBy('b.sku'))
             ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));

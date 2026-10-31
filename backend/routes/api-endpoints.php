@@ -11,7 +11,7 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LaunchSubscriberController;
 use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\ProcurementController;
+use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductUnitController;
 use App\Http\Controllers\RegistrationController;
@@ -102,6 +102,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/catalog/{table}', [CatalogController::class, 'createLookup'])->middleware('permission:catalog.manage');
         Route::get('/suppliers', [CatalogController::class, 'suppliers'])->middleware('permission:suppliers.view');
         Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
+        Route::put('/suppliers/{supplier}', [CatalogController::class, 'updateSupplier'])->middleware('permission:suppliers.manage')->whereNumber('supplier');
         Route::post('/inventory/catalogue-stock-summary', [InventoryController::class, 'catalogueStockSummary'])->middleware('permission:inventory.view');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
         Route::get('/inventory/stocktake-snapshot', [InventoryController::class, 'stocktakeSnapshot'])->middleware('permission:inventory.view');
@@ -111,11 +112,39 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/inventory/receive', [InventoryController::class, 'receive'])->middleware('permission:inventory.manage');
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])->middleware('permission:inventory.manage');
         Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])->middleware('permission:inventory.manage');
-        Route::get('/purchase-orders', [ProcurementController::class, 'index'])->middleware('permission:inventory.view');
-        Route::get('/purchase-orders/{order}', [ProcurementController::class, 'show'])->middleware('permission:inventory.view');
-        Route::post('/purchase-orders', [ProcurementController::class, 'store'])->middleware('permission:inventory.manage');
-        Route::post('/purchase-orders/{order}/approve', [ProcurementController::class, 'approve'])->middleware('permission:inventory.manage');
-        Route::post('/purchase-orders/{order}/receive', [ProcurementController::class, 'receive'])->middleware('permission:inventory.manage');
+        // Local Purchase Orders (LPO), smart reordering and receiving.
+        Route::middleware('permission:purchases.view')->group(function () {
+            Route::get('/purchase-orders', [PurchaseOrderController::class, 'index']);
+            Route::get('/purchase-orders/summary', [PurchaseOrderController::class, 'summary']);
+            Route::get('/purchase-orders/reports', [PurchaseOrderController::class, 'reports']);
+            Route::get('/purchase-orders/suggestions', [PurchaseOrderController::class, 'suggestions']);
+            Route::get('/purchase-orders/catalogue', [PurchaseOrderController::class, 'catalogue']);
+            Route::get('/purchase-orders/price-history/{book}', [PurchaseOrderController::class, 'priceHistory'])->whereNumber('book');
+            Route::get('/purchase-orders/settings', [PurchaseOrderController::class, 'settings']);
+            Route::get('/purchase-orders/{order}', [PurchaseOrderController::class, 'show'])->whereNumber('order');
+            Route::get('/purchase-orders/{order}/pdf', [PurchaseOrderController::class, 'pdf'])->whereNumber('order');
+        });
+        Route::put('/purchase-orders/settings', [PurchaseOrderController::class, 'updateSettings'])->middleware('permission:settings.manage');
+        Route::middleware('permission:purchases.manage')->group(function () {
+            Route::put('/purchase-orders/reorder-settings/{book}', [PurchaseOrderController::class, 'updateReorderSettings'])->whereNumber('book');
+            Route::post('/purchase-orders/generate', [PurchaseOrderController::class, 'generate']);
+            Route::post('/purchase-orders', [PurchaseOrderController::class, 'store']);
+            Route::put('/purchase-orders/{order}', [PurchaseOrderController::class, 'update'])->whereNumber('order');
+            Route::delete('/purchase-orders/{order}', [PurchaseOrderController::class, 'destroy'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/submit', [PurchaseOrderController::class, 'submit'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/cancel', [PurchaseOrderController::class, 'cancel'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/receive', [PurchaseOrderController::class, 'receive'])->whereNumber('order');
+        });
+        Route::middleware('permission:purchases.approve')->group(function () {
+            Route::post('/purchase-orders/{order}/approve', [PurchaseOrderController::class, 'approve'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/reject', [PurchaseOrderController::class, 'reject'])->whereNumber('order');
+        });
+        Route::middleware('permission:purchases.confirm')->group(function () {
+            Route::post('/purchase-orders/{order}/confirm', [PurchaseOrderController::class, 'confirm'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/send', [PurchaseOrderController::class, 'send'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/mark-sent', [PurchaseOrderController::class, 'markSent'])->whereNumber('order');
+            Route::post('/purchase-orders/{order}/amend', [PurchaseOrderController::class, 'amend'])->whereNumber('order');
+        });
         Route::get('/business', [BusinessProfileController::class, 'show']);
         Route::put('/business', [BusinessProfileController::class, 'update'])->middleware('permission:settings.manage');
 

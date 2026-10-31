@@ -45,7 +45,7 @@ class PosController extends Controller
         ->selectRaw('CASE WHEN COALESCE(i.quantity,0)>COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0)-COALESCE(i.reserved,0) ELSE 0 END as available')
         // A scanned barcode (exact SKU or ISBN) is always the first result.
         ->when($search,fn($q,$search)=>$q->orderByRaw('CASE WHEN b.sku = ? OR b.isbn = ? THEN 0 ELSE 1 END',[$search,$search]))
-        ->orderByRaw('GREATEST(COALESCE(i.quantity,0)-COALESCE(i.reserved,0),0) DESC')->orderBy('b.title')->paginate(30);
+        ->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) DESC')->orderBy('b.title')->paginate(30);
     }
 
     public function sales(Request $request) {
