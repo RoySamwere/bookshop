@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Bell, BookOpen, Boxes, Download, PackagePlus, Plus, Search } from 'lucide-react'
+import { Bell, BookOpen, Boxes, Download, PackagePlus, Plus, Search, Eye, Pencil, Trash2 } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import type { BookshopUser } from '../lib/auth'
 import { branchesApi, type Branch } from '../lib/workspace-api'
@@ -37,6 +37,11 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [reload, setReload] = useState(0)
+  const [selectedStock, setSelectedStock] = useState<StockRow | null>(null)
+  const [editingStock, setEditingStock] = useState(false)
+  const [editPrices, setEditPrices] = useState({cost_price:'',selling_price:''})
+  const [manageError,setManageError] = useState('')
+  const [manageBusy,setManageBusy] = useState(false)
   const [receipt, setReceipt] = useState<{ book?: Book; branchId?: number } | null>(null)
   useEffect(() => { if (stockSelection && currentUser.permissions.includes('inventory.manage')) { setReceipt({ book: stockSelection }); onSelectionConsumed?.() } }, [stockSelection, currentUser.permissions, onSelectionConsumed])
 
@@ -181,11 +186,24 @@ export function InventoryView({ currentUser, notify, stockSelection, onSelection
         <div className="overflow-x-auto"><table className="w-full min-w-[800px] text-left text-xs sm:text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Branch</th><th className="px-5 py-3 text-right">On hand</th><th className="px-5 py-3 text-right">Available</th><th className="px-5 py-3">Stock status</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{result.data.map(row=>{
           const available=row.quantity-row.reserved
           const label=available===0?'Out of stock':available<=row.reorder_level?'Low stock':'Healthy'
-          return <tr key={`${row.book_id}-${row.branch_id}`} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-semibold text-slate-900">{row.title}</div><div className="mt-1 font-mono text-xs text-slate-500">{row.sku}</div></td><td className="px-4 py-3 text-slate-600">{row.branch_name}</td><td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{row.quantity.toLocaleString()}</td><td className="px-5 py-4 text-right tabular-nums text-slate-700">{available.toLocaleString()}</td><td className="px-5 py-4"><span className={label==='Healthy'?'rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700':label==='Low stock'?'rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700':'rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700'}>{label}</span></td><td className="px-5 py-4 text-right">{canManage&&branches.some(b=>b.id===row.branch_id&&b.is_active)&&<button type="button" className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-100" onClick={()=>setReceipt({book:{id:row.book_id,title:row.title,sku:row.sku,is_active:true},branchId:row.branch_id})}>Restock</button>}</td></tr>
+          return <tr key={`${row.book_id}-${row.branch_id}`} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-semibold text-slate-900">{row.title}</div><div className="mt-1 font-mono text-xs text-slate-500">{row.sku}</div></td><td className="px-4 py-3 text-slate-600">{row.branch_name}</td><td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{row.quantity.toLocaleString()}</td><td className="px-5 py-4 text-right tabular-nums text-slate-700">{available.toLocaleString()}</td><td className="px-5 py-4"><span className={label==='Healthy'?'rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700':label==='Low stock'?'rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700':'rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700'}>{label}</span></td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${row.title}`} title="View and manage product" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100" onClick={()=>{setSelectedStock(row);setEditingStock(false);setManageError('')}}><Eye size={16}/> View</button></td></tr>
         })}</tbody></table></div>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',padding:12}}><label>Items per page <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}>{[10,20,30,50,100,200].map(n=><option key={n} value={n}>{n}</option>)}</select></label><button type="button" className="secondary-button" disabled={loading||page>=result.last_page} onClick={()=>setPage(result.last_page)}>Last page »</button></div><Pagination meta={result} onPage={setPage} />
       </>}
     </section>
+    {selectedStock && <Modal variant="original" title="Product details" description="View stock and manage this product." icon={<BookOpen size={21}/>} busy={manageBusy} onClose={()=>{setSelectedStock(null);setEditingStock(false)}}>
+      <div className="space-y-4">
+        <div><h3 className="text-lg font-bold">{selectedStock.title}</h3><p className="text-sm text-slate-500">{selectedStock.sku} · {selectedStock.branch_name}</p></div>
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm"><div>On hand <strong className="block text-lg">{selectedStock.quantity}</strong></div><div>Available <strong className="block text-lg">{selectedStock.quantity-selectedStock.reserved}</strong></div><div>Reserved <strong className="block">{selectedStock.reserved}</strong></div><div>Reorder level <strong className="block">{selectedStock.reorder_level}</strong></div></div>
+        {manageError && <p role="alert" className="text-sm text-rose-600">{manageError}</p>}
+        {editingStock && <form className="space-y-3" onSubmit={async e=>{e.preventDefault();setManageBusy(true);setManageError('');try{await api(`/books/${selectedStock.book_id}`,{method:'PATCH',body:{cost_price:Number(editPrices.cost_price),selling_price:Number(editPrices.selling_price)}});notify('Product prices updated.');setEditingStock(false);setReload(n=>n+1)}catch(e){setManageError(errorMessage(e))}finally{setManageBusy(false)}}}><p className="text-sm font-semibold">Edit product prices</p><Field label="Buying price (KES)"><input className={inputClass} required type="number" min="0" step="0.01" value={editPrices.cost_price} onChange={e=>setEditPrices(v=>({...v,cost_price:e.target.value}))}/></Field><Field label="Selling price (KES)"><input className={inputClass} required type="number" min="0" step="0.01" value={editPrices.selling_price} onChange={e=>setEditPrices(v=>({...v,selling_price:e.target.value}))}/></Field><button className={primaryButton} type="submit" disabled={manageBusy}>Save prices</button></form>}
+        <div className="flex flex-wrap gap-2 border-t pt-4">
+          {canManage && <button type="button" className={primaryButton} onClick={()=>{setReceipt({book:{id:selectedStock.book_id,title:selectedStock.title,sku:selectedStock.sku,is_active:true},branchId:selectedStock.branch_id});setSelectedStock(null)}}><PackagePlus size={16}/> Restock</button>}
+          {currentUser.permissions.includes('catalog.manage') && <button type="button" className={secondaryButton} onClick={async()=>{setManageError('');try{const data=await api<{data:{cost_price:number;selling_price:number}[]}>( '/books',{query:{search:selectedStock.sku,per_page:10}});const product=data.data.find(x=>(x as {sku?:string}).sku===selectedStock.sku) as {cost_price:number;selling_price:number}|undefined;if(!product)throw Error('Product not found');setEditPrices({cost_price:String(product.cost_price),selling_price:String(product.selling_price)});setEditingStock(true)}catch(e){setManageError(errorMessage(e))}}}><Pencil size={16}/> Edit</button>}
+          {currentUser.permissions.includes('catalog.manage') && <button type="button" className={secondaryButton} onClick={async()=>{if(!window.confirm('Deactivate this product? Historical stock and sales will be preserved.'))return;setManageBusy(true);setManageError('');try{await api(`/books/${selectedStock.book_id}`,{method:'PATCH',body:{is_active:false}});notify('Product deactivated.');setSelectedStock(null);setReload(n=>n+1)}catch(e){setManageError(errorMessage(e))}finally{setManageBusy(false)}}}><Trash2 size={16}/> Deactivate</button>}
+        </div>
+      </div>
+    </Modal>}
     {receipt && <ReceiveStockDialog initial={receipt} canCreateProduct={currentUser.permissions.includes('catalog.manage')} branches={branches.filter(b => b.is_active)} onClose={() => setReceipt(null)} onSaved={message => { setReceipt(null); setReload(n => n + 1); notify(message) }} />}
   </div>
 }
@@ -195,6 +213,8 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
   const [branch, setBranch] = useState(String(initial.branchId ?? branches[0]?.id ?? ''))
   const [quantity, setQuantity] = useState('')
   const [unitId, setUnitId] = useState('')
+  const [buyingPrice,setBuyingPrice] = useState('')
+  const [sellingPrice,setSellingPrice] = useState('')
   const [units, setUnits] = useState<{id:number;name:string;pieces_per_unit:number}[]>([])
   const [reference, setReference] = useState('')
   const [supplierId, setSupplierId] = useState('')
@@ -245,7 +265,7 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
     if (!supplierId) { setError(new ApiError('Select a supplier from the list.', 422)); return }
     submitting.current = true; setBusy(true); setError(null)
     try {
-      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, supplier_id:supplierId?Number(supplierId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
+      const result = await api<{ quantity: number }>('/inventory/receive', { method: 'POST', body: { book_id: book.id, branch_id: Number(branch), quantity: Number(quantity), product_unit_id:unitId?Number(unitId):null, ...(canCreateProduct && buyingPrice!==''?{buying_price:Number(buyingPrice)}:{}), ...(canCreateProduct && sellingPrice!==''?{selling_price:Number(sellingPrice)}:{}), supplier_id:supplierId?Number(supplierId):null, reference: reference.trim() || null, notes: notes.trim() || null } })
       onSaved(`${Number(quantity)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units received. ${book.title} now has ${result.quantity} units on hand at ${branches.find(b => b.id === Number(branch))?.name}.`)
     } catch (e) { setError(e instanceof ApiError ? e : new ApiError(errorMessage(e), 0)) }
     finally { submitting.current = false; setBusy(false) }
@@ -264,6 +284,7 @@ function ReceiveStockDialog({ initial, branches, canCreateProduct, onClose, onSa
         <div className="grid gap-4 sm:grid-cols-2"><Field label="Receiving branch" error={error?.field('branch_id')}><select required className={inputClass} value={branch} onChange={e => setBranch(e.target.value)}><option value="">Choose branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
           <Field label="Quantity to add" error={error?.field('quantity')}><input required className={inputClass} type="number" min="1" max="2147483647" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 25" /></Field></div>
         <Field label="Received as"><select className={inputClass} value={unitId} onChange={e=>setUnitId(e.target.value)}><option value="">Individual piece (×1)</option>{units.map(u=><option key={u.id} value={u.id}>{u.name} (×{u.pieces_per_unit})</option>)}</select></Field>
+        {canCreateProduct && <div className="grid gap-4 sm:grid-cols-2"><Field label="Buying price (KES, optional)" error={error?.field('buying_price')}><input className={inputClass} type="number" min="0" step="0.01" value={buyingPrice} onChange={e=>setBuyingPrice(e.target.value)} placeholder="Leave unchanged"/></Field><Field label="Selling price (KES, optional)" error={error?.field('selling_price')}><input className={inputClass} type="number" min="0" step="0.01" value={sellingPrice} onChange={e=>setSellingPrice(e.target.value)} placeholder="Leave unchanged"/></Field></div>}
         <p className="text-sm text-slate-600">Adds {Number(quantity||0)*(units.find(u=>String(u.id)===unitId)?.pieces_per_unit??1)} individual units to stock.</p>
         <div className="relative">
           <Field label="Supplier *" error={error?.field('supplier_id')}>
