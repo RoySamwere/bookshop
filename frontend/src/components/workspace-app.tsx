@@ -209,6 +209,7 @@ function Dashboard({ active, setActive, currentUser }: { active: string; setActi
 function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToast: (message: string) => void; onAssign: (book: { id: number; title: string; sku: string; is_active: boolean }) => void; canAssign: boolean; canEdit: boolean }) {
   type BookRow={id:number;title:string;sku:string;isbn:string|null;selling_price:string|number;cost_price?:string|number;reorder_level?:number;cover_url?:string|null;category_name?:string|null;subcategory_name?:string|null;is_active?:boolean}
   const [books,setBooks]=useState<BookRow[]>([])
+  const [search,setSearch]=useState('')
   const [catalogueTab,setCatalogueTab]=useState<'mine'|'shared'>('shared')
   const [sharedBooks,setSharedBooks]=useState<{id:number;title:string;sku:string;isbn:string|null;brand:string|null;category:string|null;subcategory:string|null}[]>([])
   const [sharedLoading,setSharedLoading]=useState(false)
@@ -249,7 +250,6 @@ function ProductsBooksView({ setToast, onAssign, canAssign, canEdit }: { setToas
   const [page,setPage]=useState(1)
   const [lastPage,setLastPage]=useState(1)
   const [query,setQuery]=useState('')
-  const [search,setSearch]=useState('')
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   useEffect(()=>{if(!uploadOpen)return;api<{id:number;name:string;subcategories:{id:number;name:string}[]}[]>('/product-hierarchy').then(setHierarchy).catch(e=>setUploadError(e instanceof Error?e.message:'Could not load categories'))},[uploadOpen])
