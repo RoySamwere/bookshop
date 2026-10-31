@@ -52,6 +52,22 @@ class InventoryController extends Controller
             ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
+    public function catalogueStockSummary(Request $request) {
+        $data=$request->validate(['book_ids'=>'required|array|min:1|max:100','book_ids.*'=>'required|integer|min:1']);
+        $tenant=Tenant::requireId();
+        $user=$request->user();
+        $branches=$user->isOwner()?null:$user->branchIds();
+        $rows=DB::table('inventory_balances as i')
+            ->join('books as b','b.id','=','i.book_id')
+            ->join('branches as br','br.id','=','i.branch_id')
+            ->where('i.bookshop_id',$tenant)->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
+            ->where('br.is_active',true)
+            ->whereIn('i.book_id',$data['book_ids'])
+            ->when($branches!==null,fn($q)=>$q->whereIn('i.branch_id',$branches))
+            ->selectRaw('i.book_id, SUM(i.quantity) as quantity, SUM(i.reserved) as reserved, COUNT(*) as stock_locations')
+            ->groupBy('i.book_id')->get();
+        return response()->json($rows);
+    }
     public function bulkReceive(Request $request, InventoryService $service) {
         $data=$request->validate([
             'branch_id'=>['required','integer',Tenant::exists('branches')->where('is_active',true)],
