@@ -103,6 +103,8 @@ class InventoryController extends Controller
             'supplier_id' => ['required','integer',Tenant::exists('suppliers')->where('is_active',true)],
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
+            'buying_price' => 'nullable|numeric|min:0|max:999999999.99',
+            'selling_price' => 'nullable|numeric|min:0|max:999999999.99',
         ]);
         $this->authorizeBranch($request, (int) $data['branch_id']);
         $unit = isset($data['product_unit_id']) ? DB::table('product_units')->where('id',$data['product_unit_id'])->where('book_id',$data['book_id'])->first() : null;
@@ -110,7 +112,16 @@ class InventoryController extends Controller
         $factor=$unit ? (int)$unit->pieces_per_unit : 1;
         $pieces=(int)$data['quantity']*$factor;
         if($pieces>2147483647) throw \Illuminate\Validation\ValidationException::withMessages(['quantity'=>'Converted quantity exceeds the maximum stock movement.']);
-        $quantity=$service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null,$unit?->id,(int)$data['quantity'],$factor,$data['supplier_id']??null);
+        $quantity=DB::transaction(function () use ($service,$data,$request,$pieces,$unit,$factor) {
+            if (array_key_exists('buying_price',$data) || array_key_exists('selling_price',$data)) {
+                abort_unless($request->user()->hasPermission('catalog.manage'),403,'Catalogue management permission required to change prices.');
+                $prices=[];
+                if (array_key_exists('buying_price',$data)) $prices['cost_price']=$data['buying_price'];
+                if (array_key_exists('selling_price',$data)) $prices['selling_price']=$data['selling_price'];
+                DB::table('books')->where('id',$data['book_id'])->where('bookshop_id',Tenant::requireId())->update($prices);
+            }
+            return $service->change($data['book_id'],$data['branch_id'],$pieces,'receipt',$request->user()->id,$data['reference']??null,$data['notes']??null,$unit?->id,(int)$data['quantity'],$factor,$data['supplier_id']??null);
+        });
         return response()->json(['message'=>'Stock received successfully.','quantity'=>$quantity,'pieces_received'=>$pieces,'units_per_package'=>$factor],201);
     }
     public function movements(Request $request) {
