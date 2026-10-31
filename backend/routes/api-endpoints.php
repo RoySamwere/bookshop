@@ -53,7 +53,7 @@ Route::get('/public/products', function (\Illuminate\Http\Request $request) {
             ->orWhere('b.brand', 'like', '%'.$search.'%')
             ->orWhere('c.name', 'like', '%'.$search.'%')
             ->orWhere('s.name', 'like', '%'.$search.'%')))
-        ->select('b.title', 'b.sku', 'b.isbn', 'b.brand', 'c.name as category', 's.name as subcategory')
+        ->select('b.id', 'b.title', 'b.sku', 'b.isbn', 'b.brand', 'c.name as category', 's.name as subcategory')
         ->distinct()->orderBy('b.title')->orderBy('b.sku');
     return response()->json($query->paginate(24));
 })->middleware('throttle:60,1');
@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/pos/sales/{sale}', [PosController::class, 'show'])->middleware('permission:sales.view');
         Route::get('/product-hierarchy', [CatalogController::class, 'hierarchy'])->middleware('permission:catalog.view');
         Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
+        Route::post('/books/adopt-public', [CatalogController::class, 'adoptPublicProduct'])->middleware('permission:catalog.manage');
         Route::get('/books-export', [CatalogController::class, 'exportBooks'])->middleware('permission:catalog.view');
         Route::post('/books-bulk-create', [CatalogController::class, 'bulkCreateBooks'])->middleware('permission:catalog.manage');
         Route::post('/books-import', [CatalogController::class, 'importBooks'])->middleware('permission:catalog.manage');
