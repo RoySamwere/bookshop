@@ -104,6 +104,8 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/suppliers', [CatalogController::class, 'storeSupplier'])->middleware('permission:suppliers.manage');
         Route::post('/inventory/catalogue-stock-summary', [InventoryController::class, 'catalogueStockSummary'])->middleware('permission:inventory.view');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('permission:inventory.view');
+        Route::get('/inventory/stocktake-snapshot', [InventoryController::class, 'stocktakeSnapshot'])->middleware('permission:inventory.view');
+        Route::post('/inventory/stocktake-apply', [InventoryController::class, 'stocktakeApply'])->middleware('permission:inventory.manage');
         Route::get('/inventory/movements', [InventoryController::class, 'movements'])->middleware('permission:inventory.view');
         Route::post('/inventory/bulk-receive', [InventoryController::class, 'bulkReceive'])->middleware('permission:inventory.manage');
         Route::post('/inventory/receive', [InventoryController::class, 'receive'])->middleware('permission:inventory.manage');
