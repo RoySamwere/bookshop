@@ -41,7 +41,9 @@ class CatalogController extends Controller
             'rows'=>'required|array|min:1|max:200',
             'rows.*.title'=>'required|string|max:255',
             'rows.*.sku'=>'required|string|max:100',
-            'rows.*.product_subcategory_id'=>'required|integer|exists:product_subcategories,id',
+            'rows.*.product_subcategory_id'=>'nullable|integer|exists:product_subcategories,id',
+            'rows.*.category_name'=>'required|string|max:255',
+            'rows.*.subcategory_name'=>'required|string|max:255',
             'rows.*.selling_price'=>'required|numeric|min:0',
             'rows.*.cost_price'=>'required|numeric|min:0',
             'rows.*.reorder_level'=>'nullable|integer|min:0',
@@ -54,8 +56,25 @@ class CatalogController extends Controller
             throw \Illuminate\Validation\ValidationException::withMessages(['rows'=>'Already registered SKUs: '.implode(', ',array_slice($existing,0,10))]);
         $now=now();
         DB::transaction(function()use($data,$now,$tenant){
-            foreach($data['rows'] as $row)
+            foreach($data['rows'] as $row) {
+                $categoryName=trim(preg_replace('/\\s+/u',' ',$row['category_name']));
+                $subcategoryName=trim(preg_replace('/\\s+/u',' ',$row['subcategory_name']));
+                $category=DB::table('product_categories')->whereRaw('LOWER(name) = ?', [mb_strtolower($categoryName)])->first();
+                $categoryId=$category?->id;
+                if(!$categoryId) {
+                    DB::table('product_categories')->insertOrIgnore(['name'=>$categoryName,'created_at'=>$now,'updated_at'=>$now]);
+                    $categoryId=DB::table('product_categories')->whereRaw('LOWER(name) = ?', [mb_strtolower($categoryName)])->value('id');
+                }
+                $subcategory=DB::table('product_subcategories')->where('product_category_id',$categoryId)->whereRaw('LOWER(name) = ?', [mb_strtolower($subcategoryName)])->first();
+                $subcategoryId=$subcategory?->id;
+                if(!$subcategoryId) {
+                    DB::table('product_subcategories')->insertOrIgnore(['product_category_id'=>$categoryId,'name'=>$subcategoryName,'created_at'=>$now,'updated_at'=>$now]);
+                    $subcategoryId=DB::table('product_subcategories')->where('product_category_id',$categoryId)->whereRaw('LOWER(name) = ?', [mb_strtolower($subcategoryName)])->value('id');
+                }
+                unset($row['category_name'],$row['subcategory_name']);
+                $row['product_subcategory_id']=$subcategoryId;
                 DB::table('books')->insert(array_merge($row,['bookshop_id'=>$tenant,'reorder_level'=>$row['reorder_level']??10,'is_active'=>true,'created_at'=>$now,'updated_at'=>$now]));
+            }
         });
         return response()->json(['created'=>count($data['rows'])],201);
     }
