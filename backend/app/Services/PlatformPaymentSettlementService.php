@@ -13,7 +13,7 @@ class PlatformPaymentSettlementService
 {
     public function settle(string $receipt, string $account, string $shortcode, float $amount, \DateTimeInterface $paidAt, string $channel, array $providerPayload = []): object
     {
-        if (!in_array($channel, ['stk', 'paybill'], true) || !preg_match('/^[0-9]{4}$/', $account)) {
+        if (!in_array($channel, ['stk', 'paybill'], true) || !preg_match('/^[0-9]{6}$/', $account)) {
             throw ValidationException::withMessages(['payment' => 'Invalid payment reference.']);
         }
         if ($shortcode !== (string) config('services.mpesa.platform_paybill')) {
@@ -38,15 +38,29 @@ class PlatformPaymentSettlementService
             if ($invoice->status === 'paid') {
                 throw ValidationException::withMessages(['payment' => 'Invoice already paid; reconcile as overpayment.']);
             }
-            if (abs((float) $invoice->amount - $amount) > 0.005) {
-                throw ValidationException::withMessages(['payment' => 'Amount does not match the invoice.']);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages(['payment' => 'Payment must be positive.']);
             }
+            $alreadyPaid = (float) DB::table('platform_billing_payments')
+                ->where('platform_billing_invoice_id', $invoice->id)
+                ->where('status', 'confirmed')->sum('amount');
+            $totalPaid = round($alreadyPaid + $amount, 2);
+            // Overpayments are recorded for reconciliation; never grant extra subscription periods.
+            $fullyPaid = $totalPaid + 0.005 >= (float) $invoice->amount;
             $subscription = DB::table('bookshop_subscriptions')->where('bookshop_id', $invoice->bookshop_id)->lockForUpdate()->first();
             if (!$subscription) {
                 throw ValidationException::withMessages(['payment' => 'Bookshop subscription missing.']);
             }
             $paid = \Illuminate\Support\Carbon::instance(\DateTime::createFromInterface($paidAt));
-            $end = $paid->copy()->addDays(28);
+            $plan = DB::table('subscription_plans')->where('id', $invoice->subscription_plan_id)->first();
+            $months = match ($plan?->billing_interval) {
+                'monthly' => 1, 'quarterly' => 3, 'annual', 'annually', 'yearly' => 12,
+                default => throw ValidationException::withMessages(['plan' => 'Unsupported billing interval.']),
+            };
+            $currentExpiry = $subscription->current_period_ends_at
+                ? \Illuminate\Support\Carbon::parse($subscription->current_period_ends_at) : null;
+            $start = $currentExpiry && $currentExpiry->greaterThan($paid) ? $currentExpiry : $paid;
+            $end = $start->copy()->addMonthsNoOverflow($months);
             DB::table('platform_billing_payments')->insert([
                 'platform_billing_invoice_id' => $invoice->id,
                 'channel' => $channel,
@@ -57,13 +71,19 @@ class PlatformPaymentSettlementService
                 'confirmed_at' => $paid,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
+            if (!$fullyPaid) {
+                DB::table('platform_billing_invoices')->where('id', $invoice->id)->update([
+                    'status' => 'partially_paid', 'updated_at' => now(),
+                ]);
+                return DB::table('platform_billing_invoices')->where('id', $invoice->id)->first();
+            }
             DB::table('platform_billing_invoices')->where('id', $invoice->id)->update([
-                'status' => 'paid', 'paid_at' => $paid, 'period_starts_at' => $paid,
+                'status' => 'paid', 'paid_at' => $paid, 'period_starts_at' => $start,
                 'period_ends_at' => $end, 'updated_at' => now(),
             ]);
             DB::table('bookshop_subscriptions')->where('id', $subscription->id)->update([
                 'subscription_plan_id' => $invoice->subscription_plan_id,
-                'status' => 'active', 'current_period_starts_at' => $paid,
+                'status' => 'active', 'current_period_starts_at' => $start,
                 'current_period_ends_at' => $end, 'grace_ends_at' => null, 'updated_at' => now(),
             ]);
             DB::table('subscription_events')->insert([
@@ -73,7 +93,7 @@ class PlatformPaymentSettlementService
                 'event' => 'payment_confirmed',
                 'from_status' => $subscription->status,
                 'to_status' => 'active',
-                'note' => 'Verified payment for invoice #'.$invoice->id,
+                'note' => 'Verified full payment for invoice #'.$invoice->id,
                 'created_at' => now(),
             ]);
             return DB::table('platform_billing_invoices')->where('id', $invoice->id)->first();
