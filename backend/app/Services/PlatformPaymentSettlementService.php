@@ -19,7 +19,7 @@ class PlatformPaymentSettlementService
         if (! in_array($channel, ['stk', 'paybill'], true) || ! preg_match('/^[0-9]{6}$/', $account)) {
             throw ValidationException::withMessages(['payment' => 'Invalid payment reference.']);
         }
-        if ($shortcode !== (($providerPayload['environment'] ?? null) === 'sandbox' ? (string) config('services.mpesa.shortcode') : '153283')) {
+        if ($shortcode !== (($providerPayload['environment'] ?? null) === 'sandbox' ? (string) config('services.mpesa.shortcode') : '152451')) {
             throw ValidationException::withMessages(['payment' => 'Payment was not made to the platform Paybill.']);
         }
         if (! preg_match('/^[A-Z0-9]{6,30}$/', $receipt)) {
@@ -104,7 +104,7 @@ class PlatformPaymentSettlementService
                     'source' => 'overpayment', 'environment' => $environment,
                     'provider_transaction_id' => $receipt,
                     'account_number' => $account,
-                    'destination_shortcode' => $environment === 'production' ? '153283' : (string) config('services.mpesa.shortcode'),
+                    'destination_shortcode' => $environment === 'production' ? '152451' : (string) config('services.mpesa.shortcode'),
                     'amount' => $excess,
                     'status' => 'requires_review',
                     'payload' => json_encode(['invoice_id' => $invoice->id, 'receipt' => $receipt,
