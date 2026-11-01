@@ -28,6 +28,10 @@ Route::post('/auth/login', [AuthController::class, 'login'])->middleware('thrott
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
 Route::post('/auth/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
+// Daraja callbacks must be publicly reachable; callbacks never activate subscriptions.
+Route::post('/billing/mpesa/stk/callback', [\App\Http\Controllers\DarajaCallbackController::class, 'stk'])->middleware('throttle:120,1');
+Route::post('/billing/mpesa/c2b/confirmation', [\App\Http\Controllers\DarajaCallbackController::class, 'c2b'])->middleware('throttle:120,1');
+
 // Public registration and email verification. Sign-ups are always customer accounts.
 Route::post('/auth/register', [RegistrationController::class, 'register'])->middleware('throttle:register');
 Route::get('/auth/email/verify/{id}/{hash}', [RegistrationController::class, 'verify'])
@@ -97,6 +101,10 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/bookshop', [BookshopController::class, 'show']);
         Route::patch('/bookshop', [BookshopController::class, 'update'])->middleware('permission:settings.manage');
     });
+
+    // Subscription invoice access is scoped to the authenticated bookshop.
+    Route::get('/billing/invoices/{invoice}', [\App\Http\Controllers\PlatformBillingController::class, 'invoice'])->whereNumber('invoice');
+    Route::post('/billing/invoices/{invoice}/stk', [\App\Http\Controllers\PlatformBillingController::class, 'stk'])->whereNumber('invoice')->middleware('throttle:5,1');
 
     // Bookshop workspace. Every route runs inside the signed-in user's own, active bookshop.
     Route::middleware(['permission:workspace.access', 'tenant'])->group(function () {
