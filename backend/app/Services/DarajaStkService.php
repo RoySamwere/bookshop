@@ -13,6 +13,28 @@ class DarajaStkService
             ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
     }
 
+    public function query(string $checkoutRequestId): array
+    {
+        $key = config('services.mpesa.consumer_key');
+        $secret = config('services.mpesa.consumer_secret');
+        $passkey = config('services.mpesa.passkey');
+        $shortcode = (string) config('services.mpesa.shortcode');
+        if (!$key || !$secret || !$passkey || !$shortcode) {
+            throw new RuntimeException('Daraja STK configuration is incomplete.');
+        }
+        $auth = Http::timeout(15)->withBasicAuth($key, $secret)
+            ->get($this->base().'/oauth/v1/generate', ['grant_type' => 'client_credentials'])
+            ->throw()->json();
+        $timestamp = now('Africa/Nairobi')->format('YmdHis');
+        return Http::timeout(25)->withToken($auth['access_token'])
+            ->post($this->base().'/mpesa/stkpushquery/v1/query', [
+                'BusinessShortCode' => $shortcode,
+                'Password' => base64_encode($shortcode.$passkey.$timestamp),
+                'Timestamp' => $timestamp,
+                'CheckoutRequestID' => $checkoutRequestId,
+            ])->throw()->json();
+    }
+
     public function push(string $phone, int $amount, string $account): array
     {
         $key = config('services.mpesa.consumer_key');
