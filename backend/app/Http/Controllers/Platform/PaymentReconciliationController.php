@@ -16,6 +16,58 @@ class PaymentReconciliationController extends Controller
         return response()->json($items);
     }
 
+    public function stkAttempts(Request $request)
+    {
+        return response()->json(DB::table('platform_billing_payments as p')
+            ->join('platform_billing_invoices as i', 'i.id', '=', 'p.platform_billing_invoice_id')
+            ->where('p.channel', 'stk')
+            ->whereIn('p.status', ['pending', 'awaiting_verification'])
+            ->select('p.id', 'p.checkout_request_id', 'p.amount', 'p.status', 'p.created_at',
+                'i.account_number', 'i.bookshop_id', 'i.status as invoice_status')
+            ->orderByDesc('p.id')->paginate(30));
+    }
+
+    public function confirmStk(Request $request, int $attempt, PlatformPaymentSettlementService $settlement,
+        \\App\\Services\\DarajaStkService $daraja)
+    {
+        $data = $request->validate([
+            'verified_receipt' => 'required|string|max:100',
+            'verified_amount' => 'required|numeric|gt:0',
+            'verified_at' => 'required|date',
+            'statement_reference' => 'required|string|max:255',
+        ]);
+        $payment = DB::table('platform_billing_payments')->where('id', $attempt)
+            ->where('channel', 'stk')->first();
+        abort_unless($payment, 404);
+        if (!in_array($payment->status, ['pending', 'awaiting_verification'], true)) {
+            throw ValidationException::withMessages(['payment' => 'STK attempt is not awaiting reconciliation.']);
+        }
+        $invoice = DB::table('platform_billing_invoices')->where('id', $payment->platform_billing_invoice_id)->first();
+        abort_unless($invoice, 404);
+        if (abs((float) $data['verified_amount'] - (float) $payment->amount) > 0.005) {
+            throw ValidationException::withMessages(['payment' => 'Statement amount differs from the initiated STK amount.']);
+        }
+        // Query the provider independently at confirmation time; callbacks alone are untrusted.
+        $query = $daraja->query($payment->checkout_request_id);
+        if ((string) ($query['ResponseCode'] ?? '') !== '0' || (string) ($query['ResultCode'] ?? '') !== '0') {
+            throw ValidationException::withMessages(['payment' => 'Safaricom has not verified this STK checkout as successful.']);
+        }
+        // The operator must separately check the receipt, amount and shortcode against
+        // a trusted merchant statement; Daraja's query does not return these details.
+        $shortcode = (string) config('services.mpesa.platform_paybill');
+        if (config('services.mpesa.environment') !== 'production') {
+            throw ValidationException::withMessages(['payment' => 'Sandbox transactions are simulated and cannot activate production subscriptions.']);
+        }
+        $result = $settlement->settle($data['verified_receipt'], $invoice->account_number,
+            $shortcode, (float) $data['verified_amount'], new \\DateTimeImmutable($data['verified_at']),
+            'stk', ['checkout_request_id' => $payment->checkout_request_id,
+                'statement_reference' => $data['statement_reference'], 'verified_by' => $request->user()->id]);
+        DB::table('platform_billing_payments')->where('id', $payment->id)
+            ->whereIn('status', ['pending', 'awaiting_verification'])
+            ->update(['status' => 'reconciled', 'updated_at' => now()]);
+        return response()->json(['invoice_id' => $result->id, 'invoice_status' => $result->status]);
+    }
+
     /**
      * Operator reconciles a transaction against a trusted Safaricom statement.
      * This is not a customer receipt-submission endpoint.
