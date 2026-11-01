@@ -61,6 +61,8 @@ class PlatformPaymentSettlementService
                 ? \Illuminate\Support\Carbon::parse($subscription->current_period_ends_at) : null;
             $start = $currentExpiry && $currentExpiry->greaterThan($paid) ? $currentExpiry : $paid;
             $end = $start->copy()->addMonthsNoOverflow($months);
+            // Keep historical STK attempts; a statement-confirmed payment has its own
+            // unique receipt and cannot be counted twice.
             DB::table('platform_billing_payments')->insert([
                 'platform_billing_invoice_id' => $invoice->id,
                 'channel' => $channel,
