@@ -16,6 +16,33 @@ class CatalogController extends Controller
         abort_unless(in_array($request->user()?->role, ['platform_owner', 'system_owner'], true), 403, 'Only the system owner may upload or create master catalogue products.');
     }
 
+    /** Resolve public products to this tenant's inventory without exposing other tenants. */
+    public function sharedStockStatus(Request $request) {
+        $data = $request->validate(['source_ids' => 'required|array|min:1|max:100', 'source_ids.*' => 'required|integer|min:1|distinct']);
+        $tenant = Tenant::requireId();
+        $sources = DB::table('books')->whereIn('id', $data['source_ids'])->where('is_active', true)->get(['id','sku','isbn']);
+        $skus = $sources->pluck('sku')->filter()->unique()->values()->all();
+        $isbns = $sources->pluck('isbn')->filter()->unique()->values()->all();
+        $local = DB::table('books')->where('bookshop_id', $tenant)
+            ->where(function ($q) use ($skus, $isbns) {
+                if ($skus) $q->whereIn('sku', $skus);
+                if ($isbns) $q->orWhereIn('isbn', $isbns);
+            })->get(['id','sku','isbn']);
+        $ids = $local->pluck('id')->all();
+        $stock = $ids ? DB::table('inventory_balances')->where('bookshop_id', $tenant)
+            ->whereIn('book_id', $ids)->selectRaw('book_id, SUM(quantity) as quantity, SUM(reserved) as reserved, COUNT(*) as locations')
+            ->groupBy('book_id')->get()->keyBy('book_id') : collect();
+        $results = $sources->map(function ($source) use ($local, $stock) {
+            $matches = $local->filter(fn ($book) => ($source->sku && $book->sku === $source->sku) || ($source->isbn && $book->isbn === $source->isbn));
+            $quantity = $matches->sum(fn ($book) => (int) ($stock->get($book->id)?->quantity ?? 0));
+            $reserved = $matches->sum(fn ($book) => (int) ($stock->get($book->id)?->reserved ?? 0));
+            $locations = $matches->sum(fn ($book) => (int) ($stock->get($book->id)?->locations ?? 0));
+            return ['source_id' => $source->id, 'in_catalogue' => $matches->isNotEmpty(), 'in_stock' => $locations > 0,
+                'quantity' => $quantity, 'available' => $quantity - $reserved];
+        });
+        return response()->json($results);
+    }
+
     /** Copy a public product description into this shop without sharing inventory or prices. */
     public function adoptPublicProduct(Request $request) {
         $tenant = Tenant::requireId();
