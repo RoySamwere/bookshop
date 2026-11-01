@@ -240,6 +240,10 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
                 title={collapsed && !mobile ? 'Subscription Billing' : undefined} onClick={() => setDrawerOpen(false)}>
                 <WalletCards size={19} aria-hidden="true" /><span className="sidebar-link-label">Subscription billing</span>
               </Link>}
+              {showBilling && <Link to="/bills" className="sidebar-link" aria-label="Bills"
+                title={collapsed && !mobile ? 'Bills' : undefined} onClick={() => setDrawerOpen(false)}>
+                <FileText size={19} aria-hidden="true" /><span className="sidebar-link-label">Bills</span>
+              </Link>}
             </nav>
           </div>
         })}

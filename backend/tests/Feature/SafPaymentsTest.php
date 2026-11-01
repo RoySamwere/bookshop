@@ -534,4 +534,28 @@ class SafPaymentsTest extends TestCase
         $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
         $this->assertDatabaseHas('audit_logs', ['action' => 'billing.payments_synced']);
     }
+
+    public function test_shop_bills_show_their_own_payments_with_details_and_filters(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $this->c2b('TJ4K8L2MBA', $invoice->account_number, '400.00');
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($this->row('TJ4K8L2MBA')))->assertOk();
+        $this->c2b('TJ4K8L2MBB', $invoice->account_number, '600.00'); // Still being confirmed: shown via the shop's account number.
+        $this->c2b('TJ4K8L2MBC', '999999', '50.00');                    // Someone else's account: never shown.
+
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/billing/payments')->assertOk()->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.bookshop_name', 'Kisumu Readers')->assertJsonPath('data.0.shortcode', '152451');
+        $this->getJson('/api/billing/payments?status=processing')->assertJsonPath('total', 1)->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2MBB');
+        $this->getJson('/api/billing/payments?search=MBA')->assertJsonPath('total', 1);
+        $id = $this->row('TJ4K8L2MBA')->id;
+        $this->getJson("/api/billing/payments/{$id}")->assertOk()->assertJsonPath('data.verified_by', 'Safaricom (automatic)')
+            ->assertJsonPath('data.invoice.account_number', $invoice->account_number)->assertJsonPath('data.invoice.balance', 600)
+            ->assertJsonMissingPath('data.provider_payload')->assertJsonPath('data.phone', '2547•••678');
+        $this->getJson('/api/billing/payments/'.$this->row('TJ4K8L2MBC')->id)->assertNotFound();
+
+        $other = User::factory()->forBookshop(Bookshop::factory()->create())->create(['role' => 'bookshop_owner']);
+        $this->actingAs($other, 'sanctum')->getJson("/api/billing/payments/{$id}")->assertNotFound();
+        $this->getJson('/api/billing/payments')->assertJsonPath('total', 0);
+    }
 }

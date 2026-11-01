@@ -5,13 +5,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillsView from './bills-view'
 import PaymentsReconciliation from './payments-reconciliation'
-import MyPaymentsPage from '../billing/payments'
+import ShopBillsPage from '../billing/shop-payments'
 import { billsApi, type Bill } from '../../lib/billing-api'
 
 const auth = vi.hoisted(() => ({ user: { role: 'platform_owner', account_type: 'platform', permissions: ['platform.settings.view', 'platform.settings.manage'] } as Record<string, unknown> }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
 vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(),
-  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), sync: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
+  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), myPayment: vi.fn(), sync: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
 
 const bill = (patch: Partial<Bill>): Bill => ({
   id: 1, transaction_date: '2026-11-01T09:00:00Z', bookshop_id: 4, bookshop_name: 'Kisumu Readers', invoice_id: 12, invoice_status: 'paid', account_number: '100045',
@@ -114,16 +114,23 @@ describe('Payments & reconciliation', () => {
   })
 })
 
-describe('My Payments', () => {
-  it('lists the bookshop payments and offers receipts only for confirmed ones', async () => {
+describe('Shop Bills', () => {
+  it('shows the bookshop payments in the same table with a view icon and receipt for confirmed ones', async () => {
     auth.user = { role: 'bookshop_owner', account_type: 'bookshop', permissions: [] }
-    vi.mocked(billsApi.myPayments).mockResolvedValue({ data: [
-      { id: 1, date: '2026-11-01T09:00:00Z', amount: 1000, allocated_amount: 1000, excess_amount: 0, invoice_id: 12, invoice_status: 'paid', account_number: '100045', mpesa_receipt_number: 'QK1ABC2DEF', phone: '2547•••678', channel: 'paybill', environment: 'production', status: 'confirmed', has_receipt: true },
-      { id: 2, date: '2026-11-01T10:00:00Z', amount: 500, allocated_amount: 0, excess_amount: 0, invoice_id: 13, invoice_status: 'pending', account_number: '100046', mpesa_receipt_number: null, phone: null, channel: 'stk', environment: 'production', status: 'processing', has_receipt: false },
+    const row = { id: 1, date: '2026-11-01T09:00:00Z', bookshop_name: 'Kisumu Readers', shortcode: '152451', amount: 1000, allocated_amount: 1000, excess_amount: 0, invoice_id: 12, invoice_status: 'paid', account_number: '100045', mpesa_receipt_number: 'QK1ABC2DEF', phone: '2547•••678', channel: 'paybill', environment: 'production', status: 'confirmed' as const, has_receipt: true }
+    vi.mocked(billsApi.myPayments).mockResolvedValue({ data: [row,
+      { ...row, id: 2, mpesa_receipt_number: null, channel: 'stk', status: 'processing', has_receipt: false, invoice_status: 'pending' },
     ], current_page: 1, last_page: 1, total: 2, totals: { payments: 1, total: 1000 } })
-    mount(<MyPaymentsPage />)
+    vi.mocked(billsApi.myPayment).mockResolvedValue({ data: { ...row, verified_by: 'Safaricom (automatic)', verified_at: '2026-11-01T09:01:00Z', applied_at: '2026-11-01T09:01:00Z', note: null,
+      invoice: { id: 12, account_number: '100045', plan: 'Monthly', amount: 1000, paid: 1000, balance: 0, status: 'paid', period_starts_at: '2026-11-01', period_ends_at: '2026-12-01' } } })
+    const user = userEvent.setup(); mount(<ShopBillsPage />)
     expect(await screen.findByText('QK1ABC2DEF')).toBeInTheDocument()
-    expect(screen.getByText('Confirming with Safaricom')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /Receipt/ })).toHaveLength(1)
+    for (const label of ['Date', 'Bookshop', 'Invoice', 'Account', 'M-Pesa code', 'Phone', 'Amount', 'Paybill', 'Status', 'View']) expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument()
+    expect(screen.getAllByText('Confirming with Safaricom').length).toBeGreaterThan(1) // filter option + status pill
+    await user.click(screen.getByRole('button', { name: 'View payment QK1ABC2DEF' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Confirmed by Safaricom \(automatic\)/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Download receipt/ })).toBeInTheDocument()
+    expect(billsApi.myPayment).toHaveBeenCalledWith(1)
   })
 })

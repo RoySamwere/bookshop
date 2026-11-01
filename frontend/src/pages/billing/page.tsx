@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../features/auth/auth-provider'
+import { ShopPaymentsTable } from './shop-payments'
 import { MPESA_CODE_PATTERN, billingApi, billsApi, normalizeMpesaCode, paymentStatus, type Invoice, type Page } from '../../lib/billing-api'
 import { errorMessage } from '../../lib/api'
 import { Card, ErrorState, LoadingState, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
@@ -27,7 +28,7 @@ export default function BillingPage() {
   const overview = useQuery({ queryKey: ['billing', page], queryFn: () => billingApi.overview(page), enabled: allowed, refetchInterval: 30000 })
   const create = useMutation({ mutationFn: () => billingApi.create(Number(plan)), onSuccess: r => { setSelected(r.data.id); void client.invalidateQueries({ queryKey: ['billing'] }) } })
   if (!allowed) return <main className="p-8"><h1>Billing is available to the bookshop owner.</h1><Link to="/dashboard">Return to workspace</Link></main>
-  return <main className="mx-auto grid max-w-6xl gap-6 p-4 sm:p-8"><div className="flex flex-wrap gap-4 print:hidden text-blue-700"><Link to="/dashboard">← Return to workspace</Link><Link className="font-semibold" to="/billing/payments">My Payments</Link></div>
+  return <main className="mx-auto grid max-w-6xl gap-6 p-4 sm:p-8"><div className="flex flex-wrap gap-4 print:hidden text-blue-700"><Link to="/dashboard">← Return to workspace</Link><Link className="font-semibold" to="/bills">Bills</Link></div>
     <h1 className="text-2xl font-bold">Nifunze subscription billing</h1>
     {overview.isPending ? <LoadingState /> : overview.isError ? <ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} /> : <>
       <Card title="Your subscription"><p>Plan: {overview.data.subscription?.plan?.name ?? 'No plan'} · Remaining days: {overview.data.subscription?.days_remaining ?? overview.data.subscription?.trial_days_left ?? '—'}</p><p>Status: {overview.data.subscription?.status ?? 'No subscription'}</p><p>Paid access until: {overview.data.subscription?.current_period_ends_at?.slice(0, 10) ?? '—'} · Trial until: {overview.data.subscription?.trial_ends_at?.slice(0, 10) ?? '—'}</p>
@@ -40,6 +41,7 @@ export default function BillingPage() {
         </form>{!overview.data.plans.length && <p>No paid plans are available. Contact platform support.</p>}{create.isError && <p role="alert">{errorMessage(create.error)}</p>}
       </Card>
       <Card title="Invoices"><InvoiceTable invoices={overview.data.invoices.data} select={setSelected} /><Pager page={overview.data.invoices} setPage={setPage} /></Card>
+      <div className="grid gap-3"><h2 className="text-lg font-bold text-slate-900">M-Pesa payments</h2><ShopPaymentsTable /></div>
     </>}
     {selected !== null && <InvoiceDetail key={selected} id={selected} />}
   </main>

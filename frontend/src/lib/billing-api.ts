@@ -54,7 +54,7 @@ export type BillsSummary = {
 }
 export type BillFilters = { search?: string; status?: string; channel?: string; environment?: string; from?: string; to?: string; page?: number }
 export type MyPayment = {
-  id: number; date: string; amount: number; allocated_amount: number; excess_amount: number; invoice_id: number | null; invoice_status: string | null
+  id: number; date: string; bookshop_name?: string; shortcode?: string | null; amount: number; allocated_amount: number; excess_amount: number; invoice_id: number | null; invoice_status: string | null
   account_number: string | null; mpesa_receipt_number: string | null; phone: string | null; channel: string; environment: string
   status: 'confirmed' | 'processing' | 'under_review' | 'failed'; has_receipt: boolean
 }
@@ -69,7 +69,14 @@ export const billsApi = {
   confirmCode: (mpesa_code: string, account_number: string, note: string) => api<{ data: BillDetail }>('/platform/bills/confirm-code', { method: 'POST', body: { mpesa_code, account_number, note } }),
   reject: (id: number, reason: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/reject`, { method: 'POST', body: { reason } }),
   confirmMyPayment: (invoiceId: number, mpesa_code: string) => api<{ status: 'confirmed' | 'processing' | 'review'; message: string }>(`/billing/invoices/${invoiceId}/confirm-payment`, { method: 'POST', body: { mpesa_code } }),
-  myPayments: (page = 1) => api<Page<MyPayment> & { totals: { payments: number; total: number } }>('/billing/payments', { query: { page } }),
+  myPayments: (filters: number | MyPaymentFilters = 1) => api<Page<MyPayment> & { from?: number | null; to?: number | null; totals: { payments: number; total: number } }>('/billing/payments', { query: typeof filters === 'number' ? { page: filters } : filters }),
+  myPayment: (id: number) => api<{ data: MyPaymentDetail }>(`/billing/payments/${id}`),
+}
+
+export type MyPaymentFilters = { page?: number; search?: string; status?: MyPayment['status']; from?: string; to?: string }
+export type MyPaymentDetail = MyPayment & {
+  verified_by: string | null; verified_at: string | null; applied_at: string | null; note: string | null
+  invoice: { id: number; account_number: string; plan: string | null; amount: number; paid: number; balance: number; status: string; period_starts_at: string; period_ends_at: string } | null
 }
 
 /** Downloads a payment receipt PDF with the session cookie. */

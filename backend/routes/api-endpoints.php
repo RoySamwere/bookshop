@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
     // Subscription invoice access is scoped to the authenticated bookshop.
     Route::get('/billing/invoices/{invoice}', [\App\Http\Controllers\PlatformBillingController::class, 'invoice'])->whereNumber('invoice');
     Route::get('/billing/payments', [\App\Http\Controllers\PlatformBillingController::class, 'myPayments']);
+    Route::get('/billing/payments/{payment}', [\App\Http\Controllers\PlatformBillingController::class, 'myPayment'])->whereNumber('payment');
     Route::post('/billing/invoices/{invoice}/confirm-payment', [\App\Http\Controllers\PlatformBillingController::class, 'confirmCode'])->whereNumber('invoice')->middleware('throttle:6,1');
     Route::get('/billing/payments/{payment}/receipt', [\App\Http\Controllers\PlatformBillingController::class, 'paymentReceipt'])->whereNumber('payment');
     Route::post('/billing/invoices/{invoice}/stk', [\App\Http\Controllers\PlatformBillingController::class, 'stk'])->whereNumber('invoice')->middleware('throttle:5,1');

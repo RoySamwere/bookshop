@@ -173,33 +173,89 @@ class PlatformBillingController extends Controller
             'overpayment' => max(0, round((float) $row->paid - (float) $row->amount, 2)), ...$this->paymentContext($row->environment)]);
     }
 
-    /** "My Payments": every M-Pesa payment linked to the signed-in owner's bookshop. */
-    public function myPayments(Request $request)
+    /**
+     * The bookshop's own M-Pesa payments (shop Bills / billing payments table): rows credited to the bookshop,
+     * plus rows not yet applied that were paid to one of its own invoice account numbers.
+     */
+    private function shopPayments(int $tenant)
     {
-        $tenant = $this->tenant($request);
-        $page = DB::table('saf_payments as s')->leftJoin('platform_billing_invoices as i', 'i.id', '=', 's.invoice_id')
-            ->where('s.bookshop_id', $tenant)
-            ->orderByDesc(DB::raw('COALESCE(s.transaction_date, s.created_at)'))->orderByDesc('s.id')
-            ->select('s.id', 's.transaction_date', 's.created_at', 's.amount', 's.allocated_amount', 's.excess_amount', 's.account_number',
-                's.mpesa_receipt_number', 's.phone_number', 's.payment_channel', 's.environment', 's.verification_status', 's.invoice_id', 'i.status as invoice_status')
-            ->paginate(20);
-        $page->through(fn ($row) => [
-            'id' => (int) $row->id, 'date' => $row->transaction_date ?? $row->created_at, 'amount' => round((float) $row->amount, 2),
+        $accounts = DB::table('platform_billing_invoices')->where('bookshop_id', $tenant)->select('account_number');
+
+        return DB::table('saf_payments as s')->leftJoin('platform_billing_invoices as i', 'i.id', '=', 's.invoice_id')
+            ->where(fn ($q) => $q->where('s.bookshop_id', $tenant)->orWhere(fn ($w) => $w->whereNull('s.bookshop_id')->whereIn('s.account_number', $accounts)));
+    }
+
+    private function presentShopPayment(object $row, string $bookshop): array
+    {
+        return [
+            'id' => (int) $row->id, 'date' => $row->transaction_date ?? $row->created_at, 'bookshop_name' => $bookshop,
+            'amount' => round((float) $row->amount, 2),
             'allocated_amount' => round((float) $row->allocated_amount, 2), 'excess_amount' => round((float) $row->excess_amount, 2),
             'invoice_id' => $row->invoice_id ? (int) $row->invoice_id : null, 'invoice_status' => $row->invoice_status,
             'account_number' => $row->account_number, 'mpesa_receipt_number' => $row->mpesa_receipt_number,
-            // Only the last digits: enough to recognise the phone, not to reuse it.
+            // Only the first and last digits: enough to recognise the phone, not to reuse it.
             'phone' => $row->phone_number ? substr($row->phone_number, 0, 4).'•••'.substr($row->phone_number, -3) : null,
-            'channel' => $row->payment_channel, 'environment' => $row->environment,
+            'shortcode' => $row->shortcode, 'channel' => $row->payment_channel, 'environment' => $row->environment,
             'status' => match ($row->verification_status) {
                 'reconciled' => 'confirmed', 'rejected' => 'failed', 'unmatched' => 'under_review', default => 'processing',
             },
             'has_receipt' => $row->verification_status === 'reconciled',
+        ];
+    }
+
+    /** "My Payments" / shop Bills: the bookshop's M-Pesa payments with search, status and date filters. */
+    public function myPayments(Request $request)
+    {
+        $tenant = $this->tenant($request);
+        $data = $request->validate([
+            'search' => 'nullable|string|max:40', 'status' => 'nullable|in:confirmed,processing,under_review,failed',
+            'from' => 'nullable|date', 'to' => 'nullable|date|after_or_equal:from',
         ]);
+        $statuses = ['confirmed' => ['reconciled'], 'processing' => ['pending', 'verified'], 'under_review' => ['unmatched'], 'failed' => ['rejected']];
+        $search = trim((string) ($data['search'] ?? ''));
+        $bookshop = (string) DB::table('bookshops')->where('id', $tenant)->value('name');
+        $page = $this->shopPayments($tenant)
+            ->when($data['status'] ?? null, fn ($q, $status) => $q->whereIn('s.verification_status', $statuses[$status]))
+            ->when($data['from'] ?? null, fn ($q, $v) => $q->where(DB::raw('COALESCE(s.transaction_date, s.created_at)'), '>=', \Illuminate\Support\Carbon::parse($v, 'Africa/Nairobi')->startOfDay()->setTimezone(config('app.timezone'))))
+            ->when($data['to'] ?? null, fn ($q, $v) => $q->where(DB::raw('COALESCE(s.transaction_date, s.created_at)'), '<=', \Illuminate\Support\Carbon::parse($v, 'Africa/Nairobi')->endOfDay()->setTimezone(config('app.timezone'))))
+            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w->where('s.mpesa_receipt_number', 'like', '%'.strtoupper($search).'%')->orWhere('s.account_number', 'like', "%$search%")))
+            ->orderByDesc(DB::raw('COALESCE(s.transaction_date, s.created_at)'))->orderByDesc('s.id')
+            ->select('s.*', 'i.status as invoice_status')
+            ->paginate(20);
+        $page->through(fn ($row) => $this->presentShopPayment($row, $bookshop));
         $totals = DB::table('saf_payments')->where('bookshop_id', $tenant)->where('verification_status', 'reconciled')
             ->selectRaw('COUNT(*) as payments, COALESCE(SUM(amount),0) as total')->first();
 
         return response()->json([...$page->toArray(), 'totals' => ['payments' => (int) $totals->payments, 'total' => round((float) $totals->total, 2)]]);
+    }
+
+    /** Full details of one of the bookshop's own payments (the eye icon). */
+    public function myPayment(Request $request, int $payment)
+    {
+        $tenant = $this->tenant($request);
+        $row = $this->shopPayments($tenant)->where('s.id', $payment)->select('s.*', 'i.status as invoice_status')->first();
+        abort_unless($row, 404);
+        $invoice = $row->invoice_id ? DB::table('platform_billing_invoices as i')->leftJoin('subscription_plans as p', 'p.id', '=', 'i.subscription_plan_id')
+            ->where('i.id', $row->invoice_id)->first(['i.*', 'p.name as plan_name']) : null;
+        $paid = $invoice ? (float) DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice->id)->where('status', 'confirmed')->sum('amount') : null;
+
+        return response()->json(['data' => [
+            ...$this->presentShopPayment($row, (string) DB::table('bookshops')->where('id', $tenant)->value('name')),
+            'verified_by' => match ($row->verification_source) {
+                'daraja_stk_query', 'daraja_transaction_status', 'daraja_pull_api' => 'Safaricom (automatic)',
+                'statement_attestation' => 'Nifunze team (M-Pesa statement)', 'legacy_record' => 'Payment records', default => null,
+            },
+            'verified_at' => $row->verified_at, 'applied_at' => $row->reconciled_at,
+            'note' => match ($row->verification_status) {
+                'pending', 'verified' => 'We are confirming this payment with Safaricom. It is applied automatically once confirmed.',
+                'unmatched' => 'Our team is checking which invoice this payment belongs to. No action is needed from you unless we contact you.',
+                'rejected' => 'This payment was not applied. Contact support if you were charged.',
+                default => null,
+            },
+            'invoice' => $invoice ? ['id' => (int) $invoice->id, 'account_number' => $invoice->account_number, 'plan' => $invoice->plan_name,
+                'amount' => (float) $invoice->amount, 'paid' => $paid, 'balance' => max(0, round((float) $invoice->amount - $paid, 2)),
+                'status' => $invoice->status, 'period_starts_at' => $invoice->period_starts_at, 'period_ends_at' => $invoice->period_ends_at] : null,
+        ]]);
     }
 
     /**
