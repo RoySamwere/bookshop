@@ -25,7 +25,7 @@ export default function PlatformBillingView() {
   const items = useQuery({ queryKey: ['platform-billing', 'reconciliation', page, environment], queryFn: () => billingApi.reconciliation(page, environment), enabled: tab === 'reconciliation' })
   const active = tab === 'invoices' ? invoices : tab === 'attempts' ? attempts : items
   return <div className="grid gap-6"><h1 className="text-2xl font-bold">Subscription billing</h1>
-    <p>{context.isPending ? 'Loading payment environment.' : context.data?.environment === 'sandbox' ? `TEST MODE — Sandbox shortcode ${context.data.paybill ?? 'not configured'}.` : context.data?.environment === 'production' ? 'Production Paybill 153283.' : 'Payment environment unavailable.'} Confirm only after independently checking the merchant statement. Unsigned callbacks and successful STK queries alone do not prove the receipt or amount. Sandbox settlement never grants subscription access.</p>
+    <p>{context.isPending ? 'Loading payment environment.' : context.data?.environment === 'sandbox' ? `TEST MODE — Sandbox shortcode ${context.data.paybill ?? 'not configured'}.` : context.data?.environment === 'production' ? 'Production Paybill 152451.' : 'Payment environment unavailable.'} Confirm only after independently checking the merchant statement. Unsigned callbacks and successful STK queries alone do not prove the receipt or amount. Sandbox settlement never grants subscription access.</p>
     {context.data?.environment === 'sandbox' && <Card title="Test the billing journey">
       <p className="mb-3 font-semibold">TEST MODE · Sandbox shortcode {context.data.paybill ?? 'not configured'}</p>
       <ol className="list-decimal space-y-2 pl-5">
