@@ -20,7 +20,7 @@ return [
         'consumer_secret' => env('MPESA_CONSUMER_SECRET'),
         'shortcode' => env('MPESA_SHORTCODE', '174379'),
         // The live platform Paybill is for SaaS subscriptions, not tenant POS receipts.
-        'platform_paybill' => '153283',
+        'platform_paybill' => '152451',
         'passkey' => env('MPESA_PASSKEY'),
         'transaction_type' => env('MPESA_TRANSACTION_TYPE', 'CustomerPayBillOnline'),
         'callback_url' => env('MPESA_CALLBACK_URL'),
