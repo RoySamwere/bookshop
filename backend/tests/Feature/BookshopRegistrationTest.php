@@ -39,7 +39,7 @@ class BookshopRegistrationTest extends TestCase
 
         $this->postJson('/api/v1/auth/register/bookshop', $this->payload())->assertCreated()
             ->assertJsonPath('data.email', 'wanjiru@example.test')
-            ->assertJsonPath('data.verification_email_sent', true)
+            ->assertJsonPath('data.verification_email_sent', false)
             ->assertJsonPath('data.next', '/onboarding/verify-email')
             ->assertJsonPath('data.bookshop.status', Bookshop::STATUS_PENDING);
 
@@ -68,7 +68,7 @@ class BookshopRegistrationTest extends TestCase
         $this->assertDatabaseHas('subscription_events', ['bookshop_id' => $bookshop->id, 'event' => 'trial_started', 'to_status' => 'trialing']);
         $this->assertDatabaseHas('audit_logs', ['action' => 'bookshop.registered', 'bookshop_id' => $bookshop->id, 'user_id' => $owner->id]);
         $this->assertDatabaseHas('business_profiles', ['bookshop_id' => $bookshop->id, 'name' => 'Kamau Readers']);
-        Notification::assertSentTo($owner, VerifyEmail::class);
+        Notification::assertNotSentTo($owner, VerifyEmail::class);
     }
 
     public function test_trial_length_comes_from_configuration(): void
@@ -150,7 +150,7 @@ class BookshopRegistrationTest extends TestCase
         $this->assertSame(0, User::count());
     }
 
-    public function test_email_verification_activates_the_bookshop(): void
+    public function test_email_verification_does_not_bypass_platform_approval(): void
     {
         Notification::fake();
         $this->postJson('/api/auth/register/bookshop', $this->payload())->assertCreated();
@@ -158,13 +158,13 @@ class BookshopRegistrationTest extends TestCase
 
         parse_str(parse_url(FrontendUrl::verification($owner), PHP_URL_QUERY), $query);
         $this->getJson("/api/auth/email/verify/{$query['id']}/{$query['hash']}?expires={$query['expires']}&signature={$query['signature']}")
-            ->assertOk()->assertJsonPath('status', 'verified')->assertJsonPath('next', '/onboarding/setup');
+            ->assertOk()->assertJsonPath('status', 'verified')->assertJsonPath('next', '/onboarding/verify-email');
 
         $this->assertTrue($owner->fresh()->hasVerifiedEmail());
         $bookshop = $owner->bookshop()->first();
-        $this->assertSame(Bookshop::STATUS_ACTIVE, $bookshop->status);
-        $this->assertNotNull($bookshop->verified_at);
-        $this->assertDatabaseHas('audit_logs', ['action' => 'bookshop.activated', 'bookshop_id' => $bookshop->id]);
+        $this->assertSame(Bookshop::STATUS_PENDING, $bookshop->status);
+        $this->assertNull($bookshop->verified_at);
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'bookshop.activated', 'bookshop_id' => $bookshop->id]);
     }
 
     public function test_unverified_owners_only_reach_onboarding(): void
@@ -182,7 +182,7 @@ class BookshopRegistrationTest extends TestCase
             ->assertJsonPath('data.counts.branches', 1);
         $this->patchJson('/api/bookshop', ['location' => 'Nakuru CBD'])->assertOk();
 
-        $this->getJson('/api/pos/branches')->assertForbidden()->assertJsonPath('code', 'email_unverified');
+        $this->getJson('/api/pos/branches')->assertForbidden()->assertJsonPath('code', 'bookshop_pending');
         $this->postJson('/api/pos/checkout', ['idempotency_key' => 'x', 'branch_id' => $branch, 'items' => [], 'payment_method' => 'cash', 'amount_received' => 0])
             ->assertForbidden();
         $this->postJson('/api/inventory/adjust', ['book_id' => 1, 'branch_id' => $branch, 'quantity_change' => 5, 'notes' => 'x'])->assertForbidden();

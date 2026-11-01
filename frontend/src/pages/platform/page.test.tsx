@@ -26,6 +26,7 @@ it.each(['/platform', '/dashboard', '/dashboard/catalog'])('restores a session a
   </Routes></AuthProvider></MemoryRouter></QueryClientProvider>)
   expect(await screen.findByRole('heading', { name: 'Platform overview' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Subscription plans' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Subscription billing' })).toHaveAttribute('href', '/platform/billing')
   expect(screen.queryByText('Not linked to a bookshop')).not.toBeInTheDocument()
   expect(screen.queryByText('Tenant workspace')).not.toBeInTheDocument()
 })

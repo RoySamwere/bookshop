@@ -72,7 +72,7 @@ class TenantIsolationTest extends TestCase
         $this->postJson("/api/books/{$this->b['book']}/units", ['name' => 'Box', 'pieces_per_unit' => 5])->assertNotFound();
         $this->deleteJson("/api/books/{$this->b['book']}/units/{$this->b['unit']}")->assertNotFound();
         $this->postJson('/api/books-import', ['rows' => [['id' => $this->b['book'], 'title' => 'Hijacked', 'sku' => 'X', 'cost_price' => 1, 'selling_price' => 1, 'reorder_level' => 0, 'is_active' => true]]])
-            ->assertUnprocessable()->assertJsonValidationErrors('rows.0.id');
+            ->assertForbidden(); // Master catalogue imports are restricted before tenant validation.
         $this->getJson('/api/suppliers')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'ALPHA Supplies');
 
         $csv = $this->get('/api/books-export')->assertOk()->streamedContent();

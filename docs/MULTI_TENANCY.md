@@ -125,4 +125,4 @@ When it applies, it moves all unassigned business rows, branches and staff into 
 - One bookshop per account. A membership table would allow multi-shop staff.
 - Composite foreign keys (for example `(book_id, bookshop_id)`) are not used. Cross-tenant references are prevented by tenant-scoped validation and `InventoryService`, and by the per-table `bookshop_id` keys.
 - Customers, reports, expenses and returns are still preview screens. They must use the same `Tenant` scoping when built.
-- No audited support-access mechanism, billing or automatic trial expiry yet.
+- Subscription billing and automatic trial expiry are implemented; see [BILLING.md](BILLING.md) for verification and staging limits.

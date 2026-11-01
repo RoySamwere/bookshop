@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
+Schedule::command('billing:expire-subscriptions')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('billing:generate-renewals')->hourly()->withoutOverlapping();
 Schedule::command('billing:reconcile-stk')->everyFiveMinutes()->withoutOverlapping();
 

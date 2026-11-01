@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Services\DarajaStkService;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -19,7 +19,7 @@ class PlatformBillingSafetyTest extends TestCase
         config()->set('services.mpesa.callback_url', 'https://example.com/callback');
         Http::fake();
         $this->expectException(\RuntimeException::class);
-        app(\App\Services\DarajaStkService::class)->push('254712345678', 100, '123456');
+        app(DarajaStkService::class)->push('254712345678', 100, '123456');
         Http::assertNothingSent();
     }
 
@@ -33,13 +33,11 @@ class PlatformBillingSafetyTest extends TestCase
         config()->set('services.mpesa.callback_url', 'https://example.com/api/billing/mpesa/stk/callback');
         Http::fake([
             'sandbox.safaricom.co.ke/oauth/*' => Http::response(['access_token' => 'sandbox-token'], 200),
-            'sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest' =>
-                Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'sandbox-checkout'], 200),
+            'sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest' => Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'sandbox-checkout'], 200),
         ]);
-        $result = app(\\App\\Services\\DarajaStkService::class)->push('254712345678', 300, '123456');
+        $result = app(DarajaStkService::class)->push('254712345678', 300, '123456');
         $this->assertSame('sandbox-checkout', $result['CheckoutRequestID']);
-        Http::assertSent(fn ($request) =>
-            str_contains($request->url(), '/mpesa/stkpush/v1/processrequest')
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/mpesa/stkpush/v1/processrequest')
             && $request['AccountReference'] === '123456'
             && $request['Amount'] === 300
             && $request['BusinessShortCode'] === '174379'
@@ -55,13 +53,11 @@ class PlatformBillingSafetyTest extends TestCase
         config()->set('services.mpesa.passkey', 'sandbox-passkey');
         Http::fake([
             'sandbox.safaricom.co.ke/oauth/*' => Http::response(['access_token' => 'sandbox-token']),
-            'sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query' =>
-                Http::response(['ResponseCode' => '0', 'ResultCode' => '0']),
+            'sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query' => Http::response(['ResponseCode' => '0', 'ResultCode' => '0']),
         ]);
-        $result = app(\\App\\Services\\DarajaStkService::class)->query('sandbox-checkout');
+        $result = app(DarajaStkService::class)->query('sandbox-checkout');
         $this->assertSame('0', $result['ResponseCode']);
-        Http::assertSent(fn ($request) =>
-            str_contains($request->url(), '/mpesa/stkpushquery/v1/query')
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/mpesa/stkpushquery/v1/query')
             && $request['CheckoutRequestID'] === 'sandbox-checkout'
         );
     }

@@ -15,8 +15,9 @@ return new class extends Migration {
             $table->decimal('amount', 12, 2);
             $table->string('currency', 3)->default('KES');
             $table->string('status', 20)->default('pending')->index();
-            $table->timestamp('period_starts_at');
-            $table->timestamp('period_ends_at');
+            // Business dates must not inherit MySQL's legacy implicit TIMESTAMP defaults.
+            $table->dateTime('period_starts_at');
+            $table->dateTime('period_ends_at');
             $table->timestamp('due_at')->nullable();
             $table->timestamp('paid_at')->nullable();
             $table->timestamps();

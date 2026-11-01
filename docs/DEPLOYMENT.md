@@ -59,6 +59,6 @@ Keep `/assets/*` responses as 404 when missing; serving HTML for missing scripts
 
 ## Workers and release checks
 
-With `QUEUE_CONNECTION=database`, supervise `php artisan queue:work --sleep=3 --tries=3 --timeout=90` and restart workers on deploy using `php artisan queue:restart`. Enable a scheduler only when application schedules are added. Configure logs, backups and health monitoring.
+With `QUEUE_CONNECTION=database`, supervise `php artisan queue:work --sleep=3 --tries=3 --timeout=90` and restart workers on deploy using `php artisan queue:restart`. Enable the Laravel scheduler for subscription expiry, renewal invoices and STK verification; see [the billing staging runbook](BILLING.md). Configure logs, backups and health monitoring.
 
 Verify HTTPS cookie flags, CSRF rejection, login/refresh/logout, password/verification mail links, permission denials, direct React URL refreshes, inventory writes, idempotent checkout, receipt print/reprint and mobile checkout. Test MySQL stock locking with concurrent checkout requests against a separate staging database. Do not test production transactions by inserting mock records.

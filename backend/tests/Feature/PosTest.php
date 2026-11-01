@@ -40,9 +40,8 @@ class PosTest extends TestCase
             'bookshop_id' => $this->tenantId(), 'title' => 'Book', 'sku' => uniqid('SKU-'), 'selling_price' => 500, 'reorder_level' => 5,
             'product_subcategory_id' => $subcategory, 'created_at' => now(), 'updated_at' => now(),
         ], $attributes));
-        if ($stock) {
-            DB::table('inventory_balances')->insert(['bookshop_id' => $this->tenantId(), 'book_id' => $id, 'branch_id' => $this->branch->id, 'quantity' => $stock, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        }
+        // A received product stays assigned to the branch when its balance reaches zero.
+        DB::table('inventory_balances')->insert(['bookshop_id' => $this->tenantId(), 'book_id' => $id, 'branch_id' => $this->branch->id, 'quantity' => $stock, 'reserved' => 0, 'created_at' => now(), 'updated_at' => now()]);
 
         return $id;
     }

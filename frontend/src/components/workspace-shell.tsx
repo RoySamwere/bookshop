@@ -1,5 +1,7 @@
 'use client'
 
+import { Link } from 'react-router-dom'
+
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowUpRight, BarChart3, Bell, BookOpen, Boxes, CheckCheck, ChevronDown, ChevronLeft, ClipboardList,
@@ -128,6 +130,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const account = useOverlay<HTMLDivElement>(accountOpen, () => setAccountOpen(false))
   const notifications = useOverlay<HTMLDivElement>(notificationsOpen, () => setNotificationsOpen(false))
   const command = useOverlay<HTMLDivElement>(searchOpen, () => setSearchOpen(false), true)
+  const canManageBilling = currentUser.account_type === 'bookshop' && !currentUser.management_context && ['bookshop_owner', 'system_owner'].includes(currentUser.role)
   const visibleSections = sections.filter(section => canOpenSection(currentUser, section.label))
   const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const modalOpen = drawerOpen || searchOpen
@@ -226,7 +229,20 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
       <div className="sidebar-scroll">
         <div className="shop-indicator" title={branchLabel}><span className="shop-icon"><ShoppingCart size={18} /></span><div><strong>{bookshopName}</strong><small><span className="status-dot" /> {branchLabel}</small></div><ChevronDown size={14} /></div>
         {hasPermission(currentUser, 'pos.access') && <button className="sidebar-new-sale" onClick={() => navigate('Point of Sale')} title="New sale"><Plus size={19} /><span>New sale</span></button>}
-        {groups.map(group => { const items = visibleSections.filter(section => group.labels.includes(section.label)); return items.length > 0 && <div className="sidebar-nav-group" key={group.name}><div className="sidebar-group-label">{group.name}</div><nav className="sidebar-links" aria-label={group.name}>{items.map(navButton)}</nav></div> })}
+        {groups.map(group => {
+          const items = visibleSections.filter(section => group.labels.includes(section.label))
+          const showBilling = group.name === 'Admin' && canManageBilling
+          return (items.length > 0 || showBilling) && <div className="sidebar-nav-group" key={group.name}>
+            <div className="sidebar-group-label">{group.name}</div>
+            <nav className="sidebar-links" aria-label={group.name}>
+              {items.map(navButton)}
+              {showBilling && <Link to="/billing" className="sidebar-link" aria-label="Subscription Billing"
+                title={collapsed && !mobile ? 'Subscription Billing' : undefined} onClick={() => setDrawerOpen(false)}>
+                <WalletCards size={19} aria-hidden="true" /><span className="sidebar-link-label">Subscription billing</span>
+              </Link>}
+            </nav>
+          </div>
+        })}
       </div>
       <div className="sidebar-footer">
         <div className="sidebar-identity"><button className="user-avatar" onClick={() => navigate(PROFILE_SECTION)} aria-label="My profile">{initials}</button><div><strong>{currentUser.name}</strong><span>{roleLabel(currentUser.role)}</span></div><button className="sidebar-signout" onClick={() => void onSignOut()} aria-label="Sign out"><LogOut size={18} /></button></div>
@@ -271,6 +287,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
               <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · {bookshopName} · {branchLabel}</small></div>
               <button className="popover-action" onClick={() => navigate(PROFILE_SECTION)}><UserRound size={17} /> My profile and password</button>
               {hasPermission(currentUser, 'users.view') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
+              {['bookshop_owner', 'system_owner'].includes(currentUser.role) && <Link className="popover-action" to="/billing">Subscription billing</Link>}
               {hasPermission(currentUser, 'settings.view') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}
               <button className="popover-action signout-action" onClick={() => { setAccountOpen(false); void onSignOut() }}><LogOut size={17} /> Sign out</button>
             </div>}

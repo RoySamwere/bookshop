@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Building2, MapPin, Percent, Pencil, Plus, Receipt, Settings, Store, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { ApiError, errorMessage } from '../lib/api'
 import { hasPermission, type BookshopUser } from '../lib/auth'
 import { branchesApi, businessApi, type Branch, type BusinessProfile, type TaxRate } from '../lib/workspace-api'
@@ -27,6 +28,7 @@ export function SettingsView({ currentUser, notify }: { currentUser: BookshopUse
         <Icon size={16} />{label}
       </button>)}
     </div>
+    {['bookshop_owner', 'system_owner'].includes(currentUser.role) && <Link className={primaryButton} to="/billing">Subscription billing</Link>}
     {tab === 'business' && <BusinessTab canEdit={canEdit} notify={notify} />}
     {tab === 'branches' && <BranchesTab canEdit={hasPermission(currentUser, 'branches.manage')} notify={notify} />}
     {tab === 'taxes' && <TaxesTab canEdit={canEdit} notify={notify} />}

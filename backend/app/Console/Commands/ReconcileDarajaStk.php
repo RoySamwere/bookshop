@@ -10,36 +10,48 @@ use Throwable;
 class ReconcileDarajaStk extends Command
 {
     protected $signature = 'billing:reconcile-stk';
+
     protected $description = 'Verify pending M-Pesa STK requests against Safaricom without trusting unsigned callbacks';
 
     public function handle(DarajaStkService $daraja): int
     {
         $attempts = DB::table('platform_billing_payments')
             ->whereIn('status', ['pending', 'awaiting_verification'])
-            ->where('channel', 'stk')->whereNotNull('checkout_request_id')
+            ->where('environment', config('services.mpesa.environment'))->where('channel', 'stk')->whereNotNull('checkout_request_id')
             ->where('created_at', '<=', now()->subMinutes(2))
-            ->limit(100)->get();
+            ->orderBy('queried_at')->orderBy('id')->limit(100)->get();
         foreach ($attempts as $attempt) {
             try {
                 $result = $daraja->query($attempt->checkout_request_id);
-                if (($result['ResponseCode'] ?? null) != '0') continue;
-                $code = (int) ($result['ResultCode'] ?? -1);
-                if ($code === 0) {
+                DB::table('platform_billing_payments')->where('id', $attempt->id)
+                    ->whereIn('status', ['pending', 'awaiting_verification'])
+                    ->update(['query_response' => json_encode($result), 'queried_at' => now()]);
+                if ((string) ($result['ResponseCode'] ?? '') !== '0') {
+                    continue;
+                }
+                $code = (string) ($result['ResultCode'] ?? '');
+                if (isset($result['CheckoutRequestID']) && $result['CheckoutRequestID'] !== $attempt->checkout_request_id) {
+                    continue;
+                }
+                if ($code === '0') {
                     // Query verifies the checkout outcome but does not provide an
                     // authenticated receipt and amount. Await statement reconciliation
                     // before crediting any funds.
                     DB::table('platform_billing_payments')->where('id', $attempt->id)
                         ->whereIn('status', ['pending', 'awaiting_verification'])
-                        ->update(['status' => 'awaiting_verification', 'updated_at' => now()]);
-                } elseif (array_key_exists('ResultCode', $result)) {
+                        ->update(['status' => 'awaiting_verification', 'query_response' => json_encode($result), 'queried_at' => now(), 'updated_at' => now()]);
+                } elseif (in_array($code, ['1', '1032', '1037', '2001'], true)) {
                     DB::table('platform_billing_payments')->where('id', $attempt->id)
                         ->whereIn('status', ['pending', 'awaiting_verification'])
-                        ->update(['status' => 'failed', 'updated_at' => now()]);
+                        ->update(['status' => 'failed', 'query_response' => json_encode($result), 'queried_at' => now(), 'updated_at' => now()]);
                 }
             } catch (Throwable $e) {
-                $this->warn('Checkout '.$attempt->checkout_request_id.': '.$e->getMessage());
+                DB::table('platform_billing_payments')->where('id', $attempt->id)
+                    ->whereIn('status', ['pending', 'awaiting_verification'])->update(['queried_at' => now()]);
+                $this->warn('Provider verification unavailable for attempt '.$attempt->id.'.');
             }
         }
+
         return self::SUCCESS;
     }
 }
