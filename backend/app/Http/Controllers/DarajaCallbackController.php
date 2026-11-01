@@ -33,11 +33,19 @@ class DarajaCallbackController extends Controller
     {
         // Do not activate subscriptions directly from unauthenticated HTTP callbacks.
         // Persist for trusted reconciliation against Safaricom/Paybill statement.
-        Log::notice('Daraja C2B confirmation received for reconciliation', [
-            'transaction_id' => $request->input('TransID'),
-            'account' => $request->input('BillRefNumber'),
-            'amount' => $request->input('TransAmount'),
-        ]);
+        $transaction = $request->input('TransID');
+        if (is_string($transaction) && $transaction !== '') {
+            DB::table('platform_payment_reconciliation_items')->insertOrIgnore([
+                'source' => 'c2b',
+                'provider_transaction_id' => $transaction,
+                'account_number' => $request->input('BillRefNumber'),
+                'destination_shortcode' => $request->input('BusinessShortCode'),
+                'amount' => $request->input('TransAmount'),
+                'status' => 'awaiting_verification',
+                'payload' => json_encode($request->all()),
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
         return response()->json(['ResultCode' => 0, 'ResultDesc' => 'Accepted for reconciliation']);
     }
 }
