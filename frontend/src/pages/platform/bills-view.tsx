@@ -27,6 +27,8 @@ export default function BillsView() {
   const [selected, setSelected] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
+  const client = useQueryClient()
+  const sync = useMutation({ mutationFn: billsApi.sync, onSuccess: () => void client.invalidateQueries({ queryKey: ['platform-bills'] }) })
 
   useEffect(() => { const timer = window.setTimeout(() => setFilters(current => ({ ...current, search: search.trim() || undefined, page: 1 })), 300); return () => window.clearTimeout(timer) }, [search])
   const bills = useQuery({ queryKey: ['platform-bills', filters], queryFn: () => billsApi.list(filters), placeholderData: keepPreviousData, refetchInterval: 30000 })
@@ -62,10 +64,15 @@ export default function BillsView() {
     <PageHeader eyebrow="Platform billing" icon={<ReceiptText size={22} />} title="Bills"
       description={`Every M-Pesa payment received for subscriptions${summary ? ` · ${summary.environment === 'production' ? 'Production Paybill' : 'Sandbox shortcode'} ${summary.paybill}` : ''}. Payments are verified with Safaricom and applied to invoices automatically; only exceptions need you.`}
       actions={<div className="flex flex-wrap gap-2">
+        {canManage && <button className={primaryButton} disabled={sync.isPending} onClick={() => sync.mutate()} title="Check every payment in saf_payments with Safaricom by its M-Pesa code and apply confirmed ones"><RotateCw size={16} className={sync.isPending ? 'animate-spin' : ''} /> {sync.isPending ? 'Updating…' : 'Update payments'}</button>}
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('csv')}><Download size={16} /> CSV</button>
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('xlsx')}><FileSpreadsheet size={16} /> Excel</button>
       </div>} />
     {exportError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{exportError}</p>}
+    {sync.isError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{errorMessage(sync.error)}</p>}
+    {sync.isSuccess && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+      Checked {sync.data.data.checked} payment(s) by M-Pesa code: {sync.data.data.applied} applied, {sync.data.data.still_pending} still waiting for Safaricom, {sync.data.data.needs_review} need review{sync.data.data.codes_filled ? `, ${sync.data.data.codes_filled} code(s) filled in` : ''}.
+    </p>}
 
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Collections summary">
       <StatCard label="Verified collections" value={summary ? kes(summary.verified_collections) : '—'} hint={summary ? `${summary.verified_count} payment(s) applied` : ''} icon={<CheckCircle2 size={19} />} tone="emerald" />

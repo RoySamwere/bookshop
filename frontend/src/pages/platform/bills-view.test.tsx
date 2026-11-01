@@ -10,7 +10,7 @@ import { billsApi, type Bill } from '../../lib/billing-api'
 const auth = vi.hoisted(() => ({ user: { role: 'platform_owner', account_type: 'platform', permissions: ['platform.settings.view', 'platform.settings.manage'] } as Record<string, unknown> }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
 vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(),
-  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
+  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), sync: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
 
 const bill = (patch: Partial<Bill>): Bill => ({
   id: 1, transaction_date: '2026-11-01T09:00:00Z', bookshop_id: 4, bookshop_name: 'Kisumu Readers', invoice_id: 12, invoice_status: 'paid', account_number: '100045',
@@ -76,6 +76,14 @@ describe('Bills', () => {
     expect(billsApi.confirmCode).toHaveBeenCalledWith('TJ4K8L2M9P', '100045', '')
   })
 
+  it('updates every payment by its M-Pesa code on request', async () => {
+    vi.mocked(billsApi.sync).mockResolvedValue({ data: { checked: 3, applied: 2, still_pending: 1, needs_review: 0, codes_filled: 1, links_repaired: 0 }, summary })
+    const user = userEvent.setup(); mount()
+    await screen.findByText('QK1ABC2DEF')
+    await user.click(screen.getByRole('button', { name: /Update payments/ }))
+    expect(await screen.findByText(/Checked 3 payment\(s\) by M-Pesa code: 2 applied/)).toBeInTheDocument()
+  })
+
   it('hides exception actions from read-only platform staff', async () => {
     auth.user = { role: 'platform_admin', account_type: 'platform', permissions: ['platform.settings.view'] }
     const user = userEvent.setup(); mount()
@@ -83,6 +91,7 @@ describe('Bills', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Assign to invoice|Reject without credit|Check with Safaricom again/ })).not.toBeInTheDocument()
     expect(screen.queryByText('Confirm a payment by M-Pesa code')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Update payments/ })).not.toBeInTheDocument()
   })
 })
 

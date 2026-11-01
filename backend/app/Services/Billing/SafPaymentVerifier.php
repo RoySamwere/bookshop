@@ -67,7 +67,8 @@ class SafPaymentVerifier
 
             return;
         }
-        if ($row->payment_channel === 'stk') {
+        // Anything linked to our own STK request can be confirmed with the STK query, even if it arrived as Paybill.
+        if ($row->payment_channel === 'stk' || $row->stk_attempt_id) {
             $this->verifyStk($row);
         } else {
             $this->verifyPaybill($row);

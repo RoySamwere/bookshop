@@ -65,6 +65,7 @@ export const billsApi = {
   show: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}`),
   retry: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}/retry`, { method: 'POST' }),
   assign: (id: number, account_number: string, note: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/assign`, { method: 'POST', body: { account_number, note } }),
+  sync: () => api<{ data: { checked: number; applied: number; still_pending: number; needs_review: number; codes_filled: number; links_repaired: number }; summary: BillsSummary }>('/platform/bills/sync', { method: 'POST' }),
   confirmCode: (mpesa_code: string, account_number: string, note: string) => api<{ data: BillDetail }>('/platform/bills/confirm-code', { method: 'POST', body: { mpesa_code, account_number, note } }),
   reject: (id: number, reason: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/reject`, { method: 'POST', body: { reason } }),
   confirmMyPayment: (invoiceId: number, mpesa_code: string) => api<{ status: 'confirmed' | 'processing' | 'review'; message: string }>(`/billing/invoices/${invoiceId}/confirm-payment`, { method: 'POST', body: { mpesa_code } }),

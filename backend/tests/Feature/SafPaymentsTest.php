@@ -469,4 +469,69 @@ class SafPaymentsTest extends TestCase
         $this->assertSame('TJ4K8L2M9W', DB::table('saf_payments')->where('provider_transaction_id', 'ws_CO_2')->value('mpesa_receipt_number'));
         $this->getJson('/api/billing/payments')->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2M9W')->assertJsonPath('data.1.mpesa_receipt_number', 'TJ4K8L2M9V');
     }
+
+    private function stkGateway(): void
+    {
+        Http::fake([
+            '*/oauth/*' => Http::response(['access_token' => 'token']),
+            '*/mpesa/stkpush/v1/processrequest' => Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'ws_CO_9', 'MerchantRequestID' => 'm9']),
+            '*/mpesa/stkpushquery/v1/query' => Http::response(['ResponseCode' => '0', 'ResultCode' => '0']),
+            '*/mpesa/transactionstatus/v1/query' => Http::response(['ResponseCode' => '1']),
+        ]);
+    }
+
+    public function test_one_payment_reported_by_paybill_and_stk_is_one_row_keyed_by_its_code(): void
+    {
+        $this->stkGateway();
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
+        // Safaricom's Paybill notification arrives first, then the STK callback with the same code.
+        $this->c2b('TJ4K8L2MAA', $invoice->account_number);
+        $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'ws_CO_9', 'ResultCode' => 0, 'CallbackMetadata' => ['Item' => [
+            ['Name' => 'Amount', 'Value' => 1000], ['Name' => 'MpesaReceiptNumber', 'Value' => 'TJ4K8L2MAA']]]]]])->assertOk();
+        $this->artisan('billing:sync-payments')->assertSuccessful();
+
+        $this->assertSame(1, DB::table('saf_payments')->where('verification_status', '!=', 'rejected')->count());
+        $row = $this->row('TJ4K8L2MAA');
+        $this->assertSame('reconciled', $row->verification_status);
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+        $this->assertSame('TJ4K8L2MAA', DB::table('platform_billing_payments')->where('status', 'confirmed')->value('mpesa_receipt'));
+        $this->assertDatabaseCount('subscription_events', 1);
+    }
+
+    public function test_a_later_paybill_notification_completes_an_applied_stk_payment_without_crediting_again(): void
+    {
+        $this->stkGateway();
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
+        $this->travel(3)->minutes();
+        $this->artisan('billing:reconcile-payments')->assertSuccessful();
+        $stk = DB::table('saf_payments')->first();
+        $this->assertSame(['reconciled', null], [$stk->verification_status, $stk->mpesa_receipt_number]);
+
+        $this->c2b('TJ4K8L2MAB', $invoice->account_number);
+        $this->artisan('billing:sync-payments')->assertSuccessful();
+        $this->assertSame(1, DB::table('saf_payments')->count());
+        $this->assertSame('TJ4K8L2MAB', DB::table('saf_payments')->value('mpesa_receipt_number'));
+        $this->assertSame('TJ4K8L2MAB', DB::table('platform_billing_payments')->where('status', 'confirmed')->value('mpesa_receipt'));
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+        $this->assertDatabaseCount('subscription_events', 1);
+    }
+
+    public function test_update_payments_processes_every_row_by_its_code_for_managers_only(): void
+    {
+        $invoice = $this->invoice();
+        // Rows already in saf_payments: one verified, one with a code but no invoice link on its credited record.
+        DB::table('saf_payments')->insert(['account_number' => $invoice->account_number, 'mpesa_receipt_number' => 'TJ4K8L2MAC', 'amount' => 1000, 'shortcode' => '152451',
+            'payment_channel' => 'paybill', 'environment' => 'production', 'verification_status' => 'verified', 'verification_source' => 'daraja_transaction_status',
+            'verified_at' => now(), 'provider_transaction_id' => 'TJ4K8L2MAC', 'created_at' => now(), 'updated_at' => now()]);
+        $admin = User::factory()->create(['role' => 'platform_admin']);
+        $this->actingAs($admin, 'sanctum')->postJson('/api/platform/bills/sync')->assertForbidden();
+        $this->actingAs($this->operator, 'sanctum')->postJson('/api/platform/bills/sync')->assertOk()
+            ->assertJsonPath('data.applied', 1)->assertJsonPath('summary.verified_collections', 1000);
+        $this->getJson('/api/platform/bills')->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2MAC')->assertJsonPath('data.0.status', 'reconciled');
+        $this->postJson('/api/platform/bills/sync')->assertOk()->assertJsonPath('data.applied', 0);
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'billing.payments_synced']);
+    }
 }

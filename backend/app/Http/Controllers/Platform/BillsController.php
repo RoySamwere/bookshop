@@ -139,6 +139,16 @@ class BillsController extends Controller
         return $this->show($id);
     }
 
+    /** "Update payments": process every saf_payments row now, keyed by its M-Pesa confirmation code. */
+    public function sync(Request $request, \App\Services\Billing\SafPaymentSync $sync)
+    {
+        $data = $request->validate(['environment' => 'nullable|in:production,sandbox']);
+        $result = $sync->run($data['environment'] ?? null);
+        AuditLog::record('billing.payments_synced', 'Updated M-Pesa payments from saf_payments', null, $result);
+
+        return response()->json(['data' => $result, 'summary' => $this->summary($data['environment'] ?? null)]);
+    }
+
     /** Close an exception without crediting anything (duplicate, fraud, refunded outside the system). */
     public function reject(Request $request, int $payment)
     {

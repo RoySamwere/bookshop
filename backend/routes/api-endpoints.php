@@ -222,6 +222,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/billing/context', [\App\Http\Controllers\PlatformBillingController::class, 'context'])->middleware('permission:platform.settings.view');
         // Bills: the saf_payments ledger and its exception queue.
         Route::get('/bills', [\App\Http\Controllers\Platform\BillsController::class, 'index'])->middleware('permission:platform.settings.view');
+        Route::post('/bills/sync', [\App\Http\Controllers\Platform\BillsController::class, 'sync'])->middleware(['permission:platform.settings.manage', 'throttle:6,1']);
         Route::post('/bills/confirm-code', [\App\Http\Controllers\Platform\BillsController::class, 'confirmCode'])->middleware(['permission:platform.settings.manage', 'throttle:20,1']);
         Route::get('/bills/export', [\App\Http\Controllers\Platform\BillsController::class, 'export'])->middleware(['permission:platform.settings.view', 'throttle:10,1']);
         Route::get('/bills/{payment}', [\App\Http\Controllers\Platform\BillsController::class, 'show'])->whereNumber('payment')->middleware('permission:platform.settings.view');

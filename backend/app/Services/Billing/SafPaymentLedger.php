@@ -64,6 +64,15 @@ class SafPaymentLedger
 
             return (int) $existing->id; // Duplicate callback, or a code a customer already gave us.
         }
+        // The same money paid by STK push and already recorded without its code: the code completes that row.
+        $stk = $this->stkRowForSameMoney($environment, trim((string) $data['BillRefNumber']), round((float) $data['TransAmount'], 2), $this->mpesaTime($data['TransTime'] ?? null) ?? now());
+        if ($stk) {
+            $this->attachReceipt((int) $stk->id, $receipt);
+            $payload = json_decode($stk->provider_payload ?? '{}', true) ?: [];
+            DB::table('saf_payments')->where('id', $stk->id)->update(['provider_payload' => json_encode([...$payload, 'c2b_confirmation' => self::minimize($data)]), 'updated_at' => now()]);
+
+            return (int) $stk->id;
+        }
         DB::table('saf_payments')->insertOrIgnore([
             'account_number' => mb_substr(trim((string) $data['BillRefNumber']), 0, 20),
             'mpesa_receipt_number' => $receipt,
@@ -100,9 +109,14 @@ class SafPaymentLedger
                 if ($name === 'TransactionDate') $date = $this->mpesaTime($value);
             }
         }
-        if ($receipt && DB::table('saf_payments')->where('environment', $attempt->environment)->where('mpesa_receipt_number', $receipt)
-            ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->exists()) {
-            $receipt = null; // A receipt claimed by another transaction is never trusted from a callback.
+        if ($receipt) {
+            $owner = DB::table('saf_payments')->where('environment', $attempt->environment)->where('mpesa_receipt_number', $receipt)
+                ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->first();
+            if ($owner) {
+                $merged = $this->mergeStkIntoReceiptRow($owner, $existing, $attempt, $callback);
+                if ($merged !== null) return $merged;
+                $receipt = null; // Belongs to a different payment; never trusted from a callback.
+            }
         }
         if ($existing) {
             $updates = array_filter([
@@ -219,6 +233,63 @@ class SafPaymentLedger
         }
 
         return true;
+    }
+
+    public function findByReceipt(string $environment, string $receipt): ?object
+    {
+        return DB::table('saf_payments')->where('environment', $environment)->where('mpesa_receipt_number', strtoupper($receipt))->first();
+    }
+
+    /** An STK payment still without its code, for the same account and amount, close in time. */
+    private function stkRowForSameMoney(string $environment, string $account, float $amount, Carbon $at): ?object
+    {
+        return DB::table('saf_payments')->where('environment', $environment)->where('payment_channel', 'stk')->whereNull('mpesa_receipt_number')
+            ->where('account_number', $account)->where('amount', $amount)->where('verification_status', '!=', 'rejected')
+            ->whereBetween(DB::raw('COALESCE(transaction_date, created_at)'), [$at->copy()->subHours(2), $at->copy()->addHours(2)])
+            ->get()->sortBy(fn ($row) => abs(Carbon::parse($row->transaction_date ?? $row->created_at)->diffInSeconds($at, false)))->first();
+    }
+
+    /**
+     * The STK callback's code is already on a Paybill row (Safaricom sent both notifications for one payment).
+     * Keep one row per code: link the STK request to that row, and retire any separate STK row that has not
+     * been applied. Returns the surviving row id, or null when the code belongs to a different payment.
+     */
+    private function mergeStkIntoReceiptRow(object $owner, ?object $stkRow, object $attempt, ?array $callback): ?int
+    {
+        $account = DB::table('platform_billing_invoices')->where('id', $attempt->platform_billing_invoice_id)->value('account_number');
+        $same = $owner->payment_channel === 'paybill' && (! $owner->stk_attempt_id || (int) $owner->stk_attempt_id === (int) $attempt->id)
+            && ((float) $owner->amount <= 0 || abs((float) $owner->amount - (float) $attempt->amount) < 0.005)
+            && (! $owner->account_number || $owner->account_number === $account);
+        if (! $same) return null;
+
+        $payload = json_decode($owner->provider_payload ?? '{}', true) ?: [];
+        if ($callback) $payload['stk_callback'] = self::minimize($callback);
+        if ($stkRow && $stkRow->verification_status === 'reconciled' && $owner->verification_status !== 'reconciled') {
+            // The STK row already credited the invoice: it keeps the money, takes the code, and the Paybill row is retired.
+            DB::table('saf_payments')->where('id', $owner->id)->update([
+                'mpesa_receipt_number' => null, 'verification_status' => 'rejected', 'next_verification_at' => null,
+                'exception_reason' => 'Same M-Pesa payment as #'.$stkRow->id.' (already applied).', 'updated_at' => now(),
+            ]);
+            $this->attachReceipt((int) $stkRow->id, (string) $owner->mpesa_receipt_number);
+
+            return (int) $stkRow->id;
+        }
+        DB::table('saf_payments')->where('id', $owner->id)->update([
+            'stk_attempt_id' => $attempt->id, 'account_number' => $owner->account_number ?? $account,
+            'amount' => (float) $owner->amount > 0 ? $owner->amount : round((float) $attempt->amount, 2),
+            'phone_number' => $owner->phone_number ?? self::phone($attempt->phone), 'provider_payload' => json_encode($payload), 'updated_at' => now(),
+        ]);
+        if ($stkRow && $stkRow->verification_status !== 'reconciled') {
+            DB::table('saf_payments')->where('id', $stkRow->id)->update([
+                'verification_status' => 'rejected', 'next_verification_at' => null,
+                'exception_reason' => 'Same M-Pesa payment as '.$owner->mpesa_receipt_number.' (#'.$owner->id.').', 'updated_at' => now(),
+            ]);
+        } elseif ($stkRow) {
+            \App\Models\AuditLog::record('billing.payment_duplicate_review', 'Two ledger rows applied for one M-Pesa code; review', null,
+                ['saf_payment_id' => $owner->id, 'other_saf_payment_id' => $stkRow->id, 'receipt' => $owner->mpesa_receipt_number]);
+        }
+
+        return (int) $owner->id;
     }
 
     /** A Safaricom notification for a code someone already gave us supplies the account number and amount. */
