@@ -28,7 +28,7 @@ class PaymentReconciliationController extends Controller
     }
 
     public function confirmStk(Request $request, int $attempt, PlatformPaymentSettlementService $settlement,
-        \\App\\Services\\DarajaStkService $daraja)
+        \App\Services\DarajaStkService $daraja)
     {
         $data = $request->validate([
             'verified_receipt' => 'required|string|max:100',
@@ -59,7 +59,7 @@ class PaymentReconciliationController extends Controller
             throw ValidationException::withMessages(['payment' => 'Sandbox transactions are simulated and cannot activate production subscriptions.']);
         }
         $result = $settlement->settle($data['verified_receipt'], $invoice->account_number,
-            $shortcode, (float) $data['verified_amount'], new \\DateTimeImmutable($data['verified_at']),
+            $shortcode, (float) $data['verified_amount'], new \DateTimeImmutable($data['verified_at']),
             'stk', ['checkout_request_id' => $payment->checkout_request_id,
                 'statement_reference' => $data['statement_reference'], 'verified_by' => $request->user()->id]);
         DB::table('platform_billing_payments')->where('id', $payment->id)
