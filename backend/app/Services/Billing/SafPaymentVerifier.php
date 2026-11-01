@@ -68,7 +68,10 @@ class SafPaymentVerifier
             return;
         }
         // Anything linked to our own STK request can be confirmed with the STK query, even if it arrived as Paybill.
-        if ($row->payment_channel === 'stk' || $row->stk_attempt_id) {
+        $payload = json_decode($row->provider_payload ?? '{}', true) ?: [];
+        if (! empty($payload['verify_by_code']) && $row->mpesa_receipt_number) {
+            $this->verifyPaybill($row);
+        } elseif ($row->payment_channel === 'stk' || $row->stk_attempt_id) {
             $this->verifyStk($row);
         } else {
             $this->verifyPaybill($row);
@@ -103,6 +106,20 @@ class SafPaymentVerifier
                 ->update(['status' => 'awaiting_verification', 'updated_at' => now()]);
             // STK Query confirms the money but not the SMS confirmation code; the callback or Safaricom's list supplies it.
             if (! $row->mpesa_receipt_number) $this->lookupStkReceipt((int) $row->id);
+
+            return;
+        }
+        if (isset(self::STK_FAILURES[$code]) && ($receipt = $row->mpesa_receipt_number ?: app(SafPaymentLedger::class)->recoverStkCode($row))) {
+            // The status check says it failed, but Safaricom also sent this payment's M-Pesa code: confirm the code itself.
+            app(SafPaymentLedger::class)->attachReceipt((int) $row->id, $receipt);
+            $payload = json_decode($row->provider_payload ?? '{}', true) ?: [];
+            DB::table('saf_payments')->where('id', $row->id)->update(['provider_payload' => json_encode([...$payload, 'verify_by_code' => true, 'stk_query' => SafPaymentLedger::minimize($result)])]);
+            $fresh = DB::table('saf_payments')->where('id', $row->id)->first();
+            if (in_array(config('services.mpesa.c2b_verification'), ['transaction_status', 'pull_api'], true)) {
+                $this->verifyPaybill($fresh);
+            } else {
+                $this->reconciler->exception($row->id, "Safaricom sent M-Pesa code {$receipt} but its status check said: ".mb_substr((string) ($result['ResultDesc'] ?? $code), 0, 80).'. Confirm the code before applying.');
+            }
 
             return;
         }

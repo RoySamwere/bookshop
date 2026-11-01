@@ -35,6 +35,11 @@ class SafPaymentLedger
     {
         $clean = [];
         foreach ($payload as $key => $value) {
+            // STK callback metadata is a list of {Name, Value}: keep the payment facts (code, amount, date), never the phone.
+            if (is_array($value) && array_key_exists('Name', $value) && in_array($value['Name'], ['MpesaReceiptNumber', 'Amount', 'TransactionDate'], true)) {
+                $clean[$key] = ['Name' => $value['Name'], 'Value' => is_scalar($value['Value'] ?? null) ? $value['Value'] : null];
+                continue;
+            }
             if (is_array($value)) {
                 $nested = self::minimize($value);
                 if ($nested) $clean[$key] = $nested;
@@ -44,6 +49,36 @@ class SafPaymentLedger
         }
 
         return $clean;
+    }
+
+    /** The M-Pesa code in an STK callback that reports success, or null. */
+    public static function receiptFromCallback(mixed $callback): ?string
+    {
+        if (is_string($callback)) $callback = json_decode($callback, true);
+        if (! is_array($callback)) return null;
+        $callback = $callback['Body']['stkCallback'] ?? $callback['stk_callback'] ?? $callback;
+        if ((string) ($callback['ResultCode'] ?? '') !== '0') return null;
+        foreach ($callback['CallbackMetadata']['Item'] ?? [] as $item) {
+            if (($item['Name'] ?? null) === 'MpesaReceiptNumber') return self::normalizeCode($item['Value'] ?? null) ?? (preg_match('/^[A-Z0-9]{6,30}$/', (string) ($item['Value'] ?? '')) ? (string) $item['Value'] : null);
+        }
+
+        return null;
+    }
+
+    /**
+     * Finds the M-Pesa code of an STK payment in what Safaricom has already sent us (the callback stored on the
+     * STK request or on the ledger row), for rows saved before the code was kept.
+     */
+    public function recoverStkCode(object $row): ?string
+    {
+        $payload = json_decode($row->provider_payload ?? '{}', true) ?: [];
+        $code = self::receiptFromCallback($payload['stk_callback'] ?? null);
+        if (! $code && $row->stk_attempt_id) {
+            $attempt = DB::table('platform_billing_payments')->where('id', $row->stk_attempt_id)->first(['callback_payload', 'provider_response', 'mpesa_receipt']);
+            $code = $attempt?->mpesa_receipt ?: self::receiptFromCallback($attempt?->callback_payload) ?: self::receiptFromCallback($attempt?->provider_response);
+        }
+
+        return $code;
     }
 
     public static function phone(mixed $value): ?string
@@ -131,6 +166,13 @@ class SafPaymentLedger
             }
             $receiptUpdate = $updates['mpesa_receipt_number'] ?? null;
             unset($updates['mpesa_receipt_number']);
+            if ($existing->verification_status === 'rejected' && $callback && (string) ($callback['ResultCode'] ?? '') === '0') {
+                // Safaricom reports success after an earlier "failed/timed out" answer: check again before anything else.
+                $updates += ['verification_status' => 'pending', 'next_verification_at' => now(), 'verification_attempts' => 0,
+                    'exception_reason' => 'Safaricom sent a success notification after an earlier failure; checking again.'];
+                DB::table('platform_billing_payments')->where('id', $attempt->id)->whereIn('status', ['failed', 'cancelled', 'timed_out'])
+                    ->update(['status' => 'awaiting_verification', 'updated_at' => now()]);
+            }
             if ($updates) DB::table('saf_payments')->where('id', $existing->id)->update([...$updates, 'updated_at' => now()]);
             if ($receiptUpdate && ! $existing->mpesa_receipt_number) $this->attachReceipt((int) $existing->id, $receiptUpdate);
 

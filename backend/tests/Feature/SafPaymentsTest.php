@@ -558,4 +558,76 @@ class SafPaymentsTest extends TestCase
         $this->actingAs($other, 'sanctum')->getJson("/api/billing/payments/{$id}")->assertNotFound();
         $this->getJson('/api/billing/payments')->assertJsonPath('total', 0);
     }
+
+    private function stkWithQuery(string ...$codes): void
+    {
+        $sequence = Http::sequence();
+        foreach ($codes as $code) $sequence->push(['ResponseCode' => '0', 'ResultCode' => $code, 'ResultDesc' => $code === '0' ? 'Success' : 'DS timeout user cannot be reached']);
+        Http::fake([
+            '*/oauth/*' => Http::response(['access_token' => 'token']),
+            '*/mpesa/stkpush/v1/processrequest' => Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'ws_CO_7', 'MerchantRequestID' => 'm7']),
+            '*/mpesa/stkpushquery/v1/query' => $sequence,
+            '*/mpesa/transactionstatus/v1/query' => function (HttpRequest $request) {
+                $this->sent[] = $request->data();
+
+                return Http::response(['OriginatorConversationID' => $request['OriginatorConversationID'], 'ConversationID' => 'AG_STK', 'ResponseCode' => '0']);
+            },
+        ]);
+    }
+
+    private function successCallback(string $code): array
+    {
+        return ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'ws_CO_7', 'ResultCode' => 0, 'ResultDesc' => 'The service request is processed successfully.',
+            'CallbackMetadata' => ['Item' => [['Name' => 'Amount', 'Value' => 1000], ['Name' => 'MpesaReceiptNumber', 'Value' => $code], ['Name' => 'PhoneNumber', 'Value' => 254713854231]]]]]];
+    }
+
+    public function test_a_late_success_after_a_timeout_is_applied_with_its_code(): void
+    {
+        $this->stkWithQuery('1037', '0');
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254713854231', 'amount' => 1000])->assertAccepted();
+        $this->travel(3)->minutes();
+        $this->artisan('billing:reconcile-payments')->assertSuccessful();
+        $this->assertSame('rejected', DB::table('saf_payments')->value('verification_status'));
+
+        $this->postJson('/api/billing/mpesa/stk/callback', $this->successCallback('TJ4K8L2MCA'))->assertOk();
+        $row = DB::table('saf_payments')->first();
+        $this->assertSame(['reconciled', 'TJ4K8L2MCA'], [$row->verification_status, $row->mpesa_receipt_number]);
+        $this->assertSame('active', $this->subscription->fresh()->status);
+        $this->assertStringContainsString('MpesaReceiptNumber', (string) DB::table('platform_billing_payments')->where('checkout_request_id', 'ws_CO_7')->value('callback_payload'), 'The stored callback keeps the code.');
+        $this->assertStringNotContainsString('254713854231', (string) $row->provider_payload, 'The stored callback drops the phone.');
+    }
+
+    public function test_when_the_status_check_still_says_failed_the_code_itself_is_confirmed(): void
+    {
+        $this->sent = [];
+        $this->stkWithQuery('1037', '1037');
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254713854231', 'amount' => 1000])->assertAccepted();
+        $this->postJson('/api/billing/mpesa/stk/callback', $this->successCallback('TJ4K8L2MCB'))->assertOk();
+        $row = DB::table('saf_payments')->first();
+        $this->assertSame(['pending', 'TJ4K8L2MCB'], [$row->verification_status, $row->mpesa_receipt_number]);
+        $this->assertSame('TJ4K8L2MCB', $this->sent[0]['TransactionID']);
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($row))->assertOk();
+        $this->assertSame('reconciled', DB::table('saf_payments')->value('verification_status'));
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+    }
+
+    public function test_update_payments_recovers_codes_saved_before_they_were_kept(): void
+    {
+        $this->stkWithQuery('0');
+        $invoice = $this->invoice();
+        // An older STK request: callback stored in full on the request, ledger row rejected without a code.
+        $attempt = DB::table('platform_billing_payments')->insertGetId(['platform_billing_invoice_id' => $invoice->id, 'environment' => 'production', 'channel' => 'stk',
+            'status' => 'timed_out', 'checkout_request_id' => 'ws_CO_7', 'phone' => '254713854231', 'amount' => 1000,
+            'callback_payload' => json_encode($this->successCallback('TJ4K8L2MCC')['Body']['stkCallback']), 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('saf_payments')->insert(['stk_attempt_id' => $attempt, 'account_number' => $invoice->account_number, 'amount' => 1000, 'shortcode' => '152451',
+            'payment_channel' => 'stk', 'environment' => 'production', 'verification_status' => 'rejected', 'provider_transaction_id' => 'ws_CO_7',
+            'exception_reason' => 'Safaricom reported the request as timed out.', 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->actingAs($this->operator, 'sanctum')->postJson('/api/platform/bills/sync')->assertOk()->assertJsonPath('data.codes_filled', 1)->assertJsonPath('data.applied', 1);
+        $row = DB::table('saf_payments')->first();
+        $this->assertSame(['reconciled', 'TJ4K8L2MCC'], [$row->verification_status, $row->mpesa_receipt_number]);
+        $this->getJson('/api/platform/bills')->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2MCC')->assertJsonPath('data.0.status', 'reconciled');
+    }
 }

@@ -22,7 +22,8 @@ class DarajaCallbackController extends Controller
         if (is_array($callback) && is_string($callback['CheckoutRequestID'] ?? null) && strlen(json_encode($callback)) <= 16384) {
             $attempt = DB::table('platform_billing_payments')->where('checkout_request_id', $callback['CheckoutRequestID'])
                 ->where('channel', 'stk')->first();
-            if ($attempt && in_array($attempt->status, ['pending', 'awaiting_verification'], true)) {
+            // Late notifications still count: a payment Safaricom first called failed or timed out may complete afterwards.
+            if ($attempt && in_array($attempt->status, ['pending', 'awaiting_verification', 'failed', 'cancelled', 'timed_out', 'reconciled'], true)) {
                 DB::table('platform_billing_payments')->where('id', $attempt->id)->update([
                     'callback_payload' => json_encode(SafPaymentLedger::minimize($callback)), 'updated_at' => now(),
                 ]);

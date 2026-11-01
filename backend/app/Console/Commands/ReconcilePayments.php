@@ -34,6 +34,8 @@ class ReconcilePayments extends Command
             $ledger->recordStk($attempt);
         }
 
+        app(\App\Services\Billing\SafPaymentSync::class)->recoverCodes($environment, 100);
+
         $due = DB::table('saf_payments')->where('environment', $environment)
             ->where(fn ($q) => $q->where('verification_status', 'verified')
                 ->orWhere(fn ($p) => $p->where('verification_status', 'pending')->where('next_verification_at', '<=', now())))

@@ -22,7 +22,10 @@ class SafPaymentSync
     public function run(?string $environment = null, int $limit = 500): array
     {
         $environment ??= (string) config('services.mpesa.environment');
-        $result = ['checked' => 0, 'applied' => 0, 'still_pending' => 0, 'needs_review' => 0, 'codes_filled' => 0, 'links_repaired' => 0];
+        $result = ['checked' => 0, 'applied' => 0, 'still_pending' => 0, 'needs_review' => 0, 'codes_filled' => 0, 'links_repaired' => 0, 'rechecked' => 0];
+
+        $result['codes_filled'] += $this->recoverCodes($environment, $limit);
+        $result['rechecked'] = $this->recheckRejectedStk($environment);
 
         $rows = DB::table('saf_payments')->where('environment', $environment)->whereIn('verification_status', ['pending', 'verified'])
             ->orderBy('id')->limit($limit)->get();
@@ -68,5 +71,40 @@ class SafPaymentSync
         }
 
         return $result;
+    }
+
+    /** Fill in M-Pesa codes Safaricom already sent us (stored STK callbacks); reopen "rejected" rows that actually succeeded. */
+    public function recoverCodes(string $environment, int $limit = 500): int
+    {
+        $ledger = app(SafPaymentLedger::class);
+        $filled = 0;
+        foreach (DB::table('saf_payments')->where('environment', $environment)->where('payment_channel', 'stk')->whereNull('mpesa_receipt_number')
+            ->orderByDesc('id')->limit($limit)->get() as $row) {
+            $code = $ledger->recoverStkCode($row);
+            if (! $code || ! $ledger->attachReceipt((int) $row->id, $code)) continue;
+            $filled++;
+            if ($row->verification_status === 'rejected') {
+                DB::table('saf_payments')->where('id', $row->id)->update([
+                    'verification_status' => 'pending', 'next_verification_at' => now(), 'verification_attempts' => 0,
+                    'exception_reason' => 'Safaricom sent M-Pesa code '.$code.' for this payment; checking again.', 'updated_at' => now(),
+                ]);
+            }
+        }
+
+        return $filled;
+    }
+
+    /** STK payments Safaricom called failed or timed out in the last 3 days: ask once more (a late success is common). */
+    private function recheckRejectedStk(string $environment): int
+    {
+        $ids = DB::table('saf_payments')->where('environment', $environment)->where('payment_channel', 'stk')->where('verification_status', 'rejected')
+            ->whereNull('resolved_by')->whereNotNull('stk_attempt_id')->where('created_at', '>=', now()->subDays(3))
+            ->where(fn ($q) => $q->whereNull('exception_reason')->orWhere('exception_reason', 'not like', 'Same M-Pesa payment%'))->limit(50)->pluck('id');
+        if ($ids->isEmpty()) return 0;
+        DB::table('saf_payments')->whereIn('id', $ids)->update(['verification_status' => 'pending', 'next_verification_at' => now(), 'updated_at' => now()]);
+        DB::table('platform_billing_payments')->whereIn('id', DB::table('saf_payments')->whereIn('id', $ids)->select('stk_attempt_id'))
+            ->whereIn('status', ['failed', 'cancelled', 'timed_out'])->update(['status' => 'awaiting_verification', 'updated_at' => now()]);
+
+        return $ids->count();
     }
 }
