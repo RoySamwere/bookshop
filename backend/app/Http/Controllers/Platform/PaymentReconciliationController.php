@@ -50,7 +50,7 @@ class PaymentReconciliationController extends Controller
             'paybill', ['reconciliation_item' => $item, 'statement_reference' => $data['statement_reference'],
                 'verified_by' => $request->user()->id]
         );
-        DB::table('platform_payment_reconciliation_items')->where('id', $item)->update([
+        DB::table('platform_payment_reconciliation_items')->where('id', $item)->where('status', 'awaiting_verification')->update([
             'status' => 'settled', 'updated_at' => now(),
         ]);
         return response()->json(['message' => 'Payment reconciled', 'invoice_id' => $invoice->id,
