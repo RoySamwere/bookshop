@@ -23,6 +23,49 @@ class PlatformBillingSafetyTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_sandbox_stk_push_uses_sandbox_gateway_and_invoice_reference(): void
+    {
+        config()->set('services.mpesa.environment', 'sandbox');
+        config()->set('services.mpesa.shortcode', '174379');
+        config()->set('services.mpesa.consumer_key', 'sandbox-key');
+        config()->set('services.mpesa.consumer_secret', 'sandbox-secret');
+        config()->set('services.mpesa.passkey', 'sandbox-passkey');
+        config()->set('services.mpesa.callback_url', 'https://example.com/api/billing/mpesa/stk/callback');
+        Http::fake([
+            'sandbox.safaricom.co.ke/oauth/*' => Http::response(['access_token' => 'sandbox-token'], 200),
+            'sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest' =>
+                Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'sandbox-checkout'], 200),
+        ]);
+        $result = app(\\App\\Services\\DarajaStkService::class)->push('254712345678', 300, '123456');
+        $this->assertSame('sandbox-checkout', $result['CheckoutRequestID']);
+        Http::assertSent(fn ($request) =>
+            str_contains($request->url(), '/mpesa/stkpush/v1/processrequest')
+            && $request['AccountReference'] === '123456'
+            && $request['Amount'] === 300
+            && $request['BusinessShortCode'] === '174379'
+        );
+    }
+
+    public function test_sandbox_stk_query_checks_checkout_id(): void
+    {
+        config()->set('services.mpesa.environment', 'sandbox');
+        config()->set('services.mpesa.shortcode', '174379');
+        config()->set('services.mpesa.consumer_key', 'sandbox-key');
+        config()->set('services.mpesa.consumer_secret', 'sandbox-secret');
+        config()->set('services.mpesa.passkey', 'sandbox-passkey');
+        Http::fake([
+            'sandbox.safaricom.co.ke/oauth/*' => Http::response(['access_token' => 'sandbox-token']),
+            'sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query' =>
+                Http::response(['ResponseCode' => '0', 'ResultCode' => '0']),
+        ]);
+        $result = app(\\App\\Services\\DarajaStkService::class)->query('sandbox-checkout');
+        $this->assertSame('0', $result['ResponseCode']);
+        Http::assertSent(fn ($request) =>
+            str_contains($request->url(), '/mpesa/stkpushquery/v1/query')
+            && $request['CheckoutRequestID'] === 'sandbox-checkout'
+        );
+    }
+
     public function test_callback_without_checkout_does_not_confirm_payment(): void
     {
         $this->postJson('/api/billing/mpesa/stk/callback', [
