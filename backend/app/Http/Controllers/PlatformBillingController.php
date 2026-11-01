@@ -31,7 +31,7 @@ class PlatformBillingController extends Controller
     private function paymentContext(?string $invoiceEnvironment = null): array
     {
         $environment = config('services.mpesa.environment');
-        $shortcode = $environment === 'production' ? '153283' : ($environment === 'sandbox' ? (string) config('services.mpesa.shortcode') : null);
+        $shortcode = $environment === 'production' ? '152451' : ($environment === 'sandbox' ? (string) config('services.mpesa.shortcode') : null);
         $eligible = in_array($environment, ['sandbox', 'production'], true)
             && ($invoiceEnvironment === null || $invoiceEnvironment === $environment)
             && preg_match('/^[0-9]{5,7}$/', $shortcode ?? '');
