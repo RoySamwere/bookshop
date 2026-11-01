@@ -11,7 +11,7 @@ import { billingApi, billsApi, paymentStatus } from '../../lib/billing-api'
 vi.mock('../../lib/tenancy-api', () => ({ platformApi: { plans: vi.fn() } }))
 const auth = vi.hoisted(() => ({ user: { role: 'bookshop_owner', account_type: 'bookshop', permissions: ['platform.settings.manage'] } }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
-vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(), billsApi: { confirmMyPayment: vi.fn() }, billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn(), context: vi.fn(), subscriptions: vi.fn(), payments: vi.fn(), updatePlan: vi.fn() } }))
+vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(), billsApi: { confirmMyPayment: vi.fn(), list: vi.fn().mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0, from: null, to: null, summary: null }) }, billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn(), context: vi.fn(), subscriptions: vi.fn(), payments: vi.fn(), updatePlan: vi.fn() } }))
 const invoice = { id: 1, bookshop_id: 1, account_number: '100000', amount: '1000.00', paid: '400.00', currency: 'KES', environment: 'sandbox' as const,
   status: 'partially_paid', billing_months: 1, period_starts_at: '2026-11-01', period_ends_at: '2026-12-01', created_at: '2026-11-01' }
 const page = { data: [invoice], current_page: 1, last_page: 1, total: 1 }
@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.mocked(billingApi.context).mockResolvedValue({ environment: 'sandbox', paybill: '174379', can_pay: true })
   vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [], paid: 400, balance: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
   vi.mocked(billingApi.invoices).mockResolvedValue(page)
+  vi.mocked(billsApi.list).mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0, from: null, to: null, summary: { environment: 'production', paybill: '152451', verified_collections: 0, verified_count: 0, today_collections: 0, today_count: 0, pending_count: 0, pending_amount: 0, unmatched_count: 0, unmatched_amount: 0, excess_amount: 0, outstanding_invoices: 0, outstanding_balance: 0 } })
   vi.mocked(billingApi.attempts).mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 })
   vi.mocked(billingApi.reconciliation).mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 })
 })
@@ -65,7 +66,7 @@ describe('subscription billing', () => {
   it('no longer asks operators to approve routine payments against the statement', async () => {
     vi.mocked(billingApi.attempts).mockResolvedValue({ data: [{ id: 3, account_number: '100000', checkout_request_id: 'checkout-1', bookshop_id: 1, amount: '1000', status: 'pending', environment: 'production', channel: 'stk', mpesa_receipt: null, created_at: '2026-11-01' }], current_page: 1, last_page: 1, total: 1 })
     const user = userEvent.setup(); mount(<PlatformBillingView />)
-    expect(await screen.findByText(/verified with Safaricom and applied to invoices automatically/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/verified with Safaricom and applied to invoices automatically/)).length).toBeGreaterThan(0)
     await user.click(screen.getByRole('button', { name: 'STK requests' }))
     expect(await screen.findByText(/Request #3/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Verify against statement' })).not.toBeInTheDocument()

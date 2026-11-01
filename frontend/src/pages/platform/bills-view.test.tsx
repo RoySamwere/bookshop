@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillsView from './bills-view'
+import PaymentsReconciliation from './payments-reconciliation'
 import MyPaymentsPage from '../billing/payments'
 import { billsApi, type Bill } from '../../lib/billing-api'
 
@@ -23,7 +24,7 @@ const summary = { environment: 'production', paybill: '152451', verified_collect
   unmatched_count: 1, unmatched_amount: 250, excess_amount: 0, outstanding_invoices: 2, outstanding_balance: 1600 }
 const unmatched = bill({ id: 2, bookshop_id: null, bookshop_name: null, invoice_id: null, invoice_status: null, account_number: '0712', mpesa_receipt_number: 'QK1WRONG01', amount: 250, allocated_amount: 0, status: 'unmatched', exception_reason: 'No invoice matches this account number.' })
 
-function mount(element = <BillsView />) {
+function mount(element = <PaymentsReconciliation />) {
   return render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>{element}</QueryClientProvider></MemoryRouter>)
 }
 
@@ -36,6 +37,24 @@ beforeEach(() => {
 })
 
 describe('Bills', () => {
+  it('lists every Safaricom payment from saf_payments with a view icon for details', async () => {
+    const user = userEvent.setup(); mount(<BillsView />)
+    expect(await screen.findByRole('heading', { name: 'Bills' })).toBeInTheDocument()
+    expect(await screen.findByText('QK1ABC2DEF')).toBeInTheDocument()
+    for (const label of ['Date', 'Bookshop', 'Invoice', 'Account', 'M-Pesa code', 'Phone', 'Amount', 'Paybill', 'Status', 'View']) expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument()
+    expect(screen.getByText('QK1ABC2DEF')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Update payments/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Verified collections')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View payment QK1WRONG01' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Payment details')).toBeInTheDocument()
+    expect(within(dialog).getByText(/No invoice matches this account number/)).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Assign to invoice' })).not.toBeInTheDocument()
+    expect(billsApi.show).toHaveBeenCalledWith(2)
+  })
+})
+
+describe('Payments & reconciliation', () => {
   it('shows collections, real payment rows and filters by status', async () => {
     const user = userEvent.setup(); mount()
     expect(await screen.findByText('QK1ABC2DEF')).toBeInTheDocument()
