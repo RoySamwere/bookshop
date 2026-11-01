@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Bookshop;
+use App\Services\EntitlementService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,6 +34,9 @@ class EnsureTenantContext
         if ($mode !== 'onboarding') {
             if (! $bookshop->isActive()) {
                 return $this->deny('This bookshop is awaiting Platform Owner approval.', 'bookshop_pending');
+            }
+            if (! app(EntitlementService::class)->isOperational($bookshop)) {
+                return $this->deny('Your subscription has expired. The bookshop owner can renew it in Billing.', 'subscription_expired');
             }
         }
 

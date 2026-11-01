@@ -65,7 +65,7 @@ class PurchaseOrderTest extends TestCase
         return (int) DB::table('inventory_balances')->where('book_id', $bookId)->where('branch_id', $this->shop['branch']->id)->value('quantity');
     }
 
-    private function draft(array $items = null, ?int $supplier = null): int
+    private function draft(?array $items = null, ?int $supplier = null): int
     {
         $this->actingAs($this->shop['owner'], 'sanctum');
         $response = $this->postJson('/api/v1/purchase-orders', [
@@ -76,7 +76,7 @@ class PurchaseOrderTest extends TestCase
         return $response->json('data.id');
     }
 
-    private function confirmed(array $items = null): int
+    private function confirmed(?array $items = null): int
     {
         $id = $this->draft($items);
         $this->postJson("/api/v1/purchase-orders/$id/confirm")->assertOk();

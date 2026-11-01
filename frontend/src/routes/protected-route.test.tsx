@@ -11,6 +11,7 @@ function mount() {
   render(<MemoryRouter initialEntries={['/dashboard?section=Users']}><Routes>
     <Route path="/login" element={<Login />} />
     <Route path="/platform" element={<p>Platform console</p>} />
+    <Route path="/account" element={<p>Account destination</p>} />
     <Route element={<ProtectedRoute permission="users.view" />}><Route path="/dashboard" element={<p>Team directory</p>} /></Route>
   </Routes></MemoryRouter>)
 }
@@ -26,7 +27,7 @@ describe('permission routes', () => {
   })
   it('blocks an authenticated user without permission', () => {
     state.user = { permissions: ['workspace.access'] }; mount()
-    expect(screen.getByRole('heading', { name: 'Access restricted' })).toBeInTheDocument()
+    expect(screen.getByText('Account destination')).toBeInTheDocument()
     expect(screen.queryByText('Team directory')).not.toBeInTheDocument()
   })
   it('renders the protected page for an authorized user', () => {

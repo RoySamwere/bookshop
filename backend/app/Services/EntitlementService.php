@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Bookshop;
 use App\Models\BookshopSubscription;
 use App\Models\Branch;
+use App\Models\PlanFeature;
 use App\Models\User;
 use App\Support\Roles;
 use Illuminate\Validation\ValidationException;
@@ -12,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * Single place that answers "is this bookshop entitled to X?". Plans store features as rows in
  * plan_features (a NULL limit is unlimited). A bookshop without a subscription record (the adopted
- * legacy business) is unrestricted. Later milestones add billing-driven rules here, not in controllers.
+ * legacy business) is unrestricted. Subscription expiry is checked here before workspace access.
  */
 class EntitlementService
 {
@@ -34,9 +35,19 @@ class EntitlementService
 
     public function isOperational(Bookshop $bookshop): bool
     {
-        $status = $bookshop->subscription?->status;
+        $subscription = $bookshop->subscription;
+        if (! $subscription) {
+            return true;
+        } // Legacy shops keep their existing access.
+        if (! in_array($subscription->status, self::OPERATIONAL_STATUSES, true)) {
+            return false;
+        }
+        if ($subscription->status === BookshopSubscription::TRIALING) {
+            return ! $subscription->trial_ends_at || $subscription->trial_ends_at->isFuture();
+        }
+        $expiry = $subscription->grace_ends_at ?? $subscription->current_period_ends_at;
 
-        return $status === null || in_array($status, self::OPERATIONAL_STATUSES, true);
+        return ! $expiry || $expiry->isFuture();
     }
 
     public function canAddBranch(Bookshop $bookshop): bool
@@ -67,7 +78,7 @@ class EntitlementService
         }
     }
 
-    private function feature(Bookshop $bookshop, string $feature): ?\App\Models\PlanFeature
+    private function feature(Bookshop $bookshop, string $feature): ?PlanFeature
     {
         $plan = $bookshop->subscription?->plan;
 

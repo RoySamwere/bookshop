@@ -102,6 +102,9 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::patch('/bookshop', [BookshopController::class, 'update'])->middleware('permission:settings.manage');
     });
 
+    Route::get('/billing', [\App\Http\Controllers\PlatformBillingController::class, 'index']);
+    Route::post('/billing/invoices', [\App\Http\Controllers\PlatformBillingController::class, 'create'])->middleware('throttle:10,1');
+
     // Subscription invoice access is scoped to the authenticated bookshop.
     Route::get('/billing/invoices/{invoice}', [\App\Http\Controllers\PlatformBillingController::class, 'invoice'])->whereNumber('invoice');
     Route::post('/billing/invoices/{invoice}/stk', [\App\Http\Controllers\PlatformBillingController::class, 'stk'])->whereNumber('invoice')->middleware('throttle:5,1');
@@ -210,9 +213,14 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
     // Platform administration: platform staff only, and no route here reads bookshop business data.
     Route::prefix('platform')->middleware('platform')->group(function () {
         Route::get('/overview', [PlatformController::class, 'overview']);
-        Route::get('/billing/stk-attempts', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'stkAttempts'])->middleware('permission:platform.settings.manage');
+        Route::get('/billing/invoices', [\App\Http\Controllers\PlatformBillingController::class, 'admin'])->middleware('permission:platform.settings.view');
+        Route::post('/billing/plans', [\App\Http\Controllers\PlatformBillingController::class, 'plan'])->middleware('permission:platform.settings.manage');
+        Route::post('/billing/statement-payments', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'statement'])->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
+        Route::post('/billing/stk-attempts/{attempt}/resolve-unknown', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'resolveUnknown'])->whereNumber('attempt')->middleware('permission:platform.settings.manage');
+        Route::post('/billing/reconciliation/{item}/resolve-overpayment', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'resolveOverpayment'])->whereNumber('item')->middleware('permission:platform.settings.manage');
+        Route::get('/billing/stk-attempts', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'stkAttempts'])->middleware('permission:platform.settings.view');
         Route::post('/billing/stk-attempts/{attempt}/confirm', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'confirmStk'])->whereNumber('attempt')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
-        Route::get('/billing/reconciliation', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'index'])->middleware('permission:platform.settings.manage');
+        Route::get('/billing/reconciliation', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'index'])->middleware('permission:platform.settings.view');
         Route::post('/billing/reconciliation/{item}/confirm', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'confirm'])->whereNumber('item')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
         Route::get('/managed-bookshops', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'index']);
         Route::post('/management/{bookshop}/enter', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'enter'])->middleware('throttle:10,1');

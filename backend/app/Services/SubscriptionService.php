@@ -9,8 +9,8 @@ use App\Models\SubscriptionPlan;
 use App\Models\User;
 
 /**
- * Subscription lifecycle bookkeeping. Milestone 1 has no billing: this only records state and
- * history. No status change here deletes or hides business records.
+ * Subscription lifecycle bookkeeping and audited status history. Verified billing settlement
+ * extends paid access; status changes never delete business records.
  */
 class SubscriptionService
 {

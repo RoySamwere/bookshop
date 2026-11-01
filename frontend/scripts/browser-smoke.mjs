@@ -126,7 +126,7 @@ try {
   await send('Page.reload')
   await waitFor("location.pathname === '/account' && document.body.innerText.includes('Welcome, Browser')")
   await send('Page.navigate', { url: `${baseUrl}/dashboard` })
-  await waitFor("document.body.innerText.includes('Access restricted')")
+  await waitFor("location.pathname === '/account' && document.body.innerText.includes('Welcome, Browser')")
   await evaluate(`(async () => {
     const token = decodeURIComponent(document.cookie.split('; ').find(c=>c.startsWith('XSRF-TOKEN=')).slice(11));
     const response = await fetch('/api/v1/auth/logout',{method:'POST',credentials:'include',headers:{Accept:'application/json','X-XSRF-TOKEN':token}});

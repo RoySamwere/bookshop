@@ -58,9 +58,13 @@ class InventoryTest extends TestCase
         $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(0, 'data');
 
         $payload = ['title' => 'New Science Book', 'sku' => 'SCI-NEW', 'isbn' => null, 'cost_price' => 350, 'selling_price' => 500, 'reorder_level' => 10, 'product_subcategory_id' => $this->subcategory()];
+        $this->postJson('/api/books', $payload)->assertForbidden();
+        $catalogueOwner = User::factory()->inBranches($branch)->create(['role' => Roles::SYSTEM_OWNER]);
+        $this->actingAs($catalogueOwner, 'sanctum');
         $book = $this->postJson('/api/books', $payload)->assertCreated()->assertJsonPath('title', 'New Science Book')->json('id');
         $this->assertDatabaseCount('inventory_balances', 0);
         $this->postJson('/api/books', $payload)->assertUnprocessable()->assertJsonValidationErrors('sku');
+        $this->actingAs($user, 'sanctum');
         $this->postJson('/api/inventory/receive', ['book_id' => $book, 'branch_id' => $branch->id, 'quantity' => 25, 'supplier_id' => $this->supplier()])
             ->assertCreated()->assertJsonPath('quantity', 25);
         $this->getJson('/api/books?search=New%20Science%20Book&active_only=1')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $book);

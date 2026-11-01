@@ -3,62 +3,63 @@
 namespace App\Services;
 
 use App\Models\SubscriptionPlan;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PlatformBillingInvoiceService
 {
-    /**
-     * Allocate one permanent six-digit Paybill account per invoice.
-     * Numbers are never reused, avoiding late manual payments being attributed to another shop.
-     */
-    public function create(int $bookshopId, SubscriptionPlan $plan, \DateTimeInterface $start, \DateTimeInterface $end): object
+    public static function months(string $interval): int
     {
-        if (!$plan->is_active || $plan->price <= 0 || $plan->currency !== 'KES') {
-            throw ValidationException::withMessages(['plan' => 'Select an active paid KES subscription plan.']);
-        }
+        return match ($interval) {
+            'monthly' => 1, 'quarterly' => 3, 'annual', 'annually', 'yearly' => 12,
+            default => throw ValidationException::withMessages(['plan' => 'Unsupported billing interval.']),
+        };
+    }
 
-        return DB::transaction(function () use ($bookshopId, $plan, $start, $end) {
-            // Serialize allocation across concurrent tenant checkouts using a stable platform row.
-            DB::table('subscription_plans')->where('id', $plan->id)->lockForUpdate()->first();
-            // Locking only a plan does not serialize other plans; the account namespace is global.
-            // MySQL's advisory lock ensures cross-plan allocation cannot race.
-            $mysql = DB::getDriverName() === 'mysql';
-            if ($mysql) {
-                $lock = DB::selectOne("SELECT GET_LOCK('platform_invoice_account', 10) AS acquired");
-                if ((int) ($lock->acquired ?? 0) !== 1) {
-                    throw new \RuntimeException('Could not allocate a Paybill account. Please retry.');
+    public function create(int $bookshopId, SubscriptionPlan $plan): object
+    {
+        if (! $plan->is_active || $plan->price <= 0 || $plan->currency !== 'KES' || round((float) $plan->price) !== (float) $plan->price) {
+            throw ValidationException::withMessages(['plan' => 'Select an active paid KES plan with a whole-shilling price.']);
+        }
+        $months = self::months($plan->billing_interval);
+        $environment = config('services.mpesa.environment');
+        abort_unless(in_array($environment, ['sandbox', 'production'], true), 503, 'Invalid payment environment.');
+
+        return DB::transaction(function () use ($bookshopId, $plan, $months, $environment) {
+            // The global sequence row serializes allocation until COMMIT, across all plans.
+            $sequence = DB::table('platform_billing_sequences')->where('id', 1)->lockForUpdate()->first();
+            $subscription = DB::table('bookshop_subscriptions')->where('bookshop_id', $bookshopId)->lockForUpdate()->first();
+            abort_unless($subscription, 422, 'Bookshop subscription missing.');
+            $pending = DB::table('platform_billing_invoices')->where('bookshop_id', $bookshopId)
+                ->where('environment', $environment)->whereIn('status', ['pending', 'partially_paid'])->first();
+            if ($pending) {
+                if ((int) $pending->subscription_plan_id !== $plan->id) {
+                    throw ValidationException::withMessages(['plan' => 'Settle the outstanding invoice before selecting another plan.']);
+                }
+
+                return $pending;
+            }
+            if (! $sequence || $sequence->next_account > 999999) {
+                throw ValidationException::withMessages(['invoice' => 'Paybill account capacity exhausted. Contact platform support.']);
+            }
+            $start = now();
+            foreach ([$subscription->current_period_ends_at, $subscription->trial_ends_at] as $expiry) {
+                if ($expiry && Carbon::parse($expiry)->greaterThan($start)) {
+                    $start = Carbon::parse($expiry);
                 }
             }
-            try {
-                $used = DB::table('platform_billing_invoices')->pluck('account_number')->map(fn ($n) => (int) $n)->all();
-                $occupied = array_fill_keys($used, true);
-                $number = null;
-                for ($candidate = 100000; $candidate <= 999999; $candidate++) {
-                    if (!isset($occupied[$candidate])) {
-                        $number = (string) $candidate;
-                        break;
-                    }
-                }
-                if ($number === null) {
-                    throw new \RuntimeException('Six-digit Paybill account capacity exhausted; expand the account format.');
-                }
-                $id = DB::table('platform_billing_invoices')->insertGetId([
-                    'bookshop_id' => $bookshopId,
-                    'subscription_plan_id' => $plan->id,
-                    'account_number' => $number,
-                    'amount' => $plan->price,
-                    'currency' => 'KES',
-                    'status' => 'pending',
-                    'period_starts_at' => $start,
-                    'period_ends_at' => $end,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                return DB::table('platform_billing_invoices')->where('id', $id)->first();
-            } finally {
-                if ($mysql) DB::select("SELECT RELEASE_LOCK('platform_invoice_account')");
-            }
-        });
+            $number = (string) $sequence->next_account;
+            DB::table('platform_billing_sequences')->where('id', 1)->increment('next_account');
+            $id = DB::table('platform_billing_invoices')->insertGetId([
+                'bookshop_id' => $bookshopId, 'subscription_plan_id' => $plan->id,
+                'account_number' => $number, 'amount' => $plan->price, 'currency' => 'KES',
+                'environment' => $environment, 'billing_months' => $months, 'status' => 'pending',
+                'period_starts_at' => $start, 'period_ends_at' => $start->copy()->addMonthsNoOverflow($months),
+                'due_at' => $start, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+            return DB::table('platform_billing_invoices')->where('id', $id)->first();
+        }, 3);
     }
 }

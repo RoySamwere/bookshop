@@ -19,7 +19,8 @@ const base: BookshopUser = {
 describe('tenant-aware destinations', () => {
   it('sends each kind of account to its own area', () => {
     expect(homeFor(base)).toBe('/dashboard')
-    expect(homeFor({ ...base, email_verified: false })).toBe('/onboarding/verify-email')
+    expect(homeFor({ ...base, email_verified: false })).toBe('/dashboard') // Active shops have already been approved.
+    expect(homeFor({ ...base, bookshop: { ...base.bookshop!, status: 'pending_verification' } })).toBe('/onboarding/verify-email')
     expect(homeFor({ ...base, role: 'platform_owner', account_type: 'platform', bookshop: null, bookshop_id: null, permissions: ['platform.access'] })).toBe('/platform')
     expect(homeFor({ ...base, role: 'customer', account_type: 'customer', bookshop: null, permissions: ['storefront.access'] })).toBe('/account')
     // A platform account without the console permission is never sent into a workspace.

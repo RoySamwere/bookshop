@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -271,6 +272,7 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
               <div className="popover-title"><strong>{currentUser.name}</strong><span>{currentUser.email}</span><small>{roleLabel(currentUser.role)} · {bookshopName} · {branchLabel}</small></div>
               <button className="popover-action" onClick={() => navigate(PROFILE_SECTION)}><UserRound size={17} /> My profile and password</button>
               {hasPermission(currentUser, 'users.view') && <button className="popover-action" onClick={() => navigate('Users')}><Users size={17} /> Manage team</button>}
+              {['bookshop_owner', 'system_owner'].includes(currentUser.role) && <Link className="popover-action" to="/billing">Subscription billing</Link>}
               {hasPermission(currentUser, 'settings.view') && <button className="popover-action" onClick={() => navigate('Settings')}><Settings size={17} /> Workspace settings</button>}
               <button className="popover-action signout-action" onClick={() => { setAccountOpen(false); void onSignOut() }}><LogOut size={17} /> Sign out</button>
             </div>}

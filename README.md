@@ -54,6 +54,10 @@ Backend tests use an isolated in-memory SQLite database; they do not migrate or 
 
 A headless Chrome smoke test also verified login at 390px/1440px, real cookie login, HttpOnly cookies, refresh restoration, route permissions and logout against a disposable SQLite Laravel server. `frontend/scripts/browser-smoke.mjs` reruns those checks with a fixture customer `spa-smoke@example.test` / `password` **only in an isolated test database**, Laravel on port 8001, and Vite on port 5173 started with `DEV_API_TARGET=http://127.0.0.1:8001`. Set `CHROME_PATH` if needed. Never create that fixture in the application database.
 
+## Subscription billing
+
+See [billing security, sandbox acceptance and exact VPS staging commands](docs/BILLING.md). The platform Paybill is 153283. Sandbox payments never activate subscriptions; production settlement requires independently verified merchant-statement evidence.
+
 ## Linux VPS deployment
 
 See [deployment instructions and Nginx example](docs/DEPLOYMENT.md). Build output stays in `frontend/dist`; never copy it over the whole Laravel `public/` directory. Laravel's PHP entry point, API routes, health endpoint, and public storage must remain intact.
