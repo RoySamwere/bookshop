@@ -47,6 +47,7 @@ class PlatformPaymentSettlementService
             $totalPaid = round($alreadyPaid + $amount, 2);
             // Overpayments are recorded for reconciliation; never grant extra subscription periods.
             $fullyPaid = $totalPaid + 0.005 >= (float) $invoice->amount;
+            $excess = round(max(0, $totalPaid - (float) $invoice->amount), 2);
             $subscription = DB::table('bookshop_subscriptions')->where('bookshop_id', $invoice->bookshop_id)->lockForUpdate()->first();
             if (!$subscription) {
                 throw ValidationException::withMessages(['payment' => 'Bookshop subscription missing.']);
@@ -73,6 +74,19 @@ class PlatformPaymentSettlementService
                 'confirmed_at' => $paid,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
+            if ($excess > 0) {
+                DB::table('platform_payment_reconciliation_items')->insert([
+                    'source' => 'overpayment',
+                    'provider_transaction_id' => $receipt,
+                    'account_number' => $account,
+                    'destination_shortcode' => (string) config('services.mpesa.platform_paybill'),
+                    'amount' => $excess,
+                    'status' => 'requires_review',
+                    'payload' => json_encode(['invoice_id' => $invoice->id, 'receipt' => $receipt,
+                        'total_paid' => $totalPaid, 'invoice_amount' => $invoice->amount]),
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
             if (!$fullyPaid) {
                 DB::table('platform_billing_invoices')->where('id', $invoice->id)->update([
                     'status' => 'partially_paid', 'updated_at' => now(),
