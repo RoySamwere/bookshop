@@ -104,4 +104,27 @@ class SpaAuthenticationTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['email' => 'test@example.com', 'password' => 'password'])
             ->assertStatus(419);
     }
+
+    public function test_live_site_login_works_even_when_the_env_lists_only_localhost(): void
+    {
+        $user = User::factory()->create(['role' => Roles::CASHIER]);
+        // As on a server whose .env was copied from .env.example.
+        config(['sanctum.stateful' => ['localhost', 'localhost:5173', '127.0.0.1', \Laravel\Sanctum\Sanctum::$currentRequestHostPlaceholder]]);
+        $this->assertContains(\Laravel\Sanctum\Sanctum::$currentRequestHostPlaceholder, (require base_path('config/sanctum.php'))['stateful']);
+
+        $this->withHeaders(['Origin' => 'https://hekimabookshop.co.ke', 'Referer' => 'https://hekimabookshop.co.ke/login'])
+            ->get('https://hekimabookshop.co.ke/sanctum/csrf-cookie')->assertNoContent();
+        $this->postJson('https://hekimabookshop.co.ke/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertOk()->assertJsonMissingPath('data.token');
+        $this->assertAuthenticatedAs($user, 'web');
+    }
+
+    public function test_other_websites_are_not_treated_as_first_party(): void
+    {
+        $user = User::factory()->create(['role' => Roles::CASHIER]);
+        $this->withHeaders(['Origin' => 'https://evil.example', 'Referer' => 'https://evil.example/'])
+            ->postJson('https://hekimabookshop.co.ke/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertStatus(400);
+        $this->assertGuest('web');
+    }
 }
