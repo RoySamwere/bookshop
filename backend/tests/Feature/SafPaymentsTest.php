@@ -645,4 +645,38 @@ class SafPaymentsTest extends TestCase
         $this->assertStringNotContainsString('encrypted-credential', $response->getContent());
         $this->artisan('billing:diagnose')->assertSuccessful();
     }
+
+    public function test_billing_invoices_show_money_the_moment_it_reaches_saf_payments_with_paid_and_remaining(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $amount = (float) $invoice->amount;
+        $part = round($amount * 0.4, 2);
+        $typed = substr($invoice->account_number, 0, 3).' '.substr($invoice->account_number, 3); // "100 000"
+        $this->c2b('QK1PART001', $typed, number_format($part, 2, '.', ''));
+        $this->assertSame($invoice->account_number, $this->row('QK1PART001')->account_number);
+
+        $shown = fn () => collect($this->actingAs($this->owner, 'sanctum')->getJson('/api/billing')->assertOk()->json('invoices.data'))->firstWhere('id', $invoice->id);
+        $row = $shown();
+        $this->assertSame('partially_paid', $row['payment_state']);
+        $this->assertTrue($row['confirming']);
+        $this->assertEquals($part, $row['amount_received']);
+        $this->assertEquals($amount - $part, $row['remaining']);
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'pending']); // no credit before Safaricom confirms
+        $this->assertSame('expired', $this->subscription->fresh()->status);
+
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($this->row('QK1PART001')))->assertOk();
+        $row = $shown();
+        $this->assertSame('partially_paid', $row['payment_state']);
+        $this->assertFalse($row['confirming']);
+        $this->assertEquals($part, $row['paid']);
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'partially_paid']);
+
+        $this->c2b('QK1REST002', $invoice->account_number, number_format($amount - $part, 2, '.', ''));
+        $this->assertSame('paid', $shown()['payment_state']);
+        $this->assertEquals(0, $shown()['remaining']);
+        $detail = $this->actingAs($this->owner, 'sanctum')->getJson("/api/billing/invoices/{$invoice->id}")->assertOk();
+        $this->assertEquals($amount - $part, $detail->json('receiving'));
+        $this->assertEquals(0, $detail->json('remaining'));
+    }
 }

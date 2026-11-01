@@ -43,7 +43,7 @@ class SafPaymentReconciler
 
                     return 'unmatched';
                 }
-                $account = $accountOverride ?? (string) $row->account_number;
+                $account = $accountOverride ?? self::normalizeAccount((string) $row->account_number);
                 if (! preg_match('/^[0-9]{6}$/', $account)) {
                     $this->exception($id, 'The account number is not a six-digit invoice account.');
 
@@ -135,5 +135,13 @@ class SafPaymentReconciler
         DB::table('saf_payments')->where('id', $id)->whereNotIn('verification_status', ['reconciled'])->update([
             'verification_status' => 'unmatched', 'exception_reason' => mb_substr($reason, 0, 255), 'next_verification_at' => null, 'updated_at' => now(),
         ]);
+    }
+
+    /** Customers often type the account as "100 000", "#100000" or "100-000": keep only the six digits. */
+    public static function normalizeAccount(string $account): string
+    {
+        $clean = preg_replace('/[\s\-#.]+/', '', $account);
+
+        return preg_match('/^[0-9]{6}$/', $clean) ? $clean : trim($account);
     }
 }

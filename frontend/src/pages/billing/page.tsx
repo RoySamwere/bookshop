@@ -27,8 +27,20 @@ const INVOICE_TONE: Record<string, string> = {
 const SUBSCRIPTION_TONE: Record<string, string> = {
   active: 'text-emerald-700', trialing: 'text-blue-700', expired: 'text-rose-700', past_due: 'text-amber-700', grace_period: 'text-amber-700',
 }
-function InvoiceStatus({ status }: { status: string }) {
-  return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ${INVOICE_TONE[status] ?? 'bg-slate-100 text-slate-600 ring-slate-200'}`}>{status.replace('_', ' ')}</span>
+/** Payment status of an invoice, worked out from the money received for its account (including payments still being confirmed). */
+export function InvoiceStatus({ status, confirming = false }: { status: string; confirming?: boolean }) {
+  return <span className="inline-flex flex-col items-start gap-1">
+    <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ${INVOICE_TONE[status] ?? 'bg-slate-100 text-slate-600 ring-slate-200'}`}>{status.replace('_', ' ')}</span>
+    {confirming && <span className="whitespace-nowrap text-[11px] font-medium text-amber-700">Confirming with Safaricom</span>}
+  </span>
+}
+
+/** Money received for an invoice: confirmed plus what has reached the system and is still being confirmed. */
+export function invoiceProgress(invoice: Invoice) {
+  const amount = Number(invoice.amount)
+  const received = invoice.amount_received ?? Number(invoice.paid)
+  return { amount, received, receiving: Number(invoice.receiving ?? 0), remaining: invoice.remaining ?? Math.max(0, amount - received),
+    state: invoice.payment_state ?? invoice.status, confirming: Boolean(invoice.confirming) }
 }
 
 /**
@@ -42,7 +54,7 @@ export default function BillingPage({ onNavigate }: { onNavigate?: (section: str
   const [plan, setPlan] = useState('')
   const client = useQueryClient()
   const allowed = Boolean(user && ['bookshop_owner', 'system_owner'].includes(user.role)) && user?.account_type === 'bookshop'
-  const overview = useQuery({ queryKey: ['billing', page], queryFn: () => billingApi.overview(page), enabled: allowed, refetchInterval: 30000 })
+  const overview = useQuery({ queryKey: ['billing', page], queryFn: () => billingApi.overview(page), enabled: allowed, refetchInterval: 10000, refetchOnWindowFocus: true })
   const create = useMutation({ mutationFn: () => billingApi.create(Number(plan)), onSuccess: r => { setSelected(r.data.id); setPlan(''); void client.invalidateQueries({ queryKey: ['billing'] }) } })
   if (!allowed) return <EmptyState icon={<WalletCards size={22} />} title="Billing is available to the bookshop owner" body="Ask the owner of this bookshop to manage the subscription." />
 
@@ -88,19 +100,21 @@ export default function BillingPage({ onNavigate }: { onNavigate?: (section: str
       <Card title="Invoices" description="Select an invoice to pay it or see its payments." flush>
         <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr>
-            {['Invoice', 'Account', 'Period', 'Amount', 'Paid', 'Balance', 'Status', ''].map(label => <th key={label} className={`px-4 py-3 ${['Amount', 'Paid', 'Balance'].includes(label) ? 'text-right' : ''}`}>{label}</th>)}
+            {['Invoice', 'Account', 'Period', 'Amount', 'Amount paid', 'Remaining', 'Status', ''].map(label => <th key={label} className={`px-4 py-3 ${['Amount', 'Amount paid', 'Remaining'].includes(label) ? 'text-right' : ''}`}>{label}</th>)}
           </tr></thead>
           <tbody className="divide-y divide-slate-100">{data.invoices.data.map(invoice => {
-            const balance = Math.max(0, Number(invoice.amount) - Number(invoice.paid))
+            const progress = invoiceProgress(invoice)
+            const settled = progress.state === 'paid'
             return <tr key={invoice.id} className="hover:bg-blue-50/40">
               <td className="px-4 py-3 font-semibold text-slate-900">#{invoice.id}{invoice.environment === 'sandbox' && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">test</span>}</td>
               <td className="px-4 py-3 font-mono text-slate-700">{invoice.account_number}</td>
               <td className="px-4 py-3 text-slate-600">{invoice.billing_months} month(s) · {day(invoice.period_starts_at)} – {day(invoice.period_ends_at)}</td>
               <td className="px-4 py-3 text-right">{kes(invoice.amount)}</td>
-              <td className="px-4 py-3 text-right text-emerald-700">{kes(invoice.paid)}</td>
-              <td className="px-4 py-3 text-right font-semibold">{kes(balance)}</td>
-              <td className="px-4 py-3"><InvoiceStatus status={invoice.status} /></td>
-              <td className="px-4 py-3 text-right"><button className={invoice.status === 'paid' ? secondaryButton : primaryButton} onClick={() => setSelected(invoice.id)} aria-label={`${invoice.status === 'paid' ? 'View' : 'Pay'} invoice #${invoice.id} / ${invoice.account_number}`}>{invoice.status === 'paid' ? 'View' : 'Pay'}</button></td>
+              <td className="px-4 py-3 text-right"><span className="font-semibold text-emerald-700">{kes(progress.received)}</span>
+                {progress.receiving > 0 && <span className="block text-[11px] text-amber-700">{kes(progress.receiving)} confirming</span>}</td>
+              <td className={`px-4 py-3 text-right font-semibold ${progress.remaining > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{kes(progress.remaining)}</td>
+              <td className="px-4 py-3"><InvoiceStatus status={progress.state} confirming={progress.confirming} /></td>
+              <td className="px-4 py-3 text-right"><button className={settled ? secondaryButton : primaryButton} onClick={() => setSelected(invoice.id)} aria-label={`${settled ? 'View' : 'Pay'} invoice #${invoice.id} / ${invoice.account_number}`}>{settled ? 'View' : 'Pay'}</button></td>
             </tr>
           })}</tbody>
         </table></div>
@@ -126,12 +140,21 @@ function InvoiceDetail({ id }: { id: number }) {
   function submit(e: FormEvent) { e.preventDefault(); setMessage(''); stk.mutate() }
   if (invoice.isPending) return <LoadingState />
   if (invoice.isError) return <ErrorState message={errorMessage(invoice.error)} onRetry={() => void invoice.refetch()} />
-  const { data: row, balance, paid, overpayment, payments } = invoice.data
+  const { data: row, balance: confirmedBalance, paid, overpayment, payments } = invoice.data
+  const receiving = Number(invoice.data.receiving ?? 0)
+  const remaining = invoice.data.remaining ?? confirmedBalance
+  const balance = remaining
   const pending = payments.some(p => ['pending', 'awaiting_verification', 'unknown'].includes(p.status))
-  return <section id="billing-invoice"><style>{`@media print { body * { visibility: hidden; } #billing-invoice, #billing-invoice * { visibility: visible; } #billing-invoice { position: absolute; left: 0; top: 0; width: 100%; } }`}</style><Card title={`Account ${row.account_number} · ${row.status.replace('_', ' ')}`}>
+  return <section id="billing-invoice"><style>{`@media print { body * { visibility: hidden; } #billing-invoice, #billing-invoice * { visibility: visible; } #billing-invoice { position: absolute; left: 0; top: 0; width: 100%; } }`}</style><Card title={`Account ${row.account_number} · ${(row.payment_state ?? row.status).replace('_', ' ')}`}>
     <p>{invoice.data.environment === 'sandbox' ? 'TEST MODE — Sandbox shortcode' : 'Production Paybill'}: {invoice.data.paybill ?? 'Not configured'} · Invoice environment: {row.environment} · Status: {row.status}</p>
     {invoice.data.can_pay === false && <p role="alert">This invoice cannot be paid in the current payment environment. Contact platform support.</p>}
-    <p>Amount: KES {row.amount} · Verified paid: KES {paid} · Balance: KES {balance} · Excess awaiting review: KES {overpayment}</p>
+    <dl className="my-3 grid gap-3 sm:grid-cols-4" aria-label="Payment summary">
+      {[['Invoice amount', kes(row.amount), 'text-slate-900'], ['Amount paid', kes(Number(paid) + receiving), 'text-emerald-700'], ['Remaining', kes(remaining), remaining > 0 ? 'text-slate-900' : 'text-slate-400'],
+        ['Status', (row.payment_state ?? row.status).replace('_', ' '), 'capitalize text-slate-900']].map(([label, value, tone]) =>
+        <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt><dd className={`mt-1 text-lg font-bold ${tone}`}>{value}</dd></div>)}
+    </dl>
+    {receiving > 0 && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{kes(receiving)} has reached us and is being confirmed with Safaricom. Your access is extended as soon as it is confirmed.</p>}
+    {Number(overpayment) > 0 && <p className="text-sm text-slate-600">Excess awaiting review: {kes(overpayment)}</p>}
     <p>Period: {row.period_starts_at.slice(0, 10)} – {row.period_ends_at.slice(0, 10)}</p>
     <p className="my-3">{invoice.data.can_pay === false ? 'Payment instructions are unavailable for this invoice in the current environment.' : invoice.data.environment === 'sandbox' ? 'Sandbox test only: use the displayed sandbox shortcode and this six-digit account. Do not send real money.' : 'Use the displayed production Paybill and this invoice’s six-digit account number for manual payments.'} Your payment is confirmed with Safaricom automatically, usually within a few minutes, and you will get a confirmation.</p>
     <button className={`${secondaryButton} print:hidden`} onClick={() => window.print()}>Print / save invoice PDF</button>

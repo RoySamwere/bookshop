@@ -45,7 +45,7 @@ class PlatformBillingController extends Controller
         $tenant = $this->tenant($request);
 
         return response()->json([
-            'invoices' => $this->invoices()->where('i.bookshop_id', $tenant)->orderByDesc('i.id')->paginate(20),
+            'invoices' => $this->invoices()->where('i.bookshop_id', $tenant)->orderByDesc('i.id')->paginate(20)->through(fn ($row) => self::progress($row)),
             'subscription' => BookshopSubscription::where('bookshop_id', $tenant)->first()?->summary(),
             'plans' => SubscriptionPlan::where('is_active', true)->where('currency', 'KES')->where('price', '>', 0)->get(),
             ...$this->paymentContext(),
@@ -57,7 +57,7 @@ class PlatformBillingController extends Controller
         $data = $request->validate(['status' => 'nullable|in:pending,partially_paid,paid', 'environment' => 'nullable|in:sandbox,production,legacy']);
 
         return response()->json($this->invoices()->when($data['status'] ?? null, fn ($q, $s) => $q->where('i.status', $s))
-            ->when($data['environment'] ?? null, fn ($q, $e) => $q->where('i.environment', $e))->orderByDesc('i.id')->paginate(30));
+            ->when($data['environment'] ?? null, fn ($q, $e) => $q->where('i.environment', $e))->orderByDesc('i.id')->paginate(30)->through(fn ($row) => self::progress($row)));
     }
 
     public function plan(Request $request)
@@ -144,7 +144,39 @@ class PlatformBillingController extends Controller
     {
         return DB::table('platform_billing_invoices as i')->select('i.*')
             ->selectSub(DB::table('platform_billing_payments as p')->selectRaw('COALESCE(SUM(amount),0)')
-                ->whereColumn('p.platform_billing_invoice_id', 'i.id')->where('p.status', 'confirmed'), 'paid');
+                ->whereColumn('p.platform_billing_invoice_id', 'i.id')->where('p.status', 'confirmed'), 'paid')
+            // M-Pesa money already in saf_payments for this invoice's account but not yet applied
+            // (Safaricom has reported it and the system is still confirming it).
+            ->selectSub(DB::table('saf_payments as s')->selectRaw('COALESCE(SUM(s.amount),0)')
+                ->whereColumn('s.account_number', 'i.account_number')->whereColumn('s.environment', 'i.environment')
+                ->whereIn('s.verification_status', ['pending', 'verified'])->whereNotNull('s.mpesa_receipt_number')
+                ->where('s.amount', '>', 0)->whereNull('s.platform_billing_payment_id'), 'receiving');
+    }
+
+    /**
+     * Payment progress for an invoice: what is confirmed, what has reached the system and is being confirmed,
+     * what remains, and the resulting state (pending / partially_paid / paid). Access is extended only by
+     * confirmed money; "receiving" is shown so a bookshop sees its payment the moment it lands.
+     */
+    public static function progress(object $row): object
+    {
+        $amount = round((float) $row->amount, 2);
+        $confirmed = round((float) $row->paid, 2);
+        $receiving = round((float) ($row->receiving ?? 0), 2);
+        $received = round($confirmed + $receiving, 2);
+        $row->paid = $confirmed;
+        $row->receiving = $receiving;
+        $row->amount_received = $received;
+        $row->remaining = max(0, round($amount - $received, 2));
+        $row->confirming = $receiving > 0;
+        $row->payment_state = match (true) {
+            ! in_array($row->status, ['pending', 'partially_paid', 'paid'], true) => $row->status, // cancelled, superseded…
+            $row->status === 'paid' || $received >= $amount => 'paid',
+            $received > 0 => 'partially_paid',
+            default => 'pending',
+        };
+
+        return $row;
     }
 
     public function create(Request $request, PlatformBillingInvoiceService $service)
@@ -168,7 +200,10 @@ class PlatformBillingController extends Controller
                 return $payment;
             });
 
+        $row = self::progress($row);
+
         return response()->json(['data' => $row, 'payments' => $payments, 'paid' => $row->paid,
+            'receiving' => $row->receiving, 'remaining' => $row->remaining,
             'balance' => max(0, round((float) $row->amount - (float) $row->paid, 2)),
             'overpayment' => max(0, round((float) $row->paid - (float) $row->amount, 2)), ...$this->paymentContext($row->environment)]);
     }

@@ -6,6 +6,9 @@ export type Invoice = {
   id: number; bookshop_id: number; account_number: string; amount: string; paid: string; currency: string
   environment: 'sandbox' | 'production' | 'legacy'; status: string; billing_months: number
   period_starts_at: string; period_ends_at: string; created_at: string
+  /** M-Pesa money already received for this account and still being confirmed with Safaricom. */
+  receiving?: number; amount_received?: number; remaining?: number; confirming?: boolean
+  payment_state?: string
 }
 export type PaymentContext = { environment: string; paybill: string | null; can_pay?: boolean; test_mode?: boolean }
 export type SubscriptionRow = SubscriptionSummary & { id: number; bookshop_id: number; bookshop_name: string }
@@ -18,7 +21,7 @@ export type Evidence = { verified_receipt: string; verified_amount: number; veri
 export const billingApi = {
   overview: (page = 1) => api<{ invoices: Page<Invoice>; subscription: SubscriptionSummary | null; plans: Plan[]; paybill: string | null; environment: string; can_pay?: boolean }>(`/billing?page=${page}`),
   create: (plan_id: number) => api<{ data: Invoice }>('/billing/invoices', { method: 'POST', body: { plan_id } }),
-  invoice: (id: number) => api<{ data: Invoice; payments: Payment[]; paid: number; balance: number; overpayment: number; paybill: string | null; environment?: string; can_pay?: boolean }>(`/billing/invoices/${id}`),
+  invoice: (id: number) => api<{ data: Invoice; payments: Payment[]; paid: number; balance: number; receiving?: number; remaining?: number; overpayment: number; paybill: string | null; environment?: string; can_pay?: boolean }>(`/billing/invoices/${id}`),
   stk: (id: number, phone: string, amount: number) => api<{ message: string }>(`/billing/invoices/${id}/stk`, { method: 'POST', body: { phone, amount } }),
   context: () => api<PaymentContext>('/platform/billing/context'),
   subscriptions: (page = 1, state = '') => api<Page<SubscriptionRow>>(`/platform/billing/subscriptions?page=${page}&state=${state}`),

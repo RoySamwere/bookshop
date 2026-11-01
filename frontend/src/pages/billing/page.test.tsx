@@ -58,6 +58,19 @@ describe('subscription billing', () => {
     expect(billingApi.stk).not.toHaveBeenCalled()
   })
 
+  it('shows the amount paid, what remains and the status as soon as an M-Pesa payment reaches the system', async () => {
+    vi.mocked(billingApi.overview).mockResolvedValue({ invoices: { ...page, data: [{ ...invoice, paid: '0', status: 'pending', receiving: 400, amount_received: 400, remaining: 600, payment_state: 'partially_paid', confirming: true }] },
+      subscription: null, plans: [], paybill: '152451', environment: 'production' })
+    mount()
+    const row = (await screen.findByText('#1')).closest('tr')!
+    expect(row).toHaveTextContent(/partially paid/i)
+    expect(row).toHaveTextContent('Confirming with Safaricom')
+    expect(row).toHaveTextContent('KES 400.00')
+    expect(row).toHaveTextContent('KES 600.00')
+    expect(screen.getByRole('columnheader', { name: 'Amount paid' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Remaining' })).toBeInTheDocument()
+  })
+
   it('does not request tenant billing for a staff account', () => {
     auth.user.role = 'cashier'; mount()
     expect(screen.getByText('Billing is available to the bookshop owner')).toBeInTheDocument()

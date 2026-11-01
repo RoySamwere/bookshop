@@ -100,7 +100,7 @@ class SafPaymentLedger
             return (int) $existing->id; // Duplicate callback, or a code a customer already gave us.
         }
         // The same money paid by STK push and already recorded without its code: the code completes that row.
-        $stk = $this->stkRowForSameMoney($environment, trim((string) $data['BillRefNumber']), round((float) $data['TransAmount'], 2), $this->mpesaTime($data['TransTime'] ?? null) ?? now());
+        $stk = $this->stkRowForSameMoney($environment, SafPaymentReconciler::normalizeAccount((string) $data['BillRefNumber']), round((float) $data['TransAmount'], 2), $this->mpesaTime($data['TransTime'] ?? null) ?? now());
         if ($stk) {
             $this->attachReceipt((int) $stk->id, $receipt);
             $payload = json_decode($stk->provider_payload ?? '{}', true) ?: [];
@@ -109,7 +109,7 @@ class SafPaymentLedger
             return (int) $stk->id;
         }
         DB::table('saf_payments')->insertOrIgnore([
-            'account_number' => mb_substr(trim((string) $data['BillRefNumber']), 0, 20),
+            'account_number' => mb_substr(SafPaymentReconciler::normalizeAccount((string) $data['BillRefNumber']), 0, 20),
             'mpesa_receipt_number' => $receipt,
             'phone_number' => self::phone($data['MSISDN'] ?? null),
             'amount' => round((float) $data['TransAmount'], 2),
@@ -342,7 +342,7 @@ class SafPaymentLedger
         $payload['c2b_confirmation'] = self::minimize($data);
         $notified = round((float) $data['TransAmount'], 2);
         DB::table('saf_payments')->where('id', $existing->id)->update([
-            'account_number' => mb_substr(trim((string) $data['BillRefNumber']), 0, 20),
+            'account_number' => mb_substr(SafPaymentReconciler::normalizeAccount((string) $data['BillRefNumber']), 0, 20),
             'phone_number' => $existing->phone_number ?? self::phone($data['MSISDN'] ?? null),
             'amount' => (float) $existing->amount > 0 ? $existing->amount : $notified,
             'transaction_date' => $this->mpesaTime($data['TransTime'] ?? null) ?? $existing->transaction_date,
