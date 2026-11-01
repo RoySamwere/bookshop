@@ -18,6 +18,12 @@ Verified records retain the verifier and statement reference in the payment ledg
 - Historical records migrated without known provenance are labelled `legacy`, not silently relabelled production. They cannot be settled through these endpoints. Review any existing open legacy invoices and their statements separately before rollout; do not change environment fields or replay old test callbacks to make them payable. New invoices use new six-digit accounts and retain all historical records.
 - Sandbox tests and fixtures belong to a dedicated staging database. Do not copy them to production or use them as production statement evidence.
 
+## Creating a sandbox test plan from the platform UI
+
+In sandbox mode, `/platform/billing` shows **Test the billing journey**. An authorized operator clicks **Prepare sandbox test plan** to open Plans & pricing with a unique code, name, KES 1 total price and monthly period filled in. This is an editable draft: nothing is saved until **Add plan** is clicked. Plan creation makes an offer available to owners; it does not create an invoice, send an STK prompt or activate a subscription. Sign in as a test bookshop owner and open `/billing` to select the saved offer and generate its invoice. Then initiate the real sandbox prompt using the sandbox test phone. Review requests back in the platform console; never fabricate verified payment evidence.
+
+The plan price is the total for the chosen period, not a per-month amount multiplied later. Monthly, quarterly and annual prices are separate offers. Plan codes are unique internal identifiers; names appear to owners. Edits affect new invoices, while already-issued invoices keep their original amount and duration. Plans are shared across environments: deactivate low-value test offers before requesting authorization for production testing. The sandbox shortcut is absent in production and unavailable to read-only platform administrators.
+
 ## Invoice and renewal rules
 
 An invoice has a globally unique six-digit account from 100000 through 999999; allocation is serialized by a database sequence row held until commit. Accounts are never reused. Exhaustion fails explicitly. An outstanding invoice is reused for the same shop, plan and environment; a second plan cannot replace an unpaid invoice. Prices must be positive whole KES; the Starter trial plan remains unchanged. Add paid monthly, quarterly and annual plans in platform Billing with the intended business prices. Prices are not invented or seeded by this change.
@@ -49,7 +55,7 @@ Laravel tests use isolated in-memory SQLite and Laravel `Http::fake` with stray 
 
 - Full Laravel suite: **235 passed**, 1,779 assertions.
 - Billing/security contract suites: **47 passed**, 205 assertions (part of the full suite).
-- Frontend: TypeScript/Vite production build passed; **87 tests passed** across 14 files.
+- Frontend: TypeScript/Vite production build passed; **90 tests passed** across 14 files.
 - Billing browser smoke passed owner login, actual local plan selection/invoice generation, correct sandbox-only instructions, printable invoice controls and 390px/1440px layout. No Safaricom request was initiated.
 - Existing headless Chromium smoke: desktop/mobile login, cookie authentication, refresh restoration, permission redirects and logout passed without runtime exceptions.
 - New billing migration: applied, rolled back by its specific migration path and reapplied successfully against a disposable SQLite database. Local development database migration and scheduler registration also passed.

@@ -8,12 +8,15 @@ import { errorMessage } from '../../lib/api'
 import { Card, ErrorState, LoadingState, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
 import { InvoiceTable, Pager } from '../billing/page'
 
+type PlanDraft = { code: string; name: string; price: string; interval: string }
+
 export default function PlatformBillingView() {
   const { user } = useAuth()
   const client = useQueryClient()
   const context = useQuery({ queryKey: ['platform-billing', 'context'], queryFn: billingApi.context })
   const canManage = user?.permissions?.includes('platform.settings.manage') ?? false
   const [tab, setTab] = useState<'invoices' | 'attempts' | 'reconciliation' | 'subscriptions' | 'payments' | 'plans'>('invoices')
+  const [draft, setDraft] = useState<PlanDraft | undefined>()
   const [page, setPage] = useState(1)
   const [environment, setEnvironment] = useState('')
   const [selected, setSelected] = useState<{ kind: 'stk-attempts' | 'reconciliation' | 'statement-payments'; row: Attempt | Reconciliation } | null>(null)
@@ -23,6 +26,21 @@ export default function PlatformBillingView() {
   const active = tab === 'invoices' ? invoices : tab === 'attempts' ? attempts : items
   return <div className="grid gap-6"><h1 className="text-2xl font-bold">Subscription billing</h1>
     <p>{context.isPending ? 'Loading payment environment.' : context.data?.environment === 'sandbox' ? `TEST MODE — Sandbox shortcode ${context.data.paybill ?? 'not configured'}.` : context.data?.environment === 'production' ? 'Production Paybill 153283.' : 'Payment environment unavailable.'} Confirm only after independently checking the merchant statement. Unsigned callbacks and successful STK queries alone do not prove the receipt or amount. Sandbox settlement never grants subscription access.</p>
+    {context.data?.environment === 'sandbox' && <Card title="Test the billing journey">
+      <p className="mb-3 font-semibold">TEST MODE · Sandbox shortcode {context.data.paybill ?? 'not configured'}</p>
+      <ol className="list-decimal space-y-2 pl-5">
+        <li>Create a test plan in <strong>Plans & pricing</strong>. The button below prepares a KES 1 monthly draft; review it and click <strong>Add plan</strong> to save.</li>
+        <li>Sign in with an existing test bookshop’s <strong>owner account</strong>, then open <code>/billing</code>. Select the plan and create an invoice to receive its six-digit account number.</li>
+        <li>Send an STK request using the Safaricom sandbox test phone and shortcode shown on the invoice. No real-money payment is needed for this sandbox test.</li>
+        <li>Return here to <strong>STK requests</strong> to review the checkout, then <strong>Payment ledger</strong> for independently verified payments. A callback or successful query alone does not settle an invoice.</li>
+      </ol>
+      <p className="my-3">Sandbox payments never activate or extend subscription access. Plans are shared across payment environments: deactivate test plans before authorizing production testing.</p>
+      {canManage && <button className={secondaryButton} onClick={() => {
+        setDraft({ code: `sandbox-monthly-${Date.now().toString(36)}`, name: 'Sandbox test monthly', price: '1', interval: 'monthly' })
+        setTab('plans'); setPage(1)
+      }}>Prepare sandbox test plan</button>}
+      <Link className="ml-3 text-blue-700 underline" to="/platform/bookshops">Open test bookshops</Link>
+    </Card>}
     <div className="flex flex-wrap gap-3">{(['invoices', 'attempts', 'reconciliation', 'subscriptions', 'payments', 'plans'] as const).map(t => <button aria-pressed={tab === t} className={tab === t ? primaryButton : secondaryButton} key={t} onClick={() => { setTab(t); setPage(1) }}>{{ invoices: 'Invoices', attempts: 'STK requests', reconciliation: 'Paybill / excess review', subscriptions: 'Subscriptions', payments: 'Payment ledger', plans: 'Plans & pricing' }[t]}</button>)}
       <button className={secondaryButton} onClick={() => void client.invalidateQueries({ queryKey: ['platform-billing'] })}>Refresh</button></div>
     {tab !== 'subscriptions' && tab !== 'plans' && <label>Environment<select className={inputClass} value={environment} onChange={e => { setEnvironment(e.target.value); setPage(1) }}><option value="">All environments</option><option>production</option><option>sandbox</option><option>legacy</option></select></label>}
@@ -36,7 +54,7 @@ export default function PlatformBillingView() {
     {canManage && <button className={secondaryButton} onClick={() => setSelected({ kind: 'statement-payments', row: { id: 0, source: 'statement', status: 'awaiting_verification', environment: context.data?.environment ?? '', provider_transaction_id: '', account_number: '', amount: '', destination_shortcode: '' } })}>Record independently verified statement payment</button>}
     {tab === 'subscriptions' && <SubscriptionList />}
     {tab === 'payments' && <PaymentLedger environment={environment} />}
-    {tab === 'plans' && <PlanManagement canManage={canManage} />}
+    {tab === 'plans' && <PlanManagement canManage={canManage} draft={draft} />}
     <Link className="text-blue-700 underline" to="/platform/audit">Open billing and platform audit history</Link>
   </div>
 }
@@ -70,19 +88,22 @@ function Verification({ kind, row, close }: { kind: 'stk-attempts' | 'reconcilia
   </form></Card>
 }
 
-function PlanForm() {
+function PlanForm({ draft }: { draft?: PlanDraft }) {
   const client = useQueryClient()
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [price, setPrice] = useState('')
-  const [interval, setInterval] = useState('monthly')
+  const [code, setCode] = useState(draft?.code ?? '')
+  const [name, setName] = useState(draft?.name ?? '')
+  const [price, setPrice] = useState(draft?.price ?? '')
+  const [interval, setInterval] = useState(draft?.interval ?? 'monthly')
   const create = useMutation({ mutationFn: () => billingApi.plan({ code, name, price: Number(price), billing_interval: interval }), onSuccess: () => { setCode(''); setName(''); setPrice(''); void client.invalidateQueries({ queryKey: ['platform-billing', 'plans'] }) } })
-  return <Card title="Add a paid subscription plan"><form className="grid gap-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); create.mutate() }}>
+  return <Card title="Add a paid subscription plan">
+    <p className="mb-3">This creates a selectable subscription offer. It does not create an invoice, charge M-Pesa or activate any bookshop. The price is the full amount for the selected period, in KES.</p>
+    <p className="mb-4 text-sm text-slate-600">Example: Quarterly at KES 3,000 creates a three-month offer billed once at KES 3,000. Create separate plans for monthly, quarterly and annual pricing. The unique code is an internal identifier; owners see the plan name.</p>
+    <form className="grid gap-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); create.mutate() }}>
     <label>Unique code<input className={inputClass} required pattern="[a-z0-9-]{1,40}" value={code} onChange={e => setCode(e.target.value)} /></label>
     <label>Name<input className={inputClass} required maxLength={100} value={name} onChange={e => setName(e.target.value)} /></label>
-    <label>Price (whole KES)<input className={inputClass} required type="number" min="1" max="999999999" step="1" value={price} onChange={e => setPrice(e.target.value)} /></label>
+    <label>Total price for this period (whole KES)<input className={inputClass} required type="number" min="1" max="999999999" step="1" value={price} onChange={e => setPrice(e.target.value)} /></label>
     <label>Period<select className={inputClass} value={interval} onChange={e => setInterval(e.target.value)}><option>monthly</option><option>quarterly</option><option>annual</option></select></label>
-    <button className={primaryButton} disabled={create.isPending}>Add plan</button>{create.isSuccess && <p role="status">Plan created.</p>}{create.isError && <p role="alert">{errorMessage(create.error)}</p>}
+    <button className={primaryButton} disabled={create.isPending}>Add plan</button>{create.isSuccess && <p role="status">Plan created. Sign in as a bookshop owner and open /billing to select it and generate an invoice. No payment has been initiated.</p>}{create.isError && <p role="alert">{errorMessage(create.error)}</p>}
   </form></Card>
 }
 
@@ -131,12 +152,12 @@ function PaymentLedger({ environment }: { environment: string }) {
   </>}</Card>
 }
 
-function PlanManagement({ canManage }: { canManage: boolean }) {
+function PlanManagement({ canManage, draft }: { canManage: boolean; draft?: PlanDraft }) {
   const plans = useQuery({ queryKey: ['platform-billing', 'plans'], queryFn: platformApi.plans })
   return <div className="grid gap-5"><Card title="Subscription plans and pricing">
     {plans.isPending ? <LoadingState /> : plans.isError ? <ErrorState message={errorMessage(plans.error)} onRetry={() => void plans.refetch()} /> : plans.data.map(p => <div className="border-t py-3" key={p.id}><p>{p.name} · KES {p.price} / {p.billing_interval} · {p.is_active ? 'Available' : 'Inactive'}</p>{canManage && Number(p.price) > 0 && <PlanEditor key={`${p.id}-${p.price}-${p.is_active}-${p.billing_interval}`} plan={p} />}</div>)}
     <p>Changes affect new invoices only. Issued invoices retain their quoted amount and period.</p>
-  </Card>{canManage && <PlanForm />}</div>
+  </Card>{canManage && <PlanForm key={draft?.code ?? 'new-plan'} draft={draft} />}</div>
 }
 
 function PlanEditor({ plan }: { plan: Plan }) {

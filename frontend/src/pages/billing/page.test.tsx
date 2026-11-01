@@ -111,4 +111,33 @@ describe('subscription billing', () => {
     expect(screen.queryByRole('button', { name: 'Send STK prompt' })).not.toBeInTheDocument()
   })
 
+  it('prepares a sandbox plan draft and saves only after explicit submission', async () => {
+    vi.mocked(billingApi.plan).mockResolvedValue({})
+    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    await user.click(await screen.findByRole('button', { name: 'Prepare sandbox test plan' }))
+    expect(screen.getByLabelText('Name')).toHaveValue('Sandbox test monthly')
+    expect(screen.getByLabelText('Total price for this period (whole KES)')).toHaveValue(1)
+    expect((screen.getByLabelText('Unique code') as HTMLInputElement).value).toMatch(/^sandbox-monthly-[a-z0-9]+$/)
+    expect(billingApi.plan).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Add plan' }))
+    expect(billingApi.plan).toHaveBeenCalledWith({ code: expect.stringMatching(/^sandbox-monthly-/), name: 'Sandbox test monthly', price: 1, billing_interval: 'monthly' })
+    expect(await screen.findByText(/Plan created. Sign in as a bookshop owner/)).toBeInTheDocument()
+    expect(billingApi.stk).not.toHaveBeenCalled()
+    expect(billingApi.create).not.toHaveBeenCalled()
+  })
+
+  it('does not offer the sandbox plan shortcut in production mode', async () => {
+    vi.mocked(billingApi.context).mockResolvedValue({ environment: 'production', paybill: '153283', can_pay: true })
+    mount(<PlatformBillingView />)
+    expect(await screen.findByText(/Production Paybill 153283/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
+  })
+
+  it('keeps sandbox plan creation unavailable to read-only administrators', async () => {
+    auth.user.permissions = []
+    mount(<PlatformBillingView />)
+    expect(await screen.findByText(/TEST MODE · Sandbox shortcode 174379/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
+  })
+
 })
