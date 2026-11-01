@@ -51,7 +51,7 @@ describe('subscription billing', () => {
   })
 
   it('blocks another prompt while an unknown request awaits reconciliation', async () => {
-    vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [{ id: 1, channel: 'stk', status: 'unknown', amount: '600', environment: 'sandbox', mpesa_receipt: null, created_at: '2026-11-01' }], paid: 400, balance: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
+    vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [{ id: 1, channel: 'stk', status: 'unknown', amount: '600', environment: 'sandbox', mpesa_receipt: null, created_at: new Date().toISOString() }], paid: 400, balance: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
     const user = userEvent.setup(); mount()
     await user.click(await screen.findByRole('button', { name: 'Pay invoice #1 / 100000' }))
     expect(await screen.findByRole('button', { name: 'Send STK prompt' })).toBeDisabled()
@@ -69,6 +69,18 @@ describe('subscription billing', () => {
     expect(row).toHaveTextContent('KES 600.00')
     expect(screen.getByRole('columnheader', { name: 'Amount paid' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Remaining' })).toBeInTheDocument()
+  })
+
+  it('lets the owner send a new prompt for a partly paid invoice once an earlier prompt has expired', async () => {
+    vi.mocked(billingApi.stk).mockResolvedValue({ message: 'Prompt sent' })
+    vi.mocked(billingApi.invoice).mockResolvedValue({ data: { ...invoice, status: 'partially_paid' }, payments: [{ id: 1, channel: 'stk', status: 'pending', amount: '400', environment: 'sandbox', mpesa_receipt: null, created_at: '2026-10-01T08:00:00Z' }], paid: 400, balance: 600, remaining: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
+    const user = userEvent.setup(); mount()
+    await user.click(await screen.findByRole('button', { name: 'Pay invoice #1 / 100000' }))
+    await user.type(await screen.findByLabelText('Phone (2547… or 2541…)'), '254712345678')
+    await user.type(screen.getByLabelText('Amount (KES)'), '600')
+    expect(screen.getByRole('button', { name: 'Send STK prompt' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Send STK prompt' }))
+    expect(billingApi.stk).toHaveBeenCalledWith(1, '254712345678', 600)
   })
 
   it('does not request tenant billing for a staff account', () => {

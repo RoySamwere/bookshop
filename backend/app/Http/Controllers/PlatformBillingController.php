@@ -358,6 +358,9 @@ class PlatformBillingController extends Controller
         return response($pdf->render($row), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => "attachment; filename=\"$name\"", 'Cache-Control' => 'private, no-store']);
     }
 
+    /** How long a sent STK prompt can still be answered on the phone (Safaricom expires it after about a minute). */
+    public const STK_PROMPT_WINDOW_SECONDS = 180;
+
     public function stk(Request $request, int $invoice, DarajaStkService $daraja)
     {
         $tenant = $this->tenant($request);
@@ -369,13 +372,15 @@ class PlatformBillingController extends Controller
             if (! $this->paymentContext($row->environment)['can_pay']) {
                 throw ValidationException::withMessages(['payment' => 'Invoice belongs to another payment environment.']);
             }
-            $paid = (float) DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice)->where('status', 'confirmed')->sum('amount');
-            if ($data['amount'] > round((float) $row->amount - $paid, 2)) {
-                throw ValidationException::withMessages(['amount' => 'Amount exceeds outstanding balance.']);
+            $progress = self::progress($this->invoices()->where('i.id', $invoice)->first());
+            if ($data['amount'] > $progress->remaining) {
+                throw ValidationException::withMessages(['amount' => 'Amount exceeds the remaining balance of KES '.number_format($progress->remaining, 2).'.']);
             }
-            if (DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice)
-                ->whereIn('status', ['pending', 'awaiting_verification', 'unknown'])->exists()) {
-                throw ValidationException::withMessages(['payment' => 'Reconcile the existing STK request before starting another.']);
+            // Only a prompt sent in the last few minutes can still be answered on the phone; an older one has
+            // expired, so it no longer blocks a new prompt (any money it did collect is still applied when confirmed).
+            if (DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice)->where('channel', 'stk')
+                ->whereIn('status', ['pending', 'unknown'])->where('created_at', '>', now()->subSeconds(self::STK_PROMPT_WINDOW_SECONDS))->exists()) {
+                throw ValidationException::withMessages(['payment' => 'A payment prompt was just sent to the phone. Complete or cancel it, or try again in a few minutes.']);
             }
             try {
                 $result = $daraja->push($data['phone'], $data['amount'], $row->account_number);

@@ -72,7 +72,9 @@ class SubscriptionBillingTest extends TestCase
     {
         Http::fake([
             '*/oauth/*' => Http::response(['access_token' => 'fake-token']),
-            '*/mpesa/stkpush/v1/processrequest' => Http::response(['ResponseCode' => '0', 'CheckoutRequestID' => 'checkout-1', 'MerchantRequestID' => 'merchant-1']),
+            '*/mpesa/stkpush/v1/processrequest' => Http::sequence()
+                ->push(['ResponseCode' => '0', 'CheckoutRequestID' => 'checkout-1', 'MerchantRequestID' => 'merchant-1'])
+                ->push(['ResponseCode' => '0', 'CheckoutRequestID' => 'checkout-2', 'MerchantRequestID' => 'merchant-2']),
             '*/mpesa/stkpushquery/v1/query' => Http::response(['ResponseCode' => '0', 'ResultCode' => $code, 'CheckoutRequestID' => $queryCheckout]),
         ]);
     }
@@ -252,6 +254,11 @@ class SubscriptionBillingTest extends TestCase
         $this->postJson($url, ['phone' => '254712345678', 'amount' => 400])->assertAccepted();
         $this->postJson($url, ['phone' => '254712345678', 'amount' => 400])->assertUnprocessable();
         $this->assertDatabaseCount('platform_billing_payments', 1);
+
+        // Once the first prompt has expired on the phone, the owner can send another for a partly paid invoice.
+        $this->travel(4)->minutes();
+        $this->postJson($url, ['phone' => '254712345678', 'amount' => 400])->assertAccepted();
+        $this->assertDatabaseCount('platform_billing_payments', 2);
     }
 
     public function test_renewal_scheduler_is_repeatable(): void
@@ -284,7 +291,7 @@ class SubscriptionBillingTest extends TestCase
         $this->actingAs($this->owner, 'sanctum');
         $url = "/api/billing/invoices/{$invoice->id}/stk";
         $this->postJson($url, ['phone' => '254712345678', 'amount' => 1000])->assertStatus(502);
-        $this->postJson($url, ['phone' => '254712345678', 'amount' => 1000])->assertUnprocessable();
+        $this->postJson($url, ['phone' => '254712345678', 'amount' => 1000])->assertUnprocessable(); // the prompt may still be on the phone
         $attempt = DB::table('platform_billing_payments')->first();
         $this->assertSame('unknown', $attempt->status);
         $release = "/api/platform/billing/stk-attempts/{$attempt->id}/resolve-unknown";

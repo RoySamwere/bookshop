@@ -130,6 +130,8 @@ export default function BillingPage({ onNavigate }: { onNavigate?: (section: str
   </div>
 }
 
+const STK_PROMPT_WINDOW_MS = 3 * 60 * 1000
+
 function InvoiceDetail({ id }: { id: number }) {
   const client = useQueryClient()
   const [phone, setPhone] = useState('')
@@ -144,7 +146,8 @@ function InvoiceDetail({ id }: { id: number }) {
   const receiving = Number(invoice.data.receiving ?? 0)
   const remaining = invoice.data.remaining ?? confirmedBalance
   const balance = remaining
-  const pending = payments.some(p => ['pending', 'awaiting_verification', 'unknown'].includes(p.status))
+  // Only a prompt sent in the last few minutes can still be answered on the phone; older ones have expired.
+  const promptOnPhone = payments.some(p => p.channel === 'stk' && ['pending', 'unknown'].includes(p.status) && Date.now() - new Date(p.created_at).getTime() < STK_PROMPT_WINDOW_MS)
   return <section id="billing-invoice"><style>{`@media print { body * { visibility: hidden; } #billing-invoice, #billing-invoice * { visibility: visible; } #billing-invoice { position: absolute; left: 0; top: 0; width: 100%; } }`}</style><Card title={`Account ${row.account_number} · ${(row.payment_state ?? row.status).replace('_', ' ')}`}>
     <p>{invoice.data.environment === 'sandbox' ? 'TEST MODE — Sandbox shortcode' : 'Production Paybill'}: {invoice.data.paybill ?? 'Not configured'} · Invoice environment: {row.environment} · Status: {row.status}</p>
     {invoice.data.can_pay === false && <p role="alert">This invoice cannot be paid in the current payment environment. Contact platform support.</p>}
@@ -161,9 +164,10 @@ function InvoiceDetail({ id }: { id: number }) {
     {balance > 0 && invoice.data.can_pay !== false && <form onSubmit={submit} className="my-4 flex flex-wrap items-end gap-3 print:hidden">
       <label>Phone (2547… or 2541…)<input className={inputClass} required pattern="254[17][0-9]{8}" value={phone} onChange={e => setPhone(e.target.value)} /></label>
       <label>Amount (KES)<input className={inputClass} required type="number" min="1" step="1" max={Math.min(balance, 250000)} value={amount} onChange={e => setAmount(e.target.value)} /></label>
-      <button className={primaryButton} disabled={stk.isPending || pending}>Send STK prompt</button>
+      <button className={primaryButton} disabled={stk.isPending || promptOnPhone}>{stk.isPending ? 'Sending…' : 'Send STK prompt'}</button>
     </form>}
-    {pending && <p role="status">A payment is being confirmed with Safaricom. This page updates automatically; contact platform support if it is still pending after an hour.</p>}
+    {promptOnPhone && <p role="status" className="text-sm text-amber-800">A payment prompt was just sent to the phone. Enter the M-Pesa PIN to complete it. You can send a new prompt in a few minutes if it was missed.</p>}
+    {receiving > 0 && !promptOnPhone && balance > 0 && <p className="text-sm text-slate-600">You can pay the remaining {kes(balance)} now.</p>}
     {message && <p role="status">{message}</p>}{stk.isError && <p role="alert">{errorMessage(stk.error)}</p>}
     {invoice.data.can_pay !== false && row.status !== 'paid' && <ConfirmWithCode invoiceId={id} onDone={() => { void client.invalidateQueries({ queryKey: ['invoice', id] }); void client.invalidateQueries({ queryKey: ['billing'] }) }} />}
     <h3 className="mt-5 font-semibold">Payment history</h3><ul>{payments.map(p => <li className="border-t py-2" key={p.id}>{p.channel} · KES {p.amount} · {paymentStatus(p)} · {p.mpesa_receipt ?? 'No verified receipt'} · {p.environment}</li>)}</ul>
