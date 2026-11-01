@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
  */
 class CatalogController extends Controller
 {
+    private function requireMasterCatalogueOwner(Request $request): void {
+        abort_unless(in_array($request->user()?->role, ['platform_owner', 'system_owner'], true), 403, 'Only the system owner may upload or create master catalogue products.');
+    }
+
     /** Copy a public product description into this shop without sharing inventory or prices. */
     public function adoptPublicProduct(Request $request) {
         $tenant = Tenant::requireId();
@@ -61,6 +65,7 @@ class CatalogController extends Controller
         return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
     }
     public function bulkCreateBooks(Request $request) {
+        $this->requireMasterCatalogueOwner($request);
         $tenant=Tenant::requireId();
         $data=$request->validate([
             'rows'=>'required|array|min:1|max:200',
@@ -122,6 +127,7 @@ class CatalogController extends Controller
         },'nifunze-products-all.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
     public function importBooks(Request $request) {
+        $this->requireMasterCatalogueOwner($request);
         $tenant=Tenant::requireId();
         $data=$request->validate([
             'rows'=>'required|array|min:1|max:200',
@@ -155,6 +161,7 @@ class CatalogController extends Controller
         });
     }
     public function storeBook(Request $request) {
+        $this->requireMasterCatalogueOwner($request);
         $tenant=Tenant::requireId();
         $data = $request->validate([
             'title'=>'required|string|max:255','subtitle'=>'nullable|string|max:255','isbn'=>['nullable','string','max:20',Tenant::unique('books','isbn')],
