@@ -21,7 +21,7 @@ export type BranchSummary = { id: number; name: string; code: string; is_main?: 
 export type StaffAccessStatus = 'pending' | 'approved' | 'rejected' | null
 
 export type BookshopStatus = 'pending_verification' | 'active' | 'suspended'
-export type SubscriptionSummary = { status: string; plan: { code: string; name: string } | null; trial_ends_at: string | null; trial_days_left: number | null; current_period_ends_at: string | null }
+export type SubscriptionSummary = { days_remaining?: number | null; status: string; plan: { code: string; name: string } | null; trial_ends_at: string | null; trial_days_left: number | null; current_period_ends_at: string | null }
 /** The signed-in user's own bookshop (tenant), as returned by /auth/me. */
 export type BookshopSummary = {
   id: number; name: string; slug: string; status: BookshopStatus; business_email: string | null; phone: string | null; location: string | null

@@ -13,15 +13,17 @@ class PaymentReconciliationController extends Controller
 {
     public function index(Request $request)
     {
-        return response()->json(DB::table('platform_payment_reconciliation_items')->orderByDesc('id')->paginate(30));
+        $data = $request->validate(['environment' => 'nullable|in:sandbox,production,legacy']);
+        return response()->json(DB::table('platform_payment_reconciliation_items')->when($data['environment'] ?? null, fn ($q, $e) => $q->where('environment', $e))->orderByDesc('id')->paginate(30));
     }
 
     public function stkAttempts(Request $request)
     {
+        $data = $request->validate(['environment' => 'nullable|in:sandbox,production,legacy']);
         return response()->json(DB::table('platform_billing_payments as p')
             ->join('platform_billing_invoices as i', 'i.id', '=', 'p.platform_billing_invoice_id')
-            ->where('p.channel', 'stk')
-            ->select('p.id', 'p.checkout_request_id', 'p.amount', 'p.status', 'p.created_at', 'p.environment',
+            ->where('p.channel', 'stk')->when($data['environment'] ?? null, fn ($q, $e) => $q->where('p.environment', $e))
+            ->select('p.id', 'p.checkout_request_id', 'p.merchant_request_id', 'p.amount', 'p.status', 'p.created_at', 'p.environment',
                 'i.account_number', 'i.bookshop_id', 'i.status as invoice_status')->orderByDesc('p.id')->paginate(30));
     }
 

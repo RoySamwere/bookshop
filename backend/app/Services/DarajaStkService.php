@@ -29,13 +29,9 @@ class DarajaStkService
     {
         $settings = $this->settings();
         $base = $settings['environment'] === 'production' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
-        $auth = Http::acceptJson()->timeout(15)->withBasicAuth($settings['consumer_key'], $settings['consumer_secret'])
-            ->get($base.'/oauth/v1/generate', ['grant_type' => 'client_credentials'])->throw()->json();
-        if (! is_string($auth['access_token'] ?? null) || $auth['access_token'] === '') {
-            throw new RuntimeException('Daraja OAuth token missing.');
-        }
+        $token = $this->authenticate();
         $timestamp = now('Africa/Nairobi')->format('YmdHis');
-        $response = Http::acceptJson()->timeout(25)->withToken($auth['access_token'])->post($base.$path, [
+        $response = Http::acceptJson()->timeout(25)->withToken($token)->post($base.$path, [
             'BusinessShortCode' => (string) $settings['shortcode'],
             'Password' => base64_encode($settings['shortcode'].$settings['passkey'].$timestamp),
             'Timestamp' => $timestamp,
@@ -46,6 +42,20 @@ class DarajaStkService
         }
 
         return $response;
+    }
+
+    /** The returned token is for server-side use only; never log or return it to a browser. */
+    public function authenticate(): string
+    {
+        $settings = $this->settings();
+        $base = $settings['environment'] === 'production' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
+        $auth = Http::acceptJson()->timeout(15)->withBasicAuth($settings['consumer_key'], $settings['consumer_secret'])
+            ->get($base.'/oauth/v1/generate', ['grant_type' => 'client_credentials'])->throw()->json();
+        if (! is_string($auth['access_token'] ?? null) || $auth['access_token'] === '') {
+            throw new RuntimeException('Daraja OAuth token missing.');
+        }
+
+        return $auth['access_token'];
     }
 
     public function query(string $checkoutRequestId): array

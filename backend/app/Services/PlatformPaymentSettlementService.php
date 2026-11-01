@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,7 @@ class PlatformPaymentSettlementService
             throw ValidationException::withMessages(['payment' => 'Invalid amount or future payment date.']);
         }
 
-        return DB::transaction(function () use ($receipt, $account, $amount, $paidAt, $channel, $providerPayload, $environment) {
+        return DB::transaction(function () use ($receipt, $account, $amount, $paidAt, $channel, $providerPayload, $environment, $verifier) {
             $invoice = DB::table('platform_billing_invoices')->where('account_number', $account)->lockForUpdate()->first();
             if (! $invoice) {
                 throw ValidationException::withMessages(['payment' => 'No invoice matches this account number.']);
@@ -95,6 +96,9 @@ class PlatformPaymentSettlementService
                 'confirmed_at' => $paid,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
+            AuditLog::record('billing.payment_verified', 'Independently verified merchant payment', null,
+                ['invoice_id' => $invoice->id, 'receipt' => $receipt, 'amount' => $amount, 'environment' => $environment,
+                    'statement_reference' => $providerPayload['statement_reference']], $verifier, $invoice->bookshop_id);
             if ($excess > 0) {
                 DB::table('platform_payment_reconciliation_items')->insert([
                     'source' => 'overpayment', 'environment' => $environment,

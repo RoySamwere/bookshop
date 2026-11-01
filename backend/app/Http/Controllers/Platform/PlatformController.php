@@ -55,7 +55,7 @@ class PlatformController extends Controller
         ]);
 
         return AuditLogResource::collection(AuditLog::query()->with('user:id,name,email,role')
-            ->where(fn (Builder $query) => $query->where('action', 'like', 'platform.%')->orWhere('action', 'like', 'bookshop.%'))
+            ->where(fn (Builder $query) => $query->where('action', 'like', 'platform.%')->orWhere('action', 'like', 'bookshop.%')->orWhere('action', 'like', 'billing.%'))
             ->when($filters['bookshop_id'] ?? null, fn ($query, $id) => $query->where('bookshop_id', $id))
             ->when($filters['search'] ?? null, fn ($query, $search) => $query->where('description', 'like', "%{$search}%"))
             ->latest('id')->paginate($filters['per_page'] ?? 25)->withQueryString());

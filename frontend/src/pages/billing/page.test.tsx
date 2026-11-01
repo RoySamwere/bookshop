@@ -5,11 +5,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillingPage from './page'
 import PlatformBillingView from '../platform/billing-view'
-import { billingApi } from '../../lib/billing-api'
+import { platformApi } from '../../lib/tenancy-api'
+import { billingApi, paymentStatus } from '../../lib/billing-api'
 
+vi.mock('../../lib/tenancy-api', () => ({ platformApi: { plans: vi.fn() } }))
 const auth = vi.hoisted(() => ({ user: { role: 'bookshop_owner', account_type: 'bookshop', permissions: ['platform.settings.manage'] } }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
-vi.mock('../../lib/billing-api', () => ({ billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn() } }))
+vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(), billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn(), context: vi.fn(), subscriptions: vi.fn(), payments: vi.fn(), updatePlan: vi.fn() } }))
 const invoice = { id: 1, bookshop_id: 1, account_number: '100000', amount: '1000.00', paid: '400.00', currency: 'KES', environment: 'sandbox' as const,
   status: 'partially_paid', billing_months: 1, period_starts_at: '2026-11-01', period_ends_at: '2026-12-01', created_at: '2026-11-01' }
 const page = { data: [invoice], current_page: 1, last_page: 1, total: 1 }
@@ -19,8 +21,12 @@ function mount(element = <BillingPage />) {
 beforeEach(() => {
   vi.resetAllMocks()
   auth.user = { role: 'bookshop_owner', account_type: 'bookshop', permissions: ['platform.settings.manage'] }
-  vi.mocked(billingApi.overview).mockResolvedValue({ invoices: page, subscription: null, plans: [{ id: 2, name: 'Monthly', price: '1000', billing_interval: 'monthly' }], paybill: '153283', environment: 'sandbox' })
-  vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [], paid: 400, balance: 600, overpayment: 0, paybill: '153283' })
+  vi.mocked(platformApi.plans).mockResolvedValue([{ id: 2, name: 'Monthly', price: '1000', billing_interval: 'monthly', is_active: true, currency: 'KES', description: null, trial_days: 14 }])
+  vi.mocked(billingApi.subscriptions).mockResolvedValue({ data: [{ id: 1, bookshop_id: 1, bookshop_name: 'Test Shop', status: 'active', plan: { name: 'Monthly', code: 'monthly' }, days_remaining: 3, trial_days_left: null, trial_ends_at: null, current_period_ends_at: '2026-11-04' }], current_page: 1, last_page: 1, total: 1 })
+  vi.mocked(billingApi.payments).mockResolvedValue({ data: [{ id: 1, status: 'confirmed', amount: '1000', channel: 'stk', environment: 'production', mpesa_receipt: 'TESTRECEIPT', created_at: '2026-11-01', account_number: '100000', bookshop_id: 1, statement_reference: 'merchant-statement-1', verified_by: 2 }], current_page: 1, last_page: 1, total: 1 })
+  vi.mocked(billingApi.overview).mockResolvedValue({ invoices: page, subscription: null, plans: [{ id: 2, name: 'Monthly', price: '1000', billing_interval: 'monthly' }], paybill: '174379', environment: 'sandbox' })
+  vi.mocked(billingApi.context).mockResolvedValue({ environment: 'sandbox', paybill: '174379', can_pay: true })
+  vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [], paid: 400, balance: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
   vi.mocked(billingApi.invoices).mockResolvedValue(page)
   vi.mocked(billingApi.attempts).mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 })
   vi.mocked(billingApi.reconciliation).mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 })
@@ -31,6 +37,8 @@ describe('subscription billing', () => {
     vi.mocked(billingApi.stk).mockResolvedValue({ message: 'Awaiting verification' })
     const user = userEvent.setup(); mount()
     expect(await screen.findByText(/Sandbox payments are test records/)).toBeInTheDocument()
+    expect(screen.getByText(/TEST MODE — Sandbox shortcode: 174379/)).toBeInTheDocument()
+    expect(screen.queryByText(/153283/)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '#1 / 100000' }))
     await user.type(await screen.findByLabelText('Phone (2547… or 2541…)'), '254712345678')
     await user.type(screen.getByLabelText('Amount (KES)'), '300')
@@ -41,7 +49,7 @@ describe('subscription billing', () => {
   })
 
   it('blocks another prompt while an unknown request awaits reconciliation', async () => {
-    vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [{ id: 1, channel: 'stk', status: 'unknown', amount: '600', environment: 'sandbox', mpesa_receipt: null, created_at: '2026-11-01' }], paid: 400, balance: 600, overpayment: 0, paybill: '153283' })
+    vi.mocked(billingApi.invoice).mockResolvedValue({ data: invoice, payments: [{ id: 1, channel: 'stk', status: 'unknown', amount: '600', environment: 'sandbox', mpesa_receipt: null, created_at: '2026-11-01' }], paid: 400, balance: 600, overpayment: 0, environment: 'sandbox', can_pay: true, paybill: '174379' })
     const user = userEvent.setup(); mount()
     await user.click(await screen.findByRole('button', { name: '#1 / 100000' }))
     expect(await screen.findByRole('button', { name: 'Send STK prompt' })).toBeDisabled()
@@ -65,4 +73,42 @@ describe('subscription billing', () => {
     await user.click(screen.getByRole('checkbox'))
     expect(screen.getByRole('button', { name: 'Verify and settle' })).toBeEnabled()
   })
+  it('allows platform operators to update future plan pricing', async () => {
+    vi.mocked(billingApi.updatePlan).mockResolvedValue({})
+    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    await user.click(screen.getByRole('button', { name: 'Plans & pricing' }))
+    const price = await screen.findByLabelText('New invoice price (whole KES)')
+    await user.clear(price); await user.type(price, '1200')
+    await user.click(screen.getByRole('button', { name: 'Save plan' }))
+    expect(billingApi.updatePlan).toHaveBeenCalledWith(2, { name: 'Monthly', price: 1200, billing_interval: 'monthly', is_active: true })
+  })
+
+  it('shows subscription days and supports the expired filter', async () => {
+    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    await user.click(screen.getByRole('button', { name: 'Subscriptions' }))
+    expect(await screen.findByText(/Test Shop.*3 days remaining/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Show'), 'expired')
+    expect(billingApi.subscriptions).toHaveBeenCalledWith(1, 'expired')
+  })
+
+  it('shows independent statement evidence with payment environment filtering', async () => {
+    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    await user.click(screen.getByRole('button', { name: 'Payment ledger' }))
+    expect(await screen.findByText(/merchant-statement-1/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Environment'), 'sandbox')
+    expect(billingApi.payments).toHaveBeenCalledWith(1, 'sandbox')
+  })
+
+  it.each([['cancelled', 'Cancelled by payer'], ['timed_out', 'Timed out — no verified payment'], ['failed', 'Payment failed']])('explains %s provider outcomes', (status, label) => {
+    expect(paymentStatus({ status })).toBe(label)
+  })
+
+  it('withholds payment instructions for an invoice from another environment', async () => {
+    vi.mocked(billingApi.invoice).mockResolvedValue({ data: { ...invoice, environment: 'production' }, payments: [], paid: 0, balance: 1000, overpayment: 0, paybill: '174379', environment: 'sandbox', can_pay: false })
+    const user = userEvent.setup(); mount()
+    await user.click(await screen.findByRole('button', { name: '#1 / 100000' }))
+    expect(await screen.findByText(/Payment instructions are unavailable/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send STK prompt' })).not.toBeInTheDocument()
+  })
+
 })

@@ -47,9 +47,11 @@ class BookshopSubscription extends Model
 
     public function summary(): array
     {
+        $expiry = $this->status === self::TRIALING ? $this->trial_ends_at : $this->current_period_ends_at;
         return [
             'status' => $this->status,
             'plan' => $this->plan?->only(['code', 'name']),
+            'days_remaining' => $expiry ? max(0, (int) ceil(now()->diffInHours($expiry, false) / 24)) : null,
             'trial_ends_at' => $this->trial_ends_at?->toIso8601String(),
             'trial_days_left' => $this->status === self::TRIALING && $this->trial_ends_at
                 ? max(0, (int) ceil(now()->diffInHours($this->trial_ends_at, false) / 24)) : null,

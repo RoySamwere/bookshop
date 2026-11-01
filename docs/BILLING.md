@@ -47,77 +47,49 @@ Laravel tests use isolated in-memory SQLite and Laravel `Http::fake` with stray 
 
 ## Recorded cloud validation
 
-- Full Laravel suite: **226 passed**, 1,725 assertions.
-- Billing/security contract suites: **38 passed**, 151 assertions (part of the full suite).
-- Frontend: TypeScript/Vite production build passed; **80 tests passed** across 14 files.
+- Full Laravel suite: **235 passed**, 1,779 assertions.
+- Billing/security contract suites: **47 passed**, 205 assertions (part of the full suite).
+- Frontend: TypeScript/Vite production build passed; **87 tests passed** across 14 files.
+- Billing browser smoke passed owner login, actual local plan selection/invoice generation, correct sandbox-only instructions, printable invoice controls and 390px/1440px layout. No Safaricom request was initiated.
 - Existing headless Chromium smoke: desktop/mobile login, cookie authentication, refresh restoration, permission redirects and logout passed without runtime exceptions.
 - New billing migration: applied, rolled back by its specific migration path and reapplied successfully against a disposable SQLite database. Local development database migration and scheduler registration also passed.
 - An isolated MariaDB 11.8 instance with `explicit_defaults_for_timestamp=OFF` and strict zero-date checks reproduced error 1067 using the old period column definitions. The full application migration chain then passed with required `DATETIME` period columns and the shortened reconciliation unique-index name.
-- Real Safaricom requests/public callbacks and MySQL concurrency acceptance were **not performed**. No live VPS was accessed or changed.
+- Local MariaDB concurrency passed: six parallel invoice requests, six duplicate-receipt settlements and three distinct late overpayments produced one invoice, one renewal and the correct excess ledger. No existing database was reset or deleted.
+- Real Safaricom OAuth/STK/query and public callback delivery remain **unverified**. A credential-free gateway connectivity probe from the cloud workspace failed at the outbound proxy with CONNECT HTTP 403; no M-Pesa credentials or remote execution connection are available here. No VPS deployment or payment configuration change was performed.
 
-## External Safaricom sandbox acceptance (pending until performed)
+## Approved testing installation and data preservation
 
-1. Create/enable a Daraja sandbox app with Lipa na M-Pesa Online. Securely configure `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_SHORTCODE` and `MPESA_CALLBACK_URL` in the staging backend environment. Values stay server-side; never use `VITE_*` for credentials.
-2. Set `MPESA_ENVIRONMENT=sandbox`, `APP_ENV=staging`, `APP_DEBUG=false`, HTTPS cookies, real staging domain/CORS/Sanctum settings and a **separate MySQL staging database**. Allow outbound verified HTTPS to `sandbox.safaricom.co.ke`; production later needs `api.safaricom.co.ke`. Configure a publicly reachable HTTPS callback at `https://STAGING_HOST/api/billing/mpesa/stk/callback`. Register `/api/billing/mpesa/c2b/confirmation` if testing C2B for that sandbox app. Browser cookies are not required for callbacks.
-3. Clear/rebuild Laravel's config cache after changes. Create a test shop and paid plans through normal registration/platform interfaces, approve the shop and create a sandbox invoice in `/billing`. Use the sandbox phone and credentials supplied by Safaricom, not an arbitrary real customer's phone.
-4. Send STK; record CheckoutRequestID and MerchantRequestID from server-side payment records. Verify the real sandbox gateway accepted the request. Receive the callback and independently query with `php artisan billing:reconcile-stk` once the attempt is at least two minutes old. Query success must leave funds unconfirmed.
-5. Reconcile only against evidence independently provided by the sandbox merchant tooling. A sandbox app may not expose a merchant statement; if unavailable, leave that manual step pending instead of inventing a receipt. Local mocked tests already cover the subsequent settlement contract.
-6. Verify the sandbox invoice can become paid only through authorized reconciliation and **subscription dates/status remain unchanged**. Repeat duplicate callbacks and settlement attempts, cancellations, timeouts, partial payments and overpayments. Test a real public callback failure/retry and lost-response recovery. No live transaction or production subscription should be involved.
-7. On staging MySQL, run simultaneous invoice creation and same/different-receipt reconciliation requests. Verify account uniqueness, one confirmed receipt, one renewal event and rollback of the losing request. SQLite tests validate behavior, not MySQL contention/row-lock behavior. These MySQL contention and real gateway/network steps must be recorded separately before production use.
+The user confirmed that **https://hekimabookshop.co.ke is the existing testing application**, not a commercial deployment serving paying customers. Use its existing installation and database; do not create a staging subdomain, replacement installation or new application database. All automated tests still use isolated test databases. Do not run `migrate:fresh`, `db:wipe`, `migrate:reset` or demo seeders against the application database. Preserve the existing APP_KEY and private `.env`.
 
-## Retrying the MySQL billing migration
+All development and verified commits are on **main**. The commands below are operator-run on the existing VPS; they have not been executed by the cloud agent.
 
-If `2026_11_01_000010_create_platform_billing_invoices` failed with error 1067 for `period_ends_at`, pull the compatibility fix and retry normal migrations. The required period columns now use `DATETIME`, avoiding implicit legacy `TIMESTAMP` zero-date defaults. The reconciliation migration also uses an explicit short unique-index name to avoid MySQL error 1059. Do not disable strict SQL mode or use `migrate:fresh`; the reported failed CREATE TABLE does not require resetting the database.
+## Existing VPS update, backup, migrations and build
 
-From your existing application checkout on the testing VPS:
-
-```sh
-git fetch origin
-git switch codex/mpesa-subscription-billing
-git pull --ff-only origin codex/mpesa-subscription-billing
-cd backend
-php artisan config:clear
-php artisan migrate --force
-# Rebuild cached configuration if that is used by your deployment:
-php artisan config:cache
-```
-
-These commands retain the private existing `.env`. M-Pesa values in a VPS `.env` are not automatically available in the cloud development workspace; they are neither copied nor committed by this fix.
-
-## Exact VPS testing commands (operator-run; no VPS changes performed by Codex)
-
-The following uses a **separate staging checkout** at `/var/www/nifunze-staging`, a dedicated MySQL database named `nifunze_staging`, PHP 8.3 FPM and Nginx. Substitute the installed PHP service/version and staging hostname if different. Do not run against the live application checkout or live database. Provision the private `.env`, staging database, HTTPS vhost and writable Laravel directories before this update. Preserve an existing `APP_KEY`; generate one only for a genuinely new installation. Nginx must serve `frontend/dist` and route `/api`, `/sanctum`, `/up` and `/storage` to Laravel as in DEPLOYMENT.md.
-
-Initial checkout, if needed (run as the deployment user with write access to `/var/www`):
-
-```sh
-git clone --branch codex/mpesa-subscription-billing https://github.com/RoySamwere/bookshop.git /var/www/nifunze-staging
-cd /var/www/nifunze-staging/backend
-cp -n .env.example .env
-# Edit .env securely with the staging settings above; do not paste credentials into shell history.
-# For a new application ONLY, after dependencies are installed: php artisan key:generate
-```
-
-Update, build, backup and migrate the staging application:
+Run from anywhere inside the existing repository checkout. Confirm the configured database name before the backup; the reported application database is `nifunzel_bookshop`. The dump command prompts for credentials without putting a password in shell history. Use `mariadb-dump` instead of `mysqldump` if that is the installed client.
 
 ```sh
 set -eu
-cd /var/www/nifunze-staging
+BILLING_ROOT="$(git rev-parse --show-toplevel)"
+cd "$BILLING_ROOT"
 test -z "$(git status --porcelain)"
-git fetch origin codex/mpesa-subscription-billing
-git switch codex/mpesa-subscription-billing
-git pull --ff-only origin codex/mpesa-subscription-billing
+umask 077
+BILLING_BACKUP_DIR="$BILLING_ROOT/../nifunze-private-backups"
+mkdir -p "$BILLING_BACKUP_DIR"
+chmod 700 "$BILLING_BACKUP_DIR"
+BILLING_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+cp -p backend/.env "$BILLING_BACKUP_DIR/env-$BILLING_STAMP"
+read -r -p 'Existing database user: ' BILLING_DB_USER
+mysqldump --single-transaction --routines --triggers -h 127.0.0.1 -u "$BILLING_DB_USER" -p nifunzel_bookshop > "$BILLING_BACKUP_DIR/database-$BILLING_STAMP.sql"
+test -s "$BILLING_BACKUP_DIR/database-$BILLING_STAMP.sql"
+git fetch origin main
+git switch main
+git pull --ff-only origin main
 git rev-parse HEAD
 cd backend
-test -s .env
 composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 php artisan down --retry=60
-# Uses an interactive password prompt; no password in the command or repository.
-mkdir -p /var/www/nifunze-staging-backups
-mysqldump --single-transaction --routines --triggers -u nifunze_staging -p nifunze_staging > "/var/www/nifunze-staging-backups/pre-billing-$(date -u +%Y%m%dT%H%M%SZ).sql"
 php artisan optimize:clear
 php artisan migrate --force
-# Run only when public/storage does not already exist:
 if [ ! -e public/storage ] && [ ! -L public/storage ]; then php artisan storage:link; fi
 cd ../frontend
 npm ci
@@ -125,27 +97,86 @@ npm run build
 cd ../backend
 php artisan optimize
 php artisan queue:restart
-sudo nginx -t
-sudo systemctl reload php8.3-fpm
-sudo systemctl reload nginx
 php artisan up
 php artisan migrate:status
 php artisan schedule:list
+curl --fail --show-error https://hekimabookshop.co.ke/up
+curl --fail --show-error https://hekimabookshop.co.ke/api/v1/public/products-catalogue
 ```
 
-Do not automatically run `migrate:rollback` after collecting real payments: rollback removes the billing provenance fields. If a step fails while in maintenance, diagnose it before `php artisan up`; retain the backup. Do not run demo seeders or replace a pre-existing production environment file. For a new staging install, run `php artisan key:generate` after `composer install` and before enabling the app.
+No `.env` value is overwritten by these commands. On failure, inspect the error before bringing the application back up; do not reset the database or automatically roll back billing tables. Restart/reload the installed PHP-FPM service only if required by the server's existing opcache configuration, using its actual service name; no Nginx routing change is needed for these existing `/api` and React routes. Ensure `storage` and `bootstrap/cache` remain writable by the existing PHP user.
 
-Install this cron entry for the **staging deployment user** if its scheduler is not already supervised (avoid duplicate scheduler instances):
+Keep one scheduler instance for this installation. If not already configured, add to the existing deployment user's cron using the absolute repository path obtained above:
 
 ```cron
-* * * * * cd /var/www/nifunze-staging/backend && /usr/bin/php artisan schedule:run >> /var/www/nifunze-staging/backend/storage/logs/scheduler.log 2>&1
+* * * * * cd /ABSOLUTE/EXISTING/REPOSITORY/backend && /usr/bin/php artisan schedule:run >> storage/logs/scheduler.log 2>&1
 ```
 
-With `QUEUE_CONNECTION=database`, supervise `php artisan queue:work --sleep=3 --tries=3 --timeout=90` as described in DEPLOYMENT.md. Staging health checks (replace the example hostname with the configured TLS hostname):
+## Real sandbox verification on the existing VPS (pending)
+
+Keep the existing sandbox settings and callback:
+
+```dotenv
+MPESA_ENVIRONMENT=sandbox
+MPESA_SHORTCODE=174379
+MPESA_CALLBACK_URL=https://hekimabookshop.co.ke/api/billing/mpesa/stk/callback
+```
+
+Consumer key, consumer secret and passkey stay in the existing secure VPS environment. No values are printed or committed. Rebuild cached config after any independently authorized correction. The `/billing` screen now displays **TEST MODE** and the actual sandbox shortcode, never live Paybill payment instructions while operating in sandbox. Historical environment-mismatched invoices cannot be paid through the current environment.
+
+1. From the existing backend directory run:
+
+   ```sh
+   php artisan billing:sandbox-check --staging-confirmed
+   ```
+
+   The legacy flag name means “I confirm this is the authorized testing installation.” This command performs a **real** OAuth request and withholds the token. It refuses production payment mode, does not initiate STK and does not settle any invoice. If it fails, record the error safely and resolve the credential, HTTPS trust or outbound access blocker. A fake or mocked response is not acceptance evidence.
+2. Log in as the bookshop owner. Select a paid monthly, quarterly or annual plan in `/billing`, generate an invoice, and use the Safaricom sandbox test phone supplied for the app. Send an STK prompt against the displayed sandbox shortcode. In `/platform/billing` → STK requests capture the real CheckoutRequestID and MerchantRequestID. Do not post credentials, phone numbers or OAuth tokens in logs/reports.
+3. Verify that Safaricom reaches the configured public HTTPS callback. Inspect `callback_payload` for that checkout in the backend database using authorized administrative tools. An HTTP 200 alone is not proof of delivery for a particular checkout. A callback must not confirm funds or extend access.
+4. Query the actual checkout (substitute the ID captured from your request):
+
+   ```sh
+   php artisan billing:sandbox-check --staging-confirmed --checkout=ACTUAL_CHECKOUT_REQUEST_ID
+   # Scheduled verification selects requests at least two minutes old:
+   php artisan billing:reconcile-stk
+   ```
+
+   Record sanitized ResponseCode/ResultCode and whether the provider supplied success, cancellation (1032), timeout (1037), failure or pending. Test outcomes only where the real sandbox supports them; unsupported outcomes remain unverified externally even when their automated tests pass.
+5. Only an authorized operator with independent merchant evidence can reconcile through `/platform/billing`. STK settlement additionally queries the provider. If sandbox merchant-statement evidence is unavailable, leave the payment awaiting verification; do not invent a receipt or mark an SMS/callback as independent evidence. The payment ledger displays statement references and verifier IDs; the platform audit view includes billing actions.
+6. Sandbox settlement **never modifies subscription access**, even if a test invoice becomes paid. Existing `APP_ENV=production` guards additionally reject sandbox settlement; the read-only OAuth/query command and sandbox initiation do not change that safeguard. If that guard prevents the final test step on this installation, record the blocked step rather than relabelling test payments as production or silently changing application environment.
+7. Retest duplicate notifications and duplicate reconciliation, partial payments and excess funds. Neither duplicates nor excess funds may grant a second subscription period. Verify that failure/cancellation/timeout are provider-query outcomes, not decisions trusted from unsigned callbacks.
+
+## Automated test and MySQL concurrency commands
+
+Run development suites with development dependencies installed, not against the existing application database:
 
 ```sh
-curl --fail --show-error https://staging.books.example.com/up
-curl --fail --show-error https://staging.books.example.com/api/v1/public/products-catalogue
+cd backend
+php artisan test
+php artisan test --filter='SubscriptionBillingTest|PlatformBillingSafetyTest|BillingMigrationCompatibilityTest|TenantIsolationTest'
+cd ../frontend
+npm run build
+npm test -- --maxWorkers=2
 ```
 
-Then complete the external acceptance checklist above and verify mobile/desktop invoice printing, dashboard permissions, expiry/renewal, CSRF and cookie behavior on the actual HTTPS domain. Publishing this branch is not a deployment or proof of external sandbox/production readiness.
+For the billing browser test, start Laravel and Vite against an isolated `ui-smoke.sqlite` database (as for the existing browser smoke). In that isolated backend context run `php artisan tinker --execute='require base_path("tests/Browser/billing-fixture.php");'`, then run `CHROME_PATH=/usr/bin/chromium SMOKE_BASE_URL=http://127.0.0.1:5174 node scripts/billing-browser-smoke.mjs` from frontend. The fixture refuses production/non-isolated databases, preserves existing fixture records, and the browser script refuses non-loopback hosts. Do not use these fixtures on the Hekima application database.
+
+`tests/Integration/billing-concurrency.php` requires a **new empty isolated** MySQL/MariaDB database named `nifunze_billing_test_<unique suffix>`, APP_ENV=testing, and development dependencies. It refuses an existing nonempty schema and never drops or resets a database. Do not supply the existing application database. The guard is scoped explicitly to the selected schema. It launches real concurrent PHP processes to verify row locks, account allocation, receipt uniqueness, one-time renewal, retained subscription time and excess funds. This local automated check passed; it is not a real Safaricom transaction.
+
+```sh
+# Set DB_* securely for a newly created isolated test schema only, then:
+APP_ENV=testing DB_CONNECTION=mysql DB_DATABASE=nifunze_billing_test_UNIQUE_SUFFIX php tests/Integration/billing-concurrency.php
+```
+
+## Controlled production acceptance — authorization required
+
+No production credential validation, shortcode entitlement confirmation or genuine payment has been performed from this workspace. Paybill **153283** is enforced in code; that is not proof that Safaricom has enabled this Paybill for the APIs. Before any switch:
+
+1. Obtain the operator's evidence that production consumer key/secret, shortcode 153283 and production passkey are valid and API-enabled; confirm merchant-statement access and public HTTPS callback delivery.
+2. Run `php artisan billing:pending-payments --environment=sandbox` (nonzero means unresolved records remain), then review `/platform/billing` filtered to sandbox for `pending`, `awaiting_verification` and `unknown` requests. Resolve or explicitly retain/document outstanding sandbox requests; never relabel their environment. Back up the existing database and `.env` again before a switch.
+3. Confirm migrations, tests/build, scheduler and backup restoration procedures, plus the authorized test phone and agreed low invoice amount. Changing plan pricing affects new invoices only. Do not reprice an existing invoice or modify records directly to simulate payment.
+4. **Ask for explicit authorization identifying the production switch, test phone, amount and one controlled payment.** Neither this runbook nor the prior sandbox authorization permits the switch or charge. Do not modify payment settings or initiate real payments before that authorization.
+5. After authorization, the operator configures the real production credentials and `MPESA_ENVIRONMENT=production`, `MPESA_SHORTCODE=153283`, preserving all sandbox records. Rebuild config cache. Generate a new production invoice with its own six-digit account. Complete one real payment on the authorized phone; independently verify the receipt, amount, destination, account and payment date against merchant records.
+6. Reconcile once through the platform UI; verify the invoice, payment ledger, statement reference, audit event and subscription expiry. Monthly/quarterly/annual renewal must preserve remaining paid time. Duplicate callback/reconciliation must add no second period. Keep reports free of credentials, tokens and full customer phone numbers.
+
+Until those steps are performed, report production and real sandbox external verification as pending; passing automated tests alone does not authorize or prove real-money readiness.

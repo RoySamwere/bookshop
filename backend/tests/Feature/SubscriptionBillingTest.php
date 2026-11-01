@@ -11,6 +11,7 @@ use App\Services\PlatformPaymentSettlementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -435,4 +436,88 @@ class SubscriptionBillingTest extends TestCase
         $this->assertSame(Bookshop::STATUS_SUSPENDED, $shop->fresh()->status);
         $this->actingAs($this->owner, 'sanctum')->getJson('/api/books')->assertForbidden()->assertJsonPath('code', 'bookshop_suspended');
     }
+
+    public function test_sandbox_instructions_never_show_live_paybill(): void
+    {
+        config(['services.mpesa.environment' => 'sandbox', 'services.mpesa.shortcode' => '174379']);
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/billing')->assertOk()->assertJsonPath('paybill', '174379')->assertJsonPath('test_mode', true);
+        $this->getJson("/api/billing/invoices/{$invoice->id}")->assertOk()->assertJsonPath('paybill', '174379')->assertJsonPath('environment', 'sandbox')->assertJsonPath('can_pay', true);
+        config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '153283']);
+        $this->getJson("/api/billing/invoices/{$invoice->id}")->assertOk()->assertJsonPath('can_pay', false);
+    }
+
+    public function test_plan_edits_do_not_reprice_or_extend_issued_invoices(): void
+    {
+        $invoice = $this->invoice();
+        $this->actingAs($this->operator, 'sanctum')->patchJson("/api/platform/billing/plans/{$this->plan->id}", ['price' => 9000, 'billing_interval' => 'annual'])->assertOk();
+        $row = DB::table('platform_billing_invoices')->where('id', $invoice->id)->first();
+        $this->assertSame(1000.0, (float) $row->amount);
+        $this->assertSame(1, (int) $row->billing_months);
+        $this->settle($invoice, 'EDITEDPAY1', 1000);
+        $this->assertTrue($this->subscription->fresh()->current_period_ends_at->equalTo(now()->addDays(10)->addMonthNoOverflow()));
+        $this->actingAs($this->owner, 'sanctum')->patchJson("/api/platform/billing/plans/{$this->plan->id}", ['price' => 1])->assertForbidden();
+    }
+
+    public function test_platform_ledger_exposes_audit_evidence_only_to_platform_roles(): void
+    {
+        $invoice = $this->invoice();
+        $this->settle($invoice, 'AUDITPAY01', 1000);
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/platform/billing/payments')->assertForbidden();
+        $this->actingAs($this->operator, 'sanctum')->getJson('/api/platform/billing/payments?environment=production')
+            ->assertOk()->assertJsonPath('data.0.statement_reference', 'merchant-statement-1')->assertJsonPath('data.0.verified_by', $this->operator->id);
+        $this->getJson('/api/platform/billing/payments?environment=sandbox')->assertOk()->assertJsonPath('total', 0);
+        $this->getJson('/api/platform/audit-logs')->assertOk()->assertJsonFragment(['action' => 'billing.payment_verified']);
+        $this->getJson('/api/platform/billing/subscriptions')->assertOk()->assertJsonPath('data.0.bookshop_id', $this->owner->bookshop_id);
+    }
+
+    public function test_subscription_expiry_filters_and_remaining_days(): void
+    {
+        $this->subscription->update(['current_period_ends_at' => now()->addDays(3)]);
+        $this->actingAs($this->operator, 'sanctum')->getJson('/api/platform/billing/subscriptions?state=upcoming')->assertOk()->assertJsonPath('total', 1)->assertJsonPath('data.0.days_remaining', 3);
+        $this->getJson('/api/platform/billing/subscriptions?state=expired')->assertOk()->assertJsonPath('total', 0);
+        $this->subscription->update(['status' => 'expired', 'current_period_ends_at' => now()->subDay()]);
+        $this->getJson('/api/platform/billing/subscriptions?state=expired')->assertOk()->assertJsonPath('total', 1);
+    }
+
+    public static function terminalOutcomes(): array
+    {
+        return [['1032', 'cancelled'], ['1037', 'timed_out'], ['2001', 'failed']];
+    }
+
+    #[DataProvider('terminalOutcomes')]
+    public function test_provider_verified_terminal_outcomes_allow_retry_without_credit(string $code, string $status): void
+    {
+        $invoice = $this->invoice();
+        $this->gateway($code);
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
+        $this->travel(3)->minutes();
+        $this->artisan('billing:reconcile-stk')->assertSuccessful();
+        $this->assertDatabaseHas('platform_billing_payments', ['checkout_request_id' => 'checkout-1', 'status' => $status]);
+        $this->assertDatabaseCount('subscription_events', 0);
+    }
+
+    public function test_sandbox_cli_requires_explicit_confirmation_and_never_exposes_oauth_token(): void
+    {
+        $this->artisan('billing:sandbox-check')->assertFailed();
+        Http::assertNothingSent();
+        config(['services.mpesa.environment' => 'sandbox', 'services.mpesa.shortcode' => '174379']);
+        $this->gateway();
+        $code = Artisan::call('billing:sandbox-check', ['--staging-confirmed' => true]);
+        $this->assertSame(0, $code);
+        $output = Artisan::output();
+        $this->assertStringContainsString('OAuth succeeded', $output);
+        $this->assertStringNotContainsString('fake-token', $output);
+        $this->assertDatabaseCount('subscription_events', 0);
+    }
+    public function test_pending_payment_preflight_blocks_unresolved_transactions_without_mutation(): void
+    {
+        $invoice = $this->invoice(); $this->gateway();
+        $this->artisan('billing:pending-payments', ['--environment' => 'production'])->assertSuccessful();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
+        $this->artisan('billing:pending-payments', ['--environment' => 'production'])->assertFailed();
+        $this->assertDatabaseHas('platform_billing_payments', ['status' => 'pending']);
+        $this->assertDatabaseCount('subscription_events', 0);
+    }
+
 }

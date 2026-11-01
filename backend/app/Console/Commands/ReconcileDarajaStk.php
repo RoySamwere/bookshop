@@ -43,7 +43,7 @@ class ReconcileDarajaStk extends Command
                 } elseif (in_array($code, ['1', '1032', '1037', '2001'], true)) {
                     DB::table('platform_billing_payments')->where('id', $attempt->id)
                         ->whereIn('status', ['pending', 'awaiting_verification'])
-                        ->update(['status' => 'failed', 'query_response' => json_encode($result), 'queried_at' => now(), 'updated_at' => now()]);
+                        ->update(['status' => match ($code) { '1032' => 'cancelled', '1037' => 'timed_out', default => 'failed' }, 'query_response' => json_encode($result), 'queried_at' => now(), 'updated_at' => now()]);
                 }
             } catch (Throwable $e) {
                 DB::table('platform_billing_payments')->where('id', $attempt->id)

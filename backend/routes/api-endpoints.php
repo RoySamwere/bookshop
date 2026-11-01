@@ -213,6 +213,10 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
     // Platform administration: platform staff only, and no route here reads bookshop business data.
     Route::prefix('platform')->middleware('platform')->group(function () {
         Route::get('/overview', [PlatformController::class, 'overview']);
+        Route::get('/billing/context', [\App\Http\Controllers\PlatformBillingController::class, 'context'])->middleware('permission:platform.settings.view');
+        Route::get('/billing/subscriptions', [\App\Http\Controllers\PlatformBillingController::class, 'subscriptions'])->middleware('permission:platform.settings.view');
+        Route::get('/billing/payments', [\App\Http\Controllers\PlatformBillingController::class, 'payments'])->middleware('permission:platform.settings.view');
+        Route::patch('/billing/plans/{plan}', [\App\Http\Controllers\PlatformBillingController::class, 'updatePlan'])->whereNumber('plan')->middleware('permission:platform.settings.manage');
         Route::get('/billing/invoices', [\App\Http\Controllers\PlatformBillingController::class, 'admin'])->middleware('permission:platform.settings.view');
         Route::post('/billing/plans', [\App\Http\Controllers\PlatformBillingController::class, 'plan'])->middleware('permission:platform.settings.manage');
         Route::post('/billing/statement-payments', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'statement'])->middleware(['permission:platform.settings.manage', 'throttle:10,1']);

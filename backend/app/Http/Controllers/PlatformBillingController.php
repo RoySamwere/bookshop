@@ -23,6 +23,23 @@ class PlatformBillingController extends Controller
         return (int) $user->bookshop_id;
     }
 
+    public function context()
+    {
+        return response()->json($this->paymentContext());
+    }
+
+    private function paymentContext(?string $invoiceEnvironment = null): array
+    {
+        $environment = config('services.mpesa.environment');
+        $shortcode = $environment === 'production' ? '153283' : ($environment === 'sandbox' ? (string) config('services.mpesa.shortcode') : null);
+        $eligible = in_array($environment, ['sandbox', 'production'], true)
+            && ($invoiceEnvironment === null || $invoiceEnvironment === $environment)
+            && preg_match('/^[0-9]{5,7}$/', $shortcode ?? '');
+
+        return ['environment' => $environment, 'paybill' => $shortcode,
+            'can_pay' => (bool) $eligible, 'test_mode' => $environment === 'sandbox'];
+    }
+
     public function index(Request $request)
     {
         $tenant = $this->tenant($request);
@@ -31,7 +48,7 @@ class PlatformBillingController extends Controller
             'invoices' => $this->invoices()->where('i.bookshop_id', $tenant)->orderByDesc('i.id')->paginate(20),
             'subscription' => BookshopSubscription::where('bookshop_id', $tenant)->first()?->summary(),
             'plans' => SubscriptionPlan::where('is_active', true)->where('currency', 'KES')->where('price', '>', 0)->get(),
-            'paybill' => '153283', 'environment' => config('services.mpesa.environment'),
+            ...$this->paymentContext(),
         ]);
     }
 
@@ -60,6 +77,69 @@ class PlatformBillingController extends Controller
         return response()->json(['data' => $plan], 201);
     }
 
+    public function updatePlan(Request $request, int $plan)
+    {
+        $data = $request->validate(['name' => 'sometimes|required|string|max:100', 'price' => 'sometimes|required|integer|min:1|max:999999999',
+            'billing_interval' => 'sometimes|required|in:monthly,quarterly,annual', 'is_active' => 'sometimes|required|boolean']);
+
+        return DB::transaction(function () use ($request, $plan, $data) {
+            $row = SubscriptionPlan::whereKey($plan)->lockForUpdate()->firstOrFail();
+            $before = $row->only(array_keys($data));
+            $row->update($data);
+            AuditLog::record('billing.plan_updated', 'Updated subscription plan; existing invoices retain their quoted price and period', $row,
+                ['before' => $before, 'after' => $data], $request->user());
+
+            return response()->json(['data' => $row]);
+        });
+    }
+
+    public function subscriptions(Request $request)
+    {
+        $data = $request->validate(['state' => 'nullable|in:expired,upcoming']);
+        $rows = BookshopSubscription::with(['bookshop:id,name', 'plan'])->when($data['state'] ?? null, function ($q, $state) {
+            $q->where(function ($q) use ($state) {
+                if ($state === 'expired') {
+                    $q->where('status', 'expired');
+                }
+                foreach (['current_period_ends_at', 'trial_ends_at'] as $column) {
+                    $q->orWhere(function ($q) use ($state, $column) {
+                        if ($column === 'trial_ends_at') {
+                            $q->where('status', 'trialing');
+                        } else {
+                            $q->where('status', '!=', 'trialing');
+                        }
+                        if ($state === 'expired') {
+                            $q->where($column, '<=', now());
+                        } else {
+                            $q->whereBetween($column, [now(), now()->addDays(7)]);
+                        }
+                    });
+                }
+            });
+        })->orderBy('bookshop_id')->paginate(30);
+        $rows->through(fn ($row) => ['id' => $row->id, 'bookshop_id' => $row->bookshop_id, 'bookshop_name' => $row->bookshop?->name, ...$row->summary()]);
+
+        return response()->json($rows);
+    }
+
+    public function payments(Request $request)
+    {
+        $data = $request->validate(['environment' => 'nullable|in:sandbox,production,legacy']);
+        $rows = DB::table('platform_billing_payments as p')->join('platform_billing_invoices as i', 'i.id', '=', 'p.platform_billing_invoice_id')
+            ->select('p.id', 'p.status', 'p.channel', 'p.amount', 'p.environment', 'p.mpesa_receipt', 'p.confirmed_at', 'p.provider_response', 'i.account_number', 'i.bookshop_id')
+            ->when($data['environment'] ?? null, fn ($q, $e) => $q->where('p.environment', $e))->orderByDesc('p.id')->paginate(30);
+        $rows->through(function ($row) {
+            $evidence = json_decode($row->provider_response ?? '{}', true);
+            $row->statement_reference = $evidence['statement_reference'] ?? null;
+            $row->verified_by = $evidence['verified_by'] ?? null;
+            unset($row->provider_response);
+
+            return $row;
+        });
+
+        return response()->json($rows);
+    }
+
     private function invoices()
     {
         return DB::table('platform_billing_invoices as i')->select('i.*')
@@ -80,11 +160,17 @@ class PlatformBillingController extends Controller
         $row = $this->invoices()->where('i.id', $invoice)->where('i.bookshop_id', $this->tenant($request))->first();
         abort_unless($row, 404);
         $payments = DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice)
-            ->select('id', 'channel', 'status', 'amount', 'mpesa_receipt', 'created_at', 'confirmed_at', 'environment')->orderByDesc('id')->get();
+            ->select('id', 'channel', 'status', 'amount', 'mpesa_receipt', 'created_at', 'confirmed_at', 'environment', 'query_response')->orderByDesc('id')->get()->map(function ($payment) {
+                $query = json_decode($payment->query_response ?? '{}', true);
+                $payment->result_code = is_scalar($query['ResultCode'] ?? null) ? (string) $query['ResultCode'] : null;
+                unset($payment->query_response);
+
+                return $payment;
+            });
 
         return response()->json(['data' => $row, 'payments' => $payments, 'paid' => $row->paid,
             'balance' => max(0, round((float) $row->amount - (float) $row->paid, 2)),
-            'overpayment' => max(0, round((float) $row->paid - (float) $row->amount, 2)), 'paybill' => '153283']);
+            'overpayment' => max(0, round((float) $row->paid - (float) $row->amount, 2)), ...$this->paymentContext($row->environment)]);
     }
 
     public function stk(Request $request, int $invoice, DarajaStkService $daraja)
@@ -95,7 +181,7 @@ class PlatformBillingController extends Controller
         return DB::transaction(function () use ($invoice, $tenant, $data, $daraja) {
             $row = DB::table('platform_billing_invoices')->where('id', $invoice)->where('bookshop_id', $tenant)->lockForUpdate()->first();
             abort_unless($row && in_array($row->status, ['pending', 'partially_paid'], true), 404);
-            if ($row->environment !== config('services.mpesa.environment')) {
+            if (! $this->paymentContext($row->environment)['can_pay']) {
                 throw ValidationException::withMessages(['payment' => 'Invoice belongs to another payment environment.']);
             }
             $paid = (float) DB::table('platform_billing_payments')->where('platform_billing_invoice_id', $invoice)->where('status', 'confirmed')->sum('amount');
@@ -128,7 +214,7 @@ class PlatformBillingController extends Controller
                 'amount' => $data['amount'], 'provider_response' => json_encode($result), 'created_at' => now(), 'updated_at' => now(),
             ]);
 
-            return response()->json(['message' => 'STK request sent. Awaiting verified settlement.', 'checkout_request_id' => $checkout], 202);
+            return response()->json(['message' => 'STK request sent. Awaiting verified settlement.', 'checkout_request_id' => $checkout, 'merchant_request_id' => $result['MerchantRequestID'] ?? null], 202);
         });
     }
 }
