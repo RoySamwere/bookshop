@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/pos/sales/{sale}', [PosController::class, 'show'])->middleware('permission:sales.view');
         Route::get('/product-hierarchy', [CatalogController::class, 'hierarchy'])->middleware('permission:catalog.view');
         Route::get('/books', [CatalogController::class, 'books'])->middleware('permission:catalog.view');
+        Route::post('/books/shared-stock-status', [CatalogController::class, 'sharedStockStatus'])->middleware('permission:inventory.view');
         Route::post('/books/adopt-public', [CatalogController::class, 'adoptPublicProduct'])->middleware('permission:catalog.manage');
         Route::get('/books-export', [CatalogController::class, 'exportBooks'])->middleware('permission:catalog.view');
         Route::post('/books-bulk-create', [CatalogController::class, 'bulkCreateBooks'])->middleware('permission:catalog.manage');
