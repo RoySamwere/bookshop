@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 class PlatformBillingInvoiceService
 {
     /**
-     * Allocate one permanent four-digit Paybill account per invoice.
+     * Allocate one permanent six-digit Paybill account per invoice.
      * Numbers are never reused, avoiding late manual payments being attributed to another shop.
      */
     public function create(int $bookshopId, SubscriptionPlan $plan, \DateTimeInterface $start, \DateTimeInterface $end): object
@@ -31,14 +31,14 @@ class PlatformBillingInvoiceService
                 $used = DB::table('platform_billing_invoices')->pluck('account_number')->map(fn ($n) => (int) $n)->all();
                 $occupied = array_fill_keys($used, true);
                 $number = null;
-                for ($candidate = 1000; $candidate <= 9999; $candidate++) {
+                for ($candidate = 100000; $candidate <= 999999; $candidate++) {
                     if (!isset($occupied[$candidate])) {
                         $number = (string) $candidate;
                         break;
                     }
                 }
                 if ($number === null) {
-                    throw new \RuntimeException('Four-digit Paybill account capacity exhausted; expand the account format.');
+                    throw new \RuntimeException('Six-digit Paybill account capacity exhausted; expand the account format.');
                 }
                 $id = DB::table('platform_billing_invoices')->insertGetId([
                     'bookshop_id' => $bookshopId,
