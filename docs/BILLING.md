@@ -1,6 +1,6 @@
 # Subscription billing and VPS staging test runbook
 
-The platform subscription Paybill is **153283**. Tenant POS payments remain separate. The React owner interface is `/billing`; platform administrators view `/platform/billing`. Only platform operators with `platform.settings.manage` can settle funds, release unknown requests, or add paid plans. Tenant owners (including legacy system owners) can create and pay only their own invoices, even when their subscription has expired. Platform management sessions cannot impersonate an owner for billing.
+The platform subscription Paybill is **153283**. Tenant POS payments remain separate. Tenant owners open **Admin → Subscription billing** from the desktop sidebar or mobile drawer (`/billing`). Platform administrators open **Subscription billing** in the platform sidebar (`/platform/billing`). Only platform operators with `platform.settings.manage` can settle funds, release unknown requests, or add paid plans. Tenant owners (including legacy system owners) can create and pay only their own invoices, even when their subscription has expired. Platform management sessions cannot impersonate an owner for billing.
 
 ## What constitutes a verified payment
 
@@ -49,7 +49,7 @@ Laravel tests use isolated in-memory SQLite and Laravel `Http::fake` with stray 
 
 - Full Laravel suite: **226 passed**, 1,725 assertions.
 - Billing/security contract suites: **38 passed**, 151 assertions (part of the full suite).
-- Frontend: TypeScript/Vite production build passed; **74 tests passed** across 13 files.
+- Frontend: TypeScript/Vite production build passed; **80 tests passed** across 14 files.
 - Existing headless Chromium smoke: desktop/mobile login, cookie authentication, refresh restoration, permission redirects and logout passed without runtime exceptions.
 - New billing migration: applied, rolled back by its specific migration path and reapplied successfully against a disposable SQLite database. Local development database migration and scheduler registration also passed.
 - An isolated MariaDB 11.8 instance with `explicit_defaults_for_timestamp=OFF` and strict zero-date checks reproduced error 1067 using the old period column definitions. The full application migration chain then passed with required `DATETIME` period columns and the shortened reconciliation unique-index name.

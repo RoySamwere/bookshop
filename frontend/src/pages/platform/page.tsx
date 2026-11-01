@@ -40,7 +40,7 @@ const nav: { to: string; label: string; icon: typeof Gauge; permission: Permissi
   { to: '/platform/bookshops', label: 'Bookshops', icon: Store, permission: 'platform.bookshops.view' },
   { to: '/platform/management', label: 'Bookshop Management', icon: Building2, permission: 'platform.access' },
   { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
-  { to: '/platform/billing', label: 'Billing', icon: Building2, permission: 'platform.settings.view' },
+  { to: '/platform/billing', label: 'Subscription billing', icon: Building2, permission: 'platform.settings.view' },
   { to: '/platform/plans', label: 'Subscription plans', icon: Building2, permission: 'platform.plans.view' },
   { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
   { to: '/platform/audit', label: 'Audit history', icon: History, permission: 'platform.audit.view' },
@@ -61,7 +61,7 @@ function PlatformShell() {
   if (user.account_type !== 'platform' || !hasPermission(user, 'platform.access')) return <Navigate replace to={homeFor(user)} />
 
   const links = nav.filter(item => hasPermission(user, item.permission) && (item.to !== '/platform/management' || user.role === 'platform_owner'))
-  const sidebar = <nav aria-label="Platform navigation" className="flex flex-col gap-1">
+  const sidebar = <nav aria-label="Platform navigation" className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-1">
     {links.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/platform'} onClick={() => setOpen(false)}
       className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
       <Icon size={18} aria-hidden="true" />{label}
