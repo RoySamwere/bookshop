@@ -11,7 +11,7 @@ import { billsApi, type Bill } from '../../lib/billing-api'
 const auth = vi.hoisted(() => ({ user: { role: 'platform_owner', account_type: 'platform', permissions: ['platform.settings.view', 'platform.settings.manage'] } as Record<string, unknown> }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
 vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(),
-  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), myPayment: vi.fn(), sync: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
+  billsApi: { health: vi.fn(), list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), myPayment: vi.fn(), sync: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
 
 const bill = (patch: Partial<Bill>): Bill => ({
   id: 1, transaction_date: '2026-11-01T09:00:00Z', bookshop_id: 4, bookshop_name: 'Kisumu Readers', invoice_id: 12, invoice_status: 'paid', account_number: '100045',
@@ -31,6 +31,7 @@ function mount(element = <PaymentsReconciliation />) {
 beforeEach(() => {
   vi.resetAllMocks()
   auth.user = { role: 'platform_owner', account_type: 'platform', permissions: ['platform.settings.view', 'platform.settings.manage'] }
+  vi.mocked(billsApi.health).mockResolvedValue({ data: [] })
   vi.mocked(billsApi.list).mockResolvedValue({ data: [bill({}), unmatched], current_page: 1, last_page: 1, total: 2, from: 1, to: 2, summary })
   vi.mocked(billsApi.show).mockResolvedValue({ data: { ...unmatched, provider_payload: { transaction_status: { ReceiptNo: 'QK1WRONG01' } }, verification_request_id: null, invoice: null,
     candidate_invoices: [{ id: 12, account_number: '100045', amount: '1000.00', status: 'pending', bookshop: 'Kisumu Readers' }], history: [] } })
@@ -64,6 +65,13 @@ describe('Payments & reconciliation', () => {
     expect(screen.getAllByText('Reconciled').length).toBeGreaterThan(0)
     await user.selectOptions(screen.getByLabelText('Status'), 'unmatched')
     expect(billsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'unmatched', page: 1 }))
+  })
+
+  it('explains why Paybill payments stay pending', async () => {
+    vi.mocked(billsApi.health).mockResolvedValue({ data: [{ key: 'c2b_verification', ok: false, title: 'Confirming Paybill payments with Safaricom', detail: 'Transaction Status credentials are missing.', fix: 'Set MPESA_SECURITY_CREDENTIAL.' }] })
+    mount()
+    const banner = await screen.findByRole('region', { name: 'Automatic confirmation problems' })
+    expect(within(banner).getByText(/Set MPESA_SECURITY_CREDENTIAL/)).toBeInTheDocument()
   })
 
   it('assigns a verified unmatched payment to an invoice with a reason', async () => {

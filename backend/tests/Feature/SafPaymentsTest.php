@@ -630,4 +630,19 @@ class SafPaymentsTest extends TestCase
         $this->assertSame(['reconciled', 'TJ4K8L2MCC'], [$row->verification_status, $row->mpesa_receipt_number]);
         $this->getJson('/api/platform/bills')->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2MCC')->assertJsonPath('data.0.status', 'reconciled');
     }
+
+    public function test_health_explains_why_paybill_payments_stay_pending_without_secrets(): void
+    {
+        config(['services.mpesa.security_credential' => null, 'services.mpesa.confirmation_url' => null]);
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/platform/bills/health')->assertForbidden();
+        $response = $this->actingAs($this->operator, 'sanctum')->getJson('/api/platform/bills/health')->assertOk();
+        $checks = collect($response->json('data'))->keyBy('key');
+        $this->assertTrue($checks['environment']['ok']);
+        $this->assertFalse($checks['c2b_verification']['ok']);
+        $this->assertStringContainsString('MPESA_SECURITY_CREDENTIAL', $checks['c2b_verification']['fix']);
+        $this->assertFalse($checks['c2b_notifications']['ok']);
+        $this->assertStringNotContainsString('secret', strtolower(json_encode($response->json('data')['0'])));
+        $this->assertStringNotContainsString('encrypted-credential', $response->getContent());
+        $this->artisan('billing:diagnose')->assertSuccessful();
+    }
 }

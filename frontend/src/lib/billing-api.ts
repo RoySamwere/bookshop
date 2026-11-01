@@ -59,12 +59,15 @@ export type MyPayment = {
   status: 'confirmed' | 'processing' | 'under_review' | 'failed'; has_receipt: boolean
 }
 
+export type BillingHealthCheck = { key: string; ok: boolean; title: string; detail: string; fix: string | null }
+
 export const billsApi = {
   list: (filters: BillFilters) => api<Page<Bill> & { from: number | null; to: number | null; summary: BillsSummary }>('/platform/bills', { query: filters }),
   export: (filters: BillFilters) => api<{ data: Bill[]; truncated: boolean }>('/platform/bills/export', { query: { ...filters, page: undefined } }),
   show: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}`),
   retry: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}/retry`, { method: 'POST' }),
   assign: (id: number, account_number: string, note: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/assign`, { method: 'POST', body: { account_number, note } }),
+  health: () => api<{ data: BillingHealthCheck[] }>('/platform/bills/health'),
   sync: () => api<{ data: { checked: number; applied: number; still_pending: number; needs_review: number; codes_filled: number; links_repaired: number }; summary: BillsSummary }>('/platform/bills/sync', { method: 'POST' }),
   confirmCode: (mpesa_code: string, account_number: string, note: string) => api<{ data: BillDetail }>('/platform/bills/confirm-code', { method: 'POST', body: { mpesa_code, account_number, note } }),
   reject: (id: number, reason: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/reject`, { method: 'POST', body: { reason } }),

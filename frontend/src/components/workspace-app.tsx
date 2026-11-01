@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from '@/lib/navigation'
 import BrandLoader from './brand-loader'
-import { WorkspaceShell, PROFILE_SECTION, canOpenSection, firstSection } from './workspace-shell'
+import { WorkspaceShell, PROFILE_SECTION, SECTION_PATHS, canOpenSection, firstSection, sectionForPath } from './workspace-shell'
+import BillingPage from '../pages/billing/page'
+import ShopBillsPage from '../pages/billing/shop-payments'
 import { OverviewDashboard } from './overview-dashboard'
 import { UsersView } from './users-view'
 import { InventoryView } from './inventory-view'
@@ -95,7 +97,7 @@ export function WorkspaceApp() {
     // Customers, applicants, platform staff and owners still verifying have no workspace here.
     if ((user.account_type === 'platform' && !user.management_context) || !hasPermission(user, 'workspace.access') || needsOnboarding(user)) { router.replace(homeFor(user)); return }
     setCurrentUser(user)
-    const requested = new URLSearchParams(window.location.search).get('section')
+    const requested = sectionForPath(window.location.pathname) ?? new URLSearchParams(window.location.search).get('section')
     setActive(previous => requested && canOpenSection(user, requested) ? requested : canOpenSection(user, previous) ? previous : firstSection(user))
   }, [router])
 
@@ -135,7 +137,9 @@ export function WorkspaceApp() {
     if (currentUser && canOpenSection(currentUser, section)) {
       setActive(section)
       const url = new URL(window.location.href)
-      url.searchParams.set('section', section)
+      // Billing pages keep their own addresses (/billing, /bills); everything else is /dashboard?section=.
+      url.pathname = SECTION_PATHS[section] ?? '/dashboard'
+      if (SECTION_PATHS[section]) url.searchParams.delete('section'); else url.searchParams.set('section', section)
       window.history.replaceState(null, '', url.pathname + url.search + url.hash)
     }
   }
@@ -188,6 +192,8 @@ export function WorkspaceApp() {
     : active === 'Stock Taking' ? <StockTakingView currentUser={currentUser} notify={notify} />
     : active === 'Customers' ? <CustomersView setToast={notify} />
     : active === 'Suppliers' ? <SuppliersView setToast={notify} bookshopName={currentUser.bookshop?.name} />
+    : active === 'Subscription Billing' ? <BillingPage onNavigate={navigateTo} />
+    : active === 'Bills' ? <ShopBillsPage onNavigate={navigateTo} />
     : active === 'Purchase Orders' ? <PurchaseOrdersView currentUser={currentUser} notify={notify} />
     : <Dashboard active={active} setActive={navigateTo} currentUser={currentUser} />
 

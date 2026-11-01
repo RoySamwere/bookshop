@@ -31,29 +31,29 @@ function mount(role: Role) {
 }
 
 describe('sidebar subscription billing', () => {
-  it.each(['bookshop_owner', 'system_owner'] as const)('opens billing from the Admin sidebar for %s', async role => {
+  it.each(['bookshop_owner', 'system_owner'] as const)('opens billing and bills inside the workspace for %s', async role => {
     const user = userEvent.setup()
     const navigate = mount(role)
     const admin = screen.getByRole('navigation', { name: 'Admin' })
-    const link = within(admin).getByRole('link', { name: 'Subscription Billing' })
-    expect(link).toHaveAttribute('href', '/billing')
-    await user.click(link)
-    expect(screen.getByRole('heading', { name: 'Billing destination' })).toBeInTheDocument()
-    expect(navigate).not.toHaveBeenCalled()
+    await user.click(within(admin).getByRole('button', { name: 'Subscription Billing' }))
+    expect(navigate).toHaveBeenCalledWith('Subscription Billing')
+    await user.click(within(admin).getByRole('button', { name: 'Bills' }))
+    expect(navigate).toHaveBeenCalledWith('Bills')
   })
 
   it('opens billing from the mobile navigation drawer', async () => {
     vi.mocked(window.matchMedia).mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList)
     const user = userEvent.setup()
-    mount('bookshop_owner')
+    const navigate = mount('bookshop_owner')
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
     const drawer = screen.getByRole('dialog', { name: 'Main navigation' })
-    await user.click(within(drawer).getByRole('link', { name: 'Subscription Billing' }))
-    expect(screen.getByRole('heading', { name: 'Billing destination' })).toBeInTheDocument()
+    await user.click(within(drawer).getByRole('button', { name: 'Subscription Billing' }))
+    expect(navigate).toHaveBeenCalledWith('Subscription Billing')
   })
 
   it.each(['cashier', 'inventory_officer', 'admin'] as const)('does not offer owner billing to %s', role => {
     mount(role)
-    expect(screen.queryByRole('link', { name: 'Subscription Billing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Subscription Billing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bills' })).not.toBeInTheDocument()
   })
 })

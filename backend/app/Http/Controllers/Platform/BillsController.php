@@ -139,6 +139,12 @@ class BillsController extends Controller
         return $this->show($id);
     }
 
+    /** Why payments are or are not confirmed automatically (no secrets). */
+    public function health(\App\Services\Billing\BillingHealth $health)
+    {
+        return response()->json(['data' => $health->checks()]);
+    }
+
     /** "Update payments": process every saf_payments row now, keyed by its M-Pesa confirmation code. */
     public function sync(Request $request, \App\Services\Billing\SafPaymentSync $sync)
     {

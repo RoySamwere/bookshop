@@ -14,6 +14,23 @@ const statusTone: Record<BillStatus, string> = {
 const kes = (value: number) => `KES ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const when = (value: string | null) => value ? new Date(value).toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
+/** Tells the platform team, without secrets, why payments are not being confirmed automatically and how to fix it. */
+function BillingHealthBanner() {
+  const health = useQuery({ queryKey: ['bills-health'], queryFn: billsApi.health, staleTime: 60_000 })
+  const failing = (health.data?.data ?? []).filter(check => !check.ok)
+  if (!failing.length) return null
+  return <section aria-label="Automatic confirmation problems" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+    <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} /> Some payments cannot be confirmed automatically yet</p>
+    <ul className="mt-3 grid gap-3">
+      {failing.map(check => <li key={check.key}>
+        <p className="font-semibold">{check.title}</p>
+        <p>{check.detail}</p>
+        {check.fix && <p className="mt-1 text-amber-800"><span className="font-semibold">Fix:</span> {check.fix}</p>}
+      </li>)}
+    </ul>
+  </section>
+}
+
 export function BillStatusPill({ status }: { status: BillStatus }) {
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusTone[status]}`}>{BILL_STATUS_LABELS[status]}</span>
 }
@@ -64,6 +81,7 @@ export default function PaymentsReconciliation() {
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('csv')}><Download size={16} /> CSV</button>
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('xlsx')}><FileSpreadsheet size={16} /> Excel</button>
       </div>} />
+    <BillingHealthBanner />
     {exportError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{exportError}</p>}
     {sync.isError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{errorMessage(sync.error)}</p>}
     {sync.isSuccess && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">

@@ -32,13 +32,21 @@ const sections = [
   { label: 'Audit Log', description: 'Sign-ins and account changes', icon: History, group: 'workspace', permission: 'audit.view' },
   { label: 'My Bookshop', description: 'Bookshop profile, status and staff invitations', icon: Store, group: 'workspace', permission: 'settings.view' },
   { label: 'Settings', description: 'Business, branches, tax and receipts', icon: Settings, group: 'workspace', permission: 'settings.view' },
+  { label: 'Subscription Billing', description: 'Your Nifunze plan, invoices and M-Pesa payment', icon: WalletCards, group: 'workspace', ownerOnly: true },
+  { label: 'Bills', description: 'Every M-Pesa payment made to Nifunze', icon: FileText, group: 'workspace', ownerOnly: true },
   { label: PROFILE_SECTION, description: 'Your details and password', icon: UserRound, group: 'account' },
-] satisfies { label: string; description: string; icon: typeof BookOpen; group?: string; permission?: Permission }[]
+] satisfies { label: string; description: string; icon: typeof BookOpen; group?: string; permission?: Permission; ownerOnly?: boolean }[]
+
+/** Sections that live on their own address instead of /dashboard?section=. */
+export const SECTION_PATHS: Record<string, string> = { 'Subscription Billing': '/billing', Bills: '/bills' }
+export const sectionForPath = (path: string) => Object.entries(SECTION_PATHS).find(([, value]) => value === path)?.[0] ?? null
 
 /** Whether the user may open a section; the server enforces the same rules on its data. */
 export function canOpenSection(user: BookshopUser, label: string) {
   const section = sections.find(item => item.label === label)
   if (!section) return false
+  // Subscription billing belongs to the bookshop's own owner account (the server enforces the same).
+  if ('ownerOnly' in section && section.ownerOnly) return user.account_type === 'bookshop' && !user.management_context && ['bookshop_owner', 'system_owner'].includes(user.role)
   return !('permission' in section) || !section.permission || hasPermission(user, section.permission)
 }
 
@@ -130,7 +138,6 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
   const account = useOverlay<HTMLDivElement>(accountOpen, () => setAccountOpen(false))
   const notifications = useOverlay<HTMLDivElement>(notificationsOpen, () => setNotificationsOpen(false))
   const command = useOverlay<HTMLDivElement>(searchOpen, () => setSearchOpen(false), true)
-  const canManageBilling = currentUser.account_type === 'bookshop' && !currentUser.management_context && ['bookshop_owner', 'system_owner'].includes(currentUser.role)
   const visibleSections = sections.filter(section => canOpenSection(currentUser, section.label))
   const initials = currentUser.name.split(' ').map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const modalOpen = drawerOpen || searchOpen
@@ -200,9 +207,9 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
     { name: 'Stock', labels: ['Products & Books', 'Inventory & Stock', 'Stock Taking', 'Suppliers', 'Purchase Orders'] },
     { name: 'People', labels: ['Customers', 'Users'] },
     { name: 'Insights', labels: ['Reports & Analytics', 'Expenses'] },
-    { name: 'Admin', labels: ['My Bookshop', 'Audit Log', 'Settings'] },
+    { name: 'Admin', labels: ['My Bookshop', 'Audit Log', 'Settings', 'Subscription Billing', 'Bills'] },
   ]
-  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Stock Taking': 'Stock taking', 'Purchase Orders': 'Purchase orders', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log' }
+  const displayLabel: Record<string, string> = { 'Point of Sale': 'Point of sale', 'Sales History': 'Sales history', 'Products & Books': 'Products & books', 'Inventory & Stock': 'Inventory', 'Stock Taking': 'Stock taking', 'Purchase Orders': 'Purchase orders', 'Users': 'Team & access', 'Reports & Analytics': 'Reports', 'Audit Log': 'Audit log', 'Subscription Billing': 'Subscription billing' }
 
   function navButton(section: typeof sections[number]) {
     const Icon = section.icon
@@ -231,19 +238,11 @@ export function WorkspaceShell({ currentUser, active, onNavigate, onSignOut, chi
         {hasPermission(currentUser, 'pos.access') && <button className="sidebar-new-sale" onClick={() => navigate('Point of Sale')} title="New sale"><Plus size={19} /><span>New sale</span></button>}
         {groups.map(group => {
           const items = visibleSections.filter(section => group.labels.includes(section.label))
-          const showBilling = group.name === 'Admin' && canManageBilling
-          return (items.length > 0 || showBilling) && <div className="sidebar-nav-group" key={group.name}>
+          return items.length > 0 && <div className="sidebar-nav-group" key={group.name}>
             <div className="sidebar-group-label">{group.name}</div>
             <nav className="sidebar-links" aria-label={group.name}>
               {items.map(navButton)}
-              {showBilling && <Link to="/billing" className="sidebar-link" aria-label="Subscription Billing"
-                title={collapsed && !mobile ? 'Subscription Billing' : undefined} onClick={() => setDrawerOpen(false)}>
-                <WalletCards size={19} aria-hidden="true" /><span className="sidebar-link-label">Subscription billing</span>
-              </Link>}
-              {showBilling && <Link to="/bills" className="sidebar-link" aria-label="Bills"
-                title={collapsed && !mobile ? 'Bills' : undefined} onClick={() => setDrawerOpen(false)}>
-                <FileText size={19} aria-hidden="true" /><span className="sidebar-link-label">Bills</span>
-              </Link>}
+
             </nav>
           </div>
         })}

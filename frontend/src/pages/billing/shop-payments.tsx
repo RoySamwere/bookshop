@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Download, Eye, ReceiptText, Search } from 'lucide-react'
 import { useAuth } from '../../features/auth/auth-provider'
@@ -109,14 +108,14 @@ export function ShopPaymentModal({ id, onClose }: { id: number; onClose: () => v
   </Modal>
 }
 
-/** /bills for bookshops: every M-Pesa payment the shop has made to Nifunze, from saf_payments. */
-export default function ShopBillsPage() {
+/** Bills for bookshops (inside the workspace): every M-Pesa payment the shop has made to Nifunze, from saf_payments. */
+export default function ShopBillsPage({ onNavigate }: { onNavigate?: (section: string) => void } = {}) {
   const allowed = useOwnerBilling()
-  if (!allowed) return <main className="p-8"><h1>Bills are available to the bookshop owner.</h1><Link to="/dashboard">Return to workspace</Link></main>
-  return <main className="mx-auto grid max-w-7xl gap-6 p-4 sm:p-8">
-    <div className="flex flex-wrap gap-4 text-blue-700"><Link to="/dashboard">← Return to workspace</Link><Link to="/billing">Subscription billing</Link></div>
+  if (!allowed) return <EmptyState icon={<ReceiptText size={22} />} title="Bills are available to the bookshop owner" body="Ask the owner of this bookshop for payment records." />
+  return <div className="mx-auto grid w-full max-w-[1400px] gap-6 px-3 pb-10 sm:px-5">
     <PageHeader eyebrow="M-Pesa · Safaricom" icon={<ReceiptText size={22} />} title="Bills"
-      description="Every M-Pesa payment your bookshop has made for its Nifunze subscription. Select the eye icon for full details and the receipt." />
+      description="Every M-Pesa payment your bookshop has made for its Nifunze subscription. Select the eye icon for full details and the receipt."
+      actions={onNavigate && <button className={secondaryButton} onClick={() => onNavigate('Subscription Billing')}>Subscription billing</button>} />
     <ShopPaymentsTable />
-  </main>
+  </div>
 }

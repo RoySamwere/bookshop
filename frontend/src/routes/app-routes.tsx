@@ -22,8 +22,6 @@ const OnboardingVerify = lazyPage(() => import('../pages/onboarding/verify-email
 const OnboardingSetup = lazyPage(() => import('../pages/onboarding/setup/page'))
 const OnboardingBookshop = lazyPage(() => import('../pages/onboarding/bookshop/page'))
 const AcceptInvitation = lazyPage(() => import('../pages/accept-invitation/page'))
-const Billing = lazyPage(() => import('../pages/billing/page'))
-const ShopBills = lazyPage(() => import('../pages/billing/shop-payments'))
 const Platform = lazyPage(() => import('../pages/platform/page'))
 
 export function AppRoutes() {
@@ -40,7 +38,9 @@ export function AppRoutes() {
     <Route path="/onboarding/bookshop" element={<OnboardingBookshop />} />
     <Route path="/onboarding" element={<Navigate replace to="/onboarding/setup" />} />
     <Route element={<ProtectedRoute permission="platform.access" />}><Route path="/platform/*" element={<Platform />} /></Route>
-    <Route element={<ProtectedRoute />}><Route path="/billing" element={<Billing />} /><Route path="/bills" element={<ShopBills />} /><Route path="/billing/payments" element={<Navigate replace to="/bills" />} /></Route>
+    {/* Billing pages open inside the workspace (side menu and top bar) as owner-only sections. */}
+    <Route element={<ProtectedRoute permission="workspace.access" />}><Route path="/billing" element={<Dashboard />} /><Route path="/bills" element={<Dashboard />} /></Route>
+    <Route path="/billing/payments" element={<Navigate replace to="/bills" />} />
     <Route path="/forgot-password" element={<Forgot />} />
     <Route path="/reset-password" element={<Reset />} />
     <Route path="/verify-email" element={<Verify />} />
