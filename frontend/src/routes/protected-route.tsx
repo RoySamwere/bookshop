@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../features/auth/auth-provider'
 import { ApiError } from '../lib/api'
-import { hasPermission, type Permission } from '../lib/auth'
+import { hasPermission, homeFor, type Permission } from '../lib/auth'
 import BrandLoader from '../components/brand-loader'
 
 export function ProtectedRoute({ permission }: { permission?: Permission }) {
@@ -13,6 +13,15 @@ export function ProtectedRoute({ permission }: { permission?: Permission }) {
   }
   if (!user) return <Navigate replace to={`/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`} />
   if (user.account_type === 'platform' && !user.management_context && /^\/(dashboard|onboarding)(\/|$)/.test(location.pathname)) return <Navigate replace to="/platform" />
-  if (permission && !hasPermission(user, permission)) return <main className="p-8"><h1>Access restricted</h1><p>Your account does not have permission to open this page.</p></main>
+  if (permission && !hasPermission(user, permission)) {
+    // Route only to an authorized landing page; never redirect to the same denied route.
+    const fallback = hasPermission(user, 'dashboard.view') && hasPermission(user, 'workspace.access')
+      ? '/dashboard'
+      : hasPermission(user, 'pos.access') && hasPermission(user, 'workspace.access')
+        ? '/dashboard?section=Point+of+Sale'
+        : homeFor(user)
+    const deniedPath = location.pathname + location.search
+    return <Navigate replace to={deniedPath === fallback ? '/account' : fallback} />
+  }
   return <Outlet />
 }
