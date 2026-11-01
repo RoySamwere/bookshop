@@ -18,8 +18,8 @@ class DarajaStkService
                 throw new RuntimeException('Daraja STK configuration is incomplete.');
             }
         }
-        if ($settings['environment'] === 'production' && (string) $settings['shortcode'] !== '153283') {
-            throw new RuntimeException('Live STK shortcode must match the authorized platform Paybill 153283.');
+        if ($settings['environment'] === 'production' && (string) $settings['shortcode'] !== '152451') {
+            throw new RuntimeException('Live STK shortcode must match the authorized platform Paybill 152451.');
         }
 
         return $settings;
