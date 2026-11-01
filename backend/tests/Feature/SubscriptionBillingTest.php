@@ -34,7 +34,7 @@ class SubscriptionBillingTest extends TestCase
     {
         parent::setUp();
         $this->travelTo(now()->startOfSecond());
-        config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '153283',
+        config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '152451',
             'services.mpesa.consumer_key' => 'test-key', 'services.mpesa.consumer_secret' => 'test-secret',
             'services.mpesa.passkey' => 'test-passkey', 'services.mpesa.callback_url' => 'https://merchant.example.test/api/billing/mpesa/stk/callback']);
         Http::preventStrayRequests();
@@ -145,7 +145,7 @@ class SubscriptionBillingTest extends TestCase
     {
         $invoice = $this->invoice();
         $this->expectException(ValidationException::class);
-        app(PlatformPaymentSettlementService::class)->settle('UNTRUSTED1', $invoice->account_number, '153283', 1000, now(), 'paybill');
+        app(PlatformPaymentSettlementService::class)->settle('UNTRUSTED1', $invoice->account_number, '152451', 1000, now(), 'paybill');
     }
 
     public function test_unsigned_callbacks_and_failed_query_never_credit_funds(): void
@@ -156,7 +156,9 @@ class SubscriptionBillingTest extends TestCase
         $attempt = DB::table('platform_billing_payments')->first();
         $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'checkout-1', 'ResultCode' => 0,
             'CallbackMetadata' => ['Item' => [['Name' => 'Amount', 'Value' => 100000]]]]]])->assertOk();
-        $this->assertDatabaseHas('platform_billing_payments', ['id' => $attempt->id, 'status' => 'pending']);
+        // The callback only triggers a check; Safaricom's authenticated query says the payer cancelled.
+        $this->assertDatabaseHas('platform_billing_payments', ['id' => $attempt->id, 'status' => 'cancelled']);
+        $this->assertDatabaseHas('saf_payments', ['stk_attempt_id' => $attempt->id, 'verification_status' => 'rejected']);
         $this->actingAs($this->operator, 'sanctum')->postJson("/api/platform/billing/stk-attempts/{$attempt->id}/confirm", $this->evidence())->assertUnprocessable();
         $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'pending']);
         $this->assertDatabaseCount('subscription_events', 0);
@@ -171,10 +173,12 @@ class SubscriptionBillingTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
         $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'checkout-1', 'ResultCode' => 0]]])->assertOk();
         $attempt = DB::table('platform_billing_payments')->first();
+        // Verified by Safaricom's STK query and applied without an operator.
+        $this->assertDatabaseHas('platform_billing_payments', ['id' => $attempt->id, 'status' => 'reconciled']);
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'paid']);
         $this->travel(3)->minutes();
         $this->artisan('billing:reconcile-stk')->assertSuccessful();
-        $this->assertDatabaseHas('platform_billing_payments', ['id' => $attempt->id, 'status' => 'awaiting_verification']);
-        $this->actingAs($this->operator, 'sanctum')->postJson("/api/platform/billing/stk-attempts/{$attempt->id}/confirm", $this->evidence())->assertOk()->assertJsonPath('invoice_status', 'paid');
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
         $this->assertSame('expired', $this->subscription->fresh()->status);
         $this->assertDatabaseCount('subscription_events', 0);
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest') && $r['AccountReference'] === $invoice->account_number && $r['Amount'] === 1000);
@@ -200,16 +204,20 @@ class SubscriptionBillingTest extends TestCase
     {
         $invoice = $this->invoice();
         $this->postJson('/api/billing/mpesa/c2b/confirmation', ['TransID' => 'C2BRECEIPT1', 'BillRefNumber' => $invoice->account_number,
-            'BusinessShortCode' => '153283', 'TransAmount' => '1000.00'])->assertOk();
-        $item = DB::table('platform_payment_reconciliation_items')->first();
-        $payload = [...$this->evidence('C2BRECEIPT1'), 'verified_account' => $invoice->account_number];
-        $url = "/api/platform/billing/reconciliation/{$item->id}/confirm";
-        $this->actingAs($this->owner, 'sanctum')->postJson($url, $payload)->assertForbidden();
+            'BusinessShortCode' => '152451', 'TransAmount' => '1000.00'])->assertOk();
+        // Recorded in the ledger as pending; Safaricom could not be reached, so nothing is credited.
+        $row = DB::table('saf_payments')->where('mpesa_receipt_number', 'C2BRECEIPT1')->first();
+        $this->assertSame('pending', $row->verification_status);
         $this->assertDatabaseCount('subscription_events', 0);
-        $this->actingAs($this->operator, 'sanctum')->postJson($url, [...$payload, 'verified_account' => '999999'])->assertUnprocessable();
-        $this->postJson($url, $payload)->assertOk();
-        $this->postJson($url, $payload)->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/platform/bills')->assertForbidden();
+        $this->postJson("/api/platform/bills/{$row->id}/assign", ['account_number' => $invoice->account_number, 'note' => 'x'])->assertForbidden();
+        // Exception path: an operator attests from the merchant statement; the ledger row is credited once.
+        $payload = [...$this->evidence('C2BRECEIPT1'), 'verified_account' => $invoice->account_number];
+        $this->actingAs($this->operator, 'sanctum')->postJson('/api/platform/billing/statement-payments', $payload)->assertOk();
+        $this->postJson('/api/platform/billing/statement-payments', $payload)->assertOk();
         $this->assertDatabaseCount('subscription_events', 1);
+        $this->assertDatabaseHas('saf_payments', ['id' => $row->id, 'verification_status' => 'reconciled', 'verification_source' => 'statement_attestation']);
+        $this->assertSame(1, DB::table('saf_payments')->count());
     }
 
     public function test_sandbox_payment_cannot_cross_to_production_invoice_or_installation(): void
@@ -304,9 +312,12 @@ class SubscriptionBillingTest extends TestCase
         $this->gateway();
         $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
         $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => ['malformed']]]])->assertOk();
+        $this->assertDatabaseCount('saf_payments', 0);
+        // A forged "failed" callback cannot cancel a payment: Safaricom's own answer (success) decides.
         $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'checkout-1', 'ResultCode' => 1032]]])->assertOk();
         $this->postJson('/api/billing/mpesa/c2b/confirmation', ['TransID' => 'BADVALUE1', 'TransAmount' => -1])->assertOk();
-        $this->assertDatabaseHas('platform_billing_payments', ['checkout_request_id' => 'checkout-1', 'status' => 'pending']);
+        $this->assertDatabaseHas('platform_billing_payments', ['checkout_request_id' => 'checkout-1', 'status' => 'reconciled']);
+        $this->assertDatabaseMissing('saf_payments', ['mpesa_receipt_number' => 'BADVALUE1']);
         $this->assertDatabaseCount('platform_payment_reconciliation_items', 0);
     }
 
@@ -333,16 +344,20 @@ class SubscriptionBillingTest extends TestCase
         $this->getJson('/api/books')->assertOk();
     }
 
-    public function test_query_success_without_statement_does_not_settle(): void
+    public function test_query_success_without_callback_settles_automatically_once(): void
     {
         $invoice = $this->invoice();
         $this->gateway();
         $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 1000])->assertAccepted();
+        $this->artisan('billing:reconcile-stk')->assertSuccessful();
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'pending']); // Too early to ask.
         $this->travel(3)->minutes();
         $this->artisan('billing:reconcile-stk')->assertSuccessful();
-        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'pending']);
-        $this->assertDatabaseCount('subscription_events', 0);
-        $this->assertDatabaseMissing('platform_billing_payments', ['status' => 'confirmed']);
+        $this->artisan('billing:reconcile-payments')->assertSuccessful();
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'paid']);
+        $this->assertDatabaseCount('subscription_events', 1);
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+        $this->assertDatabaseHas('saf_payments', ['invoice_id' => $invoice->id, 'verification_status' => 'reconciled', 'verification_source' => 'daraja_stk_query']);
     }
 
     public function test_platform_admin_can_view_billing_but_cannot_settle_or_add_plans(): void
@@ -405,7 +420,7 @@ class SubscriptionBillingTest extends TestCase
     {
         $invoice = $this->invoice();
         $this->expectException(ValidationException::class);
-        app(PlatformPaymentSettlementService::class)->settle('TENANTPAY1', $invoice->account_number, '153283', 1000, now(), 'paybill',
+        app(PlatformPaymentSettlementService::class)->settle('TENANTPAY1', $invoice->account_number, '152451', 1000, now(), 'paybill',
             ['environment' => 'production', 'verified_by' => $this->owner->id, 'statement_reference' => 'untrusted']);
     }
 
@@ -443,7 +458,7 @@ class SubscriptionBillingTest extends TestCase
         $invoice = $this->invoice();
         $this->actingAs($this->owner, 'sanctum')->getJson('/api/billing')->assertOk()->assertJsonPath('paybill', '174379')->assertJsonPath('test_mode', true);
         $this->getJson("/api/billing/invoices/{$invoice->id}")->assertOk()->assertJsonPath('paybill', '174379')->assertJsonPath('environment', 'sandbox')->assertJsonPath('can_pay', true);
-        config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '153283']);
+        config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '152451']);
         $this->getJson("/api/billing/invoices/{$invoice->id}")->assertOk()->assertJsonPath('can_pay', false);
     }
 

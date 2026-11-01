@@ -21,8 +21,10 @@ class PendingBillingPayments extends Command
             ->whereIn('status', ['pending', 'awaiting_verification', 'unknown'])->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
         $items = DB::table('platform_payment_reconciliation_items')->where('environment', $environment)
             ->whereIn('status', ['awaiting_verification', 'requires_review'])->count();
-        $this->line(json_encode(['environment' => $environment, 'payment_requests' => $counts, 'reconciliation_items' => $items]));
-        if ($counts->sum() || $items) {
+        $ledger = DB::table('saf_payments')->where('environment', $environment)
+            ->whereIn('verification_status', ['pending', 'verified', 'unmatched'])->selectRaw('verification_status, COUNT(*) as total')->groupBy('verification_status')->pluck('total', 'verification_status');
+        $this->line(json_encode(['environment' => $environment, 'payment_requests' => $counts, 'reconciliation_items' => $items, 'saf_payments' => $ledger]));
+        if ($counts->sum() || $items || $ledger->sum()) {
             $this->warn('Unresolved records remain. Review and document them before requesting authorization to switch payment mode.');
             return self::FAILURE;
         }

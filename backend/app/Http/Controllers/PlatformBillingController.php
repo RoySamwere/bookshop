@@ -173,6 +173,45 @@ class PlatformBillingController extends Controller
             'overpayment' => max(0, round((float) $row->paid - (float) $row->amount, 2)), ...$this->paymentContext($row->environment)]);
     }
 
+    /** "My Payments": every M-Pesa payment linked to the signed-in owner's bookshop. */
+    public function myPayments(Request $request)
+    {
+        $tenant = $this->tenant($request);
+        $page = DB::table('saf_payments as s')->leftJoin('platform_billing_invoices as i', 'i.id', '=', 's.invoice_id')
+            ->where('s.bookshop_id', $tenant)
+            ->orderByDesc(DB::raw('COALESCE(s.transaction_date, s.created_at)'))->orderByDesc('s.id')
+            ->select('s.id', 's.transaction_date', 's.created_at', 's.amount', 's.allocated_amount', 's.excess_amount', 's.account_number',
+                's.mpesa_receipt_number', 's.phone_number', 's.payment_channel', 's.environment', 's.verification_status', 's.invoice_id', 'i.status as invoice_status')
+            ->paginate(20);
+        $page->through(fn ($row) => [
+            'id' => (int) $row->id, 'date' => $row->transaction_date ?? $row->created_at, 'amount' => round((float) $row->amount, 2),
+            'allocated_amount' => round((float) $row->allocated_amount, 2), 'excess_amount' => round((float) $row->excess_amount, 2),
+            'invoice_id' => $row->invoice_id ? (int) $row->invoice_id : null, 'invoice_status' => $row->invoice_status,
+            'account_number' => $row->account_number, 'mpesa_receipt_number' => $row->mpesa_receipt_number,
+            // Only the last digits: enough to recognise the phone, not to reuse it.
+            'phone' => $row->phone_number ? substr($row->phone_number, 0, 4).'•••'.substr($row->phone_number, -3) : null,
+            'channel' => $row->payment_channel, 'environment' => $row->environment,
+            'status' => match ($row->verification_status) {
+                'reconciled' => 'confirmed', 'rejected' => 'failed', 'unmatched' => 'under_review', default => 'processing',
+            },
+            'has_receipt' => $row->verification_status === 'reconciled',
+        ]);
+        $totals = DB::table('saf_payments')->where('bookshop_id', $tenant)->where('verification_status', 'reconciled')
+            ->selectRaw('COUNT(*) as payments, COALESCE(SUM(amount),0) as total')->first();
+
+        return response()->json([...$page->toArray(), 'totals' => ['payments' => (int) $totals->payments, 'total' => round((float) $totals->total, 2)]]);
+    }
+
+    public function paymentReceipt(Request $request, int $payment, \App\Services\Billing\SubscriptionReceiptPdf $pdf)
+    {
+        $row = DB::table('saf_payments')->where('id', $payment)->where('bookshop_id', $this->tenant($request))
+            ->where('verification_status', 'reconciled')->first();
+        abort_unless($row, 404);
+        $name = 'nifunze-receipt-'.($row->mpesa_receipt_number ?? $row->id).'.pdf';
+
+        return response($pdf->render($row), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => "attachment; filename=\"$name\"", 'Cache-Control' => 'private, no-store']);
+    }
+
     public function stk(Request $request, int $invoice, DarajaStkService $daraja)
     {
         $tenant = $this->tenant($request);

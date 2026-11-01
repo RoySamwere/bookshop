@@ -24,6 +24,16 @@ return [
         'passkey' => env('MPESA_PASSKEY'),
         'transaction_type' => env('MPESA_TRANSACTION_TYPE', 'CustomerPayBillOnline'),
         'callback_url' => env('MPESA_CALLBACK_URL'),
+        // Automatic verification of Paybill (C2B) payments: transaction_status | pull_api | none.
+        'c2b_verification' => env('MPESA_C2B_VERIFICATION', 'transaction_status'),
+        'initiator_name' => env('MPESA_INITIATOR_NAME'),
+        'security_credential' => env('MPESA_SECURITY_CREDENTIAL'),
+        'result_url' => env('MPESA_RESULT_URL'),
+        'timeout_url' => env('MPESA_TIMEOUT_URL'),
+        // Optional comma-separated Safaricom callback IPs; when set, other sources are ignored.
+        'callback_ips' => array_values(array_filter(array_map('trim', explode(',', (string) env('MPESA_CALLBACK_IPS', ''))))),
+        'confirmation_url' => env('MPESA_C2B_CONFIRMATION_URL'),
+        'validation_url' => env('MPESA_C2B_VALIDATION_URL'),
     ],
 
     'postmark' => [

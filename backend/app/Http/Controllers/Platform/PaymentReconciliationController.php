@@ -81,7 +81,7 @@ class PaymentReconciliationController extends Controller
             }
             $result = $settlement->settle($data['verified_receipt'], $invoice->account_number, $data['verified_shortcode'],
                 (float) $data['verified_amount'], new \DateTimeImmutable($data['verified_at']), 'stk', [
-                    'environment' => $payment->environment, 'checkout_request_id' => $payment->checkout_request_id,
+                    'environment' => $payment->environment, 'checkout_request_id' => $payment->checkout_request_id, 'stk_attempt_id' => $payment->id,
                     'statement_reference' => $data['statement_reference'], 'verified_by' => $request->user()->id,
                 ]);
             DB::table('platform_billing_payments')->where('id', $payment->id)->update([

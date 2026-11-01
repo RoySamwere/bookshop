@@ -2,9 +2,6 @@
 
 // Run only against a NEW EMPTY database named nifunze_billing_test_<unique suffix>.
 // No database or table is dropped, reset or cleaned by this script.
-require __DIR__.'/../../vendor/autoload.php';
-$app = require __DIR__.'/../../bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
 
 use App\Models\Bookshop;
 use App\Models\BookshopSubscription;
@@ -16,6 +13,10 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
+require __DIR__.'/../../vendor/autoload.php';
+$app = require __DIR__.'/../../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
 function check(bool $condition, string $message): void
 {
     if (! $condition) {
@@ -25,15 +26,19 @@ function check(bool $condition, string $message): void
 check(app()->environment('testing'), 'APP_ENV must be testing.');
 check(DB::getDriverName() === 'mysql', 'MySQL/MariaDB is required.');
 check(str_starts_with(DB::connection()->getDatabaseName(), 'nifunze_billing_test_'), 'Dedicated test database prefix required.');
-config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '153283']);
-$options = getopt('', ['worker:', 'shop:', 'plan:', 'invoice:', 'verifier:', 'receipt:']);
+config(['services.mpesa.environment' => 'production', 'services.mpesa.shortcode' => '152451']);
+$options = getopt('', ['worker:', 'shop:', 'plan:', 'invoice:', 'verifier:', 'receipt:', 'payment:']);
 if (isset($options['worker'])) {
+    if ($options['worker'] === 'reconcile') {
+        echo json_encode(['status' => app(\App\Services\Billing\SafPaymentReconciler::class)->process((int) $options['payment'])]);
+        exit(0);
+    }
     if ($options['worker'] === 'create') {
         $invoice = app(PlatformBillingInvoiceService::class)->create((int) $options['shop'], SubscriptionPlan::findOrFail($options['plan']));
         echo json_encode(['invoice' => $invoice->id, 'account' => $invoice->account_number]);
     } else {
         $invoice = DB::table('platform_billing_invoices')->where('id', $options['invoice'])->first();
-        app(PlatformPaymentSettlementService::class)->settle($options['receipt'], $invoice->account_number, '153283', 1000, now(), 'paybill',
+        app(PlatformPaymentSettlementService::class)->settle($options['receipt'], $invoice->account_number, '152451', 1000, now(), 'paybill',
             ['environment' => 'production', 'verified_by' => (int) $options['verifier'], 'statement_reference' => 'AUTOMATED-ISOLATED-CONCURRENCY-TEST']);
         echo json_encode(['settled' => true]);
     }
@@ -87,4 +92,17 @@ check($expiry->equalTo($start->copy()->addDays(10)->addMonthNoOverflow()), 'Rema
 workers(array_map(fn ($n) => [...$base, 'receipt' => 'EXCESSPAY00'.$n], [1, 2, 3]));
 check((float) DB::table('platform_payment_reconciliation_items')->where('source', 'overpayment')->sum('amount') === 3000.0, 'Concurrent excess funds lost.');
 check($subscription->fresh()->current_period_ends_at->equalTo($expiry), 'Late payments extended access twice.');
-echo "PASS: real MySQL/MariaDB row locks, six concurrent invoice requests, six duplicate-receipt settlements, three concurrent overpayments; one renewal, no reset or deletion.\n";
+// Automatic path: six workers reconcile the same provider-verified saf_payments row at once.
+$shop2 = Bookshop::factory()->create();
+$subscription2 = new BookshopSubscription(['subscription_plan_id' => $plan->id, 'status' => 'expired', 'current_period_starts_at' => $start->copy()->subMonth(), 'current_period_ends_at' => $start->copy()->subDay()]);
+$subscription2->bookshop_id = $shop2->id;
+$subscription2->save();
+$invoice2 = app(PlatformBillingInvoiceService::class)->create($shop2->id, $plan);
+$saf = DB::table('saf_payments')->insertGetId(['account_number' => $invoice2->account_number, 'mpesa_receipt_number' => 'AUTOCONC01', 'amount' => 1000,
+    'shortcode' => '152451', 'payment_channel' => 'paybill', 'environment' => 'production', 'verification_status' => 'verified',
+    'verification_source' => 'daraja_transaction_status', 'verified_at' => now(), 'provider_transaction_id' => 'AUTOCONC01', 'created_at' => now(), 'updated_at' => now()]);
+$results = workers(array_fill(0, 6, ['worker' => 'reconcile', 'payment' => $saf]));
+check(array_unique(array_column($results, 'status')) === ['reconciled'], 'Concurrent automatic reconciliation disagreed.');
+check(DB::table('platform_billing_payments')->where('mpesa_receipt', 'AUTOCONC01')->count() === 1, 'Automatic reconciliation credited twice.');
+check(DB::table('subscription_events')->where('bookshop_id', $shop2->id)->count() === 1, 'Automatic reconciliation activated twice.');
+echo "PASS: real MySQL/MariaDB row locks, six concurrent invoice requests, six duplicate-receipt settlements, three concurrent overpayments; six concurrent automatic reconciliations of one payment; one renewal, no reset or deletion.\n";

@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowLeft, Building2, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
+import { Activity, ArrowLeft, Building2, ReceiptText, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from '@/lib/navigation'
 import BrandLoader from '../../components/brand-loader'
 import { BrandMark } from '../../components/brand-mark'
@@ -14,6 +14,7 @@ import { ApiError, errorMessage } from '../../lib/api'
 import { hasPermission, homeFor, logout, type BookshopUser, type Permission } from '../../lib/auth'
 import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
 import PlatformBillingView from './billing-view'
+import BillsView from './bills-view'
 import BookshopRegisterPage from '../register/bookshop/page'
 
 /** The Platform Owner console at /platform. Separate from every bookshop workspace; it shows tenant metadata only. */
@@ -27,6 +28,7 @@ export default function PlatformPage() {
       <Route path="bookshops/:id" element={<BookshopDetailView />} />
       <Route path="users" element={<Gate permission="platform.users.view"><UsersView /></Gate>} />
       <Route path="billing" element={<Gate permission="platform.settings.view"><PlatformBillingView /></Gate>} />
+      <Route path="bills" element={<Gate permission="platform.settings.view"><BillsView /></Gate>} />
       <Route path="plans" element={<Gate permission="platform.plans.view"><PlansView /></Gate>} />
       <Route path="settings" element={<Gate permission="platform.settings.view"><SettingsView /></Gate>} />
       <Route path="audit" element={<Gate permission="platform.audit.view"><AuditView /></Gate>} />
@@ -41,6 +43,7 @@ const nav: { to: string; label: string; icon: typeof Gauge; permission: Permissi
   { to: '/platform/management', label: 'Bookshop Management', icon: Building2, permission: 'platform.access' },
   { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
   { to: '/platform/billing', label: 'Subscription billing', icon: Building2, permission: 'platform.settings.view' },
+  { to: '/platform/bills', label: 'Bills', icon: ReceiptText, permission: 'platform.settings.view' },
   { to: '/platform/plans', label: 'Subscription plans', icon: Building2, permission: 'platform.plans.view' },
   { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
   { to: '/platform/audit', label: 'Audit history', icon: History, permission: 'platform.audit.view' },
@@ -116,7 +119,7 @@ function OverviewView() {
         <StatCard label="Suspended" value={overview.data.bookshops.suspended} hint="Workspace access paused" icon={<ShieldCheck size={18} />} tone="pink" />
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card title="Subscriptions" description="Trial and billing state. Verify subscription payments in Billing.">
+        <Card title="Subscriptions" description="Trial and billing state. Payments are verified automatically; exceptions are in Bills.">
           <dl className="grid grid-cols-2 gap-3 text-sm">{Object.entries(overview.data.subscriptions).map(([status, total]) => <div key={status} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2"><dt className="capitalize text-slate-500">{status.replace('_', ' ')}</dt><dd className="m-0 font-semibold text-slate-900">{total}</dd></div>)}</dl>
         </Card>
         <Card title="Accounts" description="People using the platform.">

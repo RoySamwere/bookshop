@@ -62,16 +62,16 @@ describe('subscription billing', () => {
     expect(billingApi.overview).not.toHaveBeenCalled()
   })
 
-  it('requires independent statement attestation before submitting settlement', async () => {
+  it('no longer asks operators to approve routine payments against the statement', async () => {
     vi.mocked(billingApi.attempts).mockResolvedValue({ data: [{ id: 3, account_number: '100000', checkout_request_id: 'checkout-1', bookshop_id: 1, amount: '1000', status: 'pending', environment: 'production', channel: 'stk', mpesa_receipt: null, created_at: '2026-11-01' }], current_page: 1, last_page: 1, total: 1 })
     const user = userEvent.setup(); mount(<PlatformBillingView />)
+    expect(await screen.findByText(/verified with Safaricom and applied to invoices automatically/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'STK requests' }))
-    await user.click(await screen.findByRole('button', { name: 'Verify against statement' }))
-    expect(screen.getByRole('button', { name: 'Verify and settle' })).toBeDisabled()
-    expect(screen.getByLabelText('Verified receipt')).toHaveValue('')
+    expect(await screen.findByText(/Request #3/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Verify against statement' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Statement verification/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record independently verified statement payment/ })).not.toBeInTheDocument()
     expect(billingApi.confirm).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('button', { name: 'Verify and settle' })).toBeEnabled()
   })
   it('allows platform operators to update future plan pricing', async () => {
     vi.mocked(billingApi.updatePlan).mockResolvedValue({})
@@ -127,9 +127,9 @@ describe('subscription billing', () => {
   })
 
   it('does not offer the sandbox plan shortcut in production mode', async () => {
-    vi.mocked(billingApi.context).mockResolvedValue({ environment: 'production', paybill: '153283', can_pay: true })
+    vi.mocked(billingApi.context).mockResolvedValue({ environment: 'production', paybill: '152451', can_pay: true })
     mount(<PlatformBillingView />)
-    expect(await screen.findByText(/Production Paybill 153283/)).toBeInTheDocument()
+    expect(await screen.findByText(/Production Paybill 152451/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
   })
 

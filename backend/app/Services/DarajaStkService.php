@@ -63,6 +63,84 @@ class DarajaStkService
         return $this->request('/mpesa/stkpushquery/v1/query', ['CheckoutRequestID' => $checkoutRequestId]);
     }
 
+    /**
+     * Asks Safaricom for the authoritative status of a received transaction (Transaction Status API).
+     * The answer is posted to the result URL and is only accepted when it carries both correlation IDs
+     * from this authenticated request.
+     *
+     * @return array{OriginatorConversationID?: string, ConversationID?: string, ResponseCode?: string}
+     */
+    public function transactionStatus(string $transactionId, string $originatorConversationId): array
+    {
+        $settings = $this->settings();
+        foreach (['initiator_name', 'security_credential', 'result_url', 'timeout_url'] as $key) {
+            if (empty($settings[$key])) {
+                throw new RuntimeException('Daraja transaction status configuration is incomplete.');
+            }
+        }
+        foreach (['result_url', 'timeout_url'] as $key) {
+            if (parse_url((string) $settings[$key], PHP_URL_SCHEME) !== 'https') {
+                throw new RuntimeException('Daraja result URLs must be public HTTPS URLs.');
+            }
+        }
+
+        return $this->post('/mpesa/transactionstatus/v1/query', [
+            'Initiator' => $settings['initiator_name'], 'SecurityCredential' => $settings['security_credential'],
+            'CommandID' => 'TransactionStatusQuery', 'TransactionID' => $transactionId,
+            'OriginatorConversationID' => $originatorConversationId,
+            'PartyA' => (string) $settings['shortcode'], 'IdentifierType' => '4',
+            'ResultURL' => $settings['result_url'], 'QueueTimeOutURL' => $settings['timeout_url'],
+            'Remarks' => 'Subscription payment check', 'Occasion' => 'Subscription',
+        ]);
+    }
+
+    /**
+     * Pull Transactions API: a synchronous, authenticated list of C2B transactions received by the shortcode.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function pullTransactions(\DateTimeInterface $from, \DateTimeInterface $to, int $offset = 0): array
+    {
+        $settings = $this->settings();
+        $response = $this->post('/pulltransactions/v1/query', [
+            'ShortCode' => (string) $settings['shortcode'],
+            'StartDate' => \Illuminate\Support\Carbon::instance(\DateTime::createFromInterface($from))->setTimezone('Africa/Nairobi')->format('Y-m-d H:i:s'),
+            'EndDate' => \Illuminate\Support\Carbon::instance(\DateTime::createFromInterface($to))->setTimezone('Africa/Nairobi')->format('Y-m-d H:i:s'),
+            'OffSetValue' => (string) $offset,
+        ]);
+        $rows = $response['Response'] ?? [];
+        // The API wraps the list in another array on some versions.
+        if (isset($rows[0]) && is_array($rows[0]) && isset($rows[0][0]) && is_array($rows[0][0])) {
+            $rows = $rows[0];
+        }
+
+        return array_values(array_filter(is_array($rows) ? $rows : [], 'is_array'));
+    }
+
+    /** Registers the Paybill confirmation/validation URLs so Safaricom posts C2B payments to this platform. */
+    public function registerC2bUrls(string $confirmationUrl, string $validationUrl): array
+    {
+        $settings = $this->settings();
+
+        return $this->post('/mpesa/c2b/v2/registerurl', [
+            'ShortCode' => (string) $settings['shortcode'], 'ResponseType' => 'Completed',
+            'ConfirmationURL' => $confirmationUrl, 'ValidationURL' => $validationUrl,
+        ]);
+    }
+
+    /** An authenticated JSON POST without the STK password block. */
+    private function post(string $path, array $payload): array
+    {
+        $settings = $this->settings();
+        $base = $settings['environment'] === 'production' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
+        $response = Http::acceptJson()->timeout(25)->withToken($this->authenticate())->post($base.$path, $payload)->throw()->json();
+        if (! is_array($response)) {
+            throw new RuntimeException('Invalid Daraja response.');
+        }
+
+        return $response;
+    }
+
     public function push(string $phone, int $amount, string $account): array
     {
         $settings = $this->settings();
