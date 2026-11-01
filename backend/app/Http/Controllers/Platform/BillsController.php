@@ -52,7 +52,7 @@ class BillsController extends Controller
         $candidates = $row->verification_status === 'unmatched'
             ? DB::table('platform_billing_invoices as i')->join('bookshops as b', 'b.id', '=', 'i.bookshop_id')
                 ->where('i.environment', $row->environment)->whereIn('i.status', ['pending', 'partially_paid'])
-                ->orderByRaw('CASE WHEN i.amount = ? THEN 0 ELSE 1 END', [$row->amount])->orderByDesc('i.id')->limit(20)
+                ->orderByRaw('CASE WHEN i.account_number = ? THEN 0 WHEN i.amount = ? THEN 1 ELSE 2 END', [$this->claimedAccount($row) ?? '', $row->amount])->orderByDesc('i.id')->limit(20)
                 ->get(['i.id', 'i.account_number', 'i.amount', 'i.status', 'b.name as bookshop'])
             : collect();
 
@@ -106,6 +106,37 @@ class BillsController extends Controller
         }
 
         return $this->show($payment);
+    }
+
+    /**
+     * Confirm a payment by its M-Pesa confirmation code: Safaricom is asked about the code and, once it confirms
+     * the transaction, the amount it reports is applied to the invoice account given here.
+     */
+    public function confirmCode(Request $request, \App\Services\Billing\SafPaymentLedger $ledger, SafPaymentReconciler $reconciler)
+    {
+        $data = $request->validate(['mpesa_code' => 'required|string|max:20', 'account_number' => ['required', 'regex:/^[0-9]{6}$/'], 'note' => 'nullable|string|max:500']);
+        $code = \App\Services\Billing\SafPaymentLedger::normalizeCode($data['mpesa_code']);
+        if (! $code) throw ValidationException::withMessages(['mpesa_code' => 'Enter the 10-character M-Pesa confirmation code, e.g. TJ4K8L2M9P.']);
+        $environment = (string) config('services.mpesa.environment');
+        if (! DB::table('platform_billing_invoices')->where('account_number', $data['account_number'])->where('environment', $environment)->exists()) {
+            throw ValidationException::withMessages(['account_number' => 'No '.$environment.' invoice has this account number.']);
+        }
+        $existing = DB::table('saf_payments')->where('environment', $environment)->where('mpesa_receipt_number', $code)->first();
+        if ($existing) {
+            if ($existing->verification_status === 'unmatched' && $existing->verified_at) {
+                $reconciler->process((int) $existing->id, $data['account_number'], $request->user(), $data['note'] ?? 'Confirmed by M-Pesa code');
+            } elseif ($existing->verification_status === 'pending' && ! $existing->account_number) {
+                DB::table('saf_payments')->where('id', $existing->id)->update(['account_number' => $data['account_number'], 'next_verification_at' => now()]);
+                VerifySafPayment::dispatch((int) $existing->id);
+            }
+
+            return $this->show((int) $existing->id);
+        }
+        $id = DB::transaction(fn () => $ledger->recordClaim($code, $environment, $data['account_number'], 'operator', $request->user()->id, null, $data['note'] ?? null));
+        AuditLog::record('billing.payment_code_submitted', 'Asked Safaricom to confirm an M-Pesa code for an invoice', null, ['saf_payment_id' => $id, 'account' => $data['account_number']], $request->user());
+        VerifySafPayment::dispatch($id);
+
+        return $this->show($id);
     }
 
     /** Close an exception without crediting anything (duplicate, fraud, refunded outside the system). */
@@ -196,6 +227,18 @@ class BillsController extends Controller
             ->select('s.*', 'b.name as bookshop_name', 'i.account_number as invoice_account', 'i.status as invoice_status', 'u.name as resolved_by_name');
     }
 
+    /** The invoice account a customer or operator said this payment is for, if any. */
+    private function claimedAccount(object $row): ?string
+    {
+        $payload = json_decode($row->provider_payload ?? '{}', true) ?: [];
+        $claims = [...(isset($payload['claim']) ? [$payload['claim']] : []), ...($payload['claims'] ?? [])];
+
+        if (! $claims) return null;
+        $account = (string) (end($claims)['account'] ?? '');
+
+        return $account !== '' ? $account : null;
+    }
+
     private function present(object $row): array
     {
         return [
@@ -209,7 +252,7 @@ class BillsController extends Controller
             'status' => $row->verification_status, 'verification_source' => $row->verification_source,
             'verification_reference' => $row->verification_reference, 'verified_at' => $row->verified_at,
             'verification_attempts' => (int) $row->verification_attempts, 'next_verification_at' => $row->next_verification_at,
-            'exception_reason' => $row->exception_reason, 'resolution_note' => $row->resolution_note, 'resolved_by' => $row->resolved_by_name,
+            'exception_reason' => $row->exception_reason, 'claimed_account' => $this->claimedAccount($row), 'resolution_note' => $row->resolution_note, 'resolved_by' => $row->resolved_by_name,
             'reconciled_at' => $row->reconciled_at, 'confirmation_sent_at' => $row->confirmation_sent_at, 'created_at' => $row->created_at,
         ];
     }

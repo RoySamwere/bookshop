@@ -10,13 +10,13 @@ import { billsApi, type Bill } from '../../lib/billing-api'
 const auth = vi.hoisted(() => ({ user: { role: 'platform_owner', account_type: 'platform', permissions: ['platform.settings.view', 'platform.settings.manage'] } as Record<string, unknown> }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
 vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(),
-  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
+  billsApi: { list: vi.fn(), export: vi.fn(), show: vi.fn(), retry: vi.fn(), assign: vi.fn(), reject: vi.fn(), myPayments: vi.fn(), confirmCode: vi.fn(), confirmMyPayment: vi.fn() }, downloadPaymentReceipt: vi.fn() }))
 
 const bill = (patch: Partial<Bill>): Bill => ({
   id: 1, transaction_date: '2026-11-01T09:00:00Z', bookshop_id: 4, bookshop_name: 'Kisumu Readers', invoice_id: 12, invoice_status: 'paid', account_number: '100045',
   mpesa_receipt_number: 'QK1ABC2DEF', phone_number: '254712345678', amount: 1000, allocated_amount: 1000, excess_amount: 0, shortcode: '152451', payment_channel: 'paybill',
   environment: 'production', status: 'reconciled', verification_source: 'daraja_transaction_status', verification_reference: 'AG_1', verified_at: '2026-11-01T09:01:00Z',
-  verification_attempts: 1, next_verification_at: null, exception_reason: null, resolution_note: null, resolved_by: null, reconciled_at: '2026-11-01T09:01:00Z',
+  verification_attempts: 1, next_verification_at: null, exception_reason: null, claimed_account: null, resolution_note: null, resolved_by: null, reconciled_at: '2026-11-01T09:01:00Z',
   confirmation_sent_at: '2026-11-01T09:01:00Z', created_at: '2026-11-01T09:00:00Z', ...patch,
 })
 const summary = { environment: 'production', paybill: '152451', verified_collections: 1000, verified_count: 1, today_collections: 1000, today_count: 1, pending_count: 0, pending_amount: 0,
@@ -59,13 +59,30 @@ describe('Bills', () => {
     expect(billsApi.assign).toHaveBeenCalledWith(2, '100045', 'Customer typed phone digits')
   })
 
+  it('shows the real M-Pesa code, never a checkout placeholder', async () => {
+    vi.mocked(billsApi.list).mockResolvedValue({ data: [bill({ id: 3, payment_channel: 'stk', mpesa_receipt_number: null })], current_page: 1, last_page: 1, total: 1, from: 1, to: 1, summary })
+    mount()
+    expect(await screen.findByText('Awaiting code')).toBeInTheDocument()
+    expect(screen.queryByText(/ws_CO|STK \(pending code\)/)).not.toBeInTheDocument()
+  })
+
+  it('confirms a payment by the code from the customer SMS', async () => {
+    vi.mocked(billsApi.confirmCode).mockResolvedValue({ data: { ...unmatched, id: 9, status: 'pending', provider_payload: {}, verification_request_id: null, invoice: null, candidate_invoices: [], history: [] } })
+    const user = userEvent.setup(); mount()
+    await screen.findByText('QK1ABC2DEF')
+    await user.type(screen.getByLabelText('M-Pesa code'), 'tj4k 8l2m9p')
+    await user.type(screen.getByLabelText('Invoice account'), '100045')
+    await user.click(screen.getByRole('button', { name: 'Check with Safaricom' }))
+    expect(billsApi.confirmCode).toHaveBeenCalledWith('TJ4K8L2M9P', '100045', '')
+  })
+
   it('hides exception actions from read-only platform staff', async () => {
     auth.user = { role: 'platform_admin', account_type: 'platform', permissions: ['platform.settings.view'] }
     const user = userEvent.setup(); mount()
     await user.click(await screen.findByRole('button', { name: 'QK1WRONG01' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Assign to invoice|Reject without credit|Check with Safaricom again/ })).not.toBeInTheDocument()
-    expect(screen.queryByText('Payment missing from Bills?')).not.toBeInTheDocument()
+    expect(screen.queryByText('Confirm a payment by M-Pesa code')).not.toBeInTheDocument()
   })
 })
 

@@ -42,7 +42,13 @@ class SafPaymentVerifier
             $row = DB::table('saf_payments')->where('id', $id)->first();
         }
 
-        return $row->verification_status === 'verified' ? $this->reconciler->process($id) : $row->verification_status;
+        if ($row->verification_status === 'verified') {
+            $this->afterVerified($id);
+
+            return (string) DB::table('saf_payments')->where('id', $id)->value('verification_status');
+        }
+
+        return $row->verification_status;
     }
 
     private function verify(object $row): void
@@ -94,6 +100,8 @@ class SafPaymentVerifier
             $this->markVerified($row, 'daraja_stk_query', $attempt->checkout_request_id, ['stk_query' => SafPaymentLedger::minimize($result)]);
             DB::table('platform_billing_payments')->where('id', $attempt->id)->whereIn('status', ['pending', 'awaiting_verification'])
                 ->update(['status' => 'awaiting_verification', 'updated_at' => now()]);
+            // STK Query confirms the money but not the SMS confirmation code; the callback or Safaricom's list supplies it.
+            if (! $row->mpesa_receipt_number) $this->lookupStkReceipt((int) $row->id);
 
             return;
         }
@@ -185,10 +193,13 @@ class SafPaymentVerifier
             return (int) $row->id;
         }
         $shortcode = PlatformPaymentSettlementService::expectedShortcode($row->environment);
+        // A code typed in by a customer or operator has no amount of its own: Safaricom's amount is the amount.
+        $claimOnly = (float) $row->amount <= 0 && $this->claim($row) !== null;
         $mismatch = match (true) {
             strtoupper((string) ($parameters['ReceiptNo'] ?? '')) !== (string) $row->mpesa_receipt_number => 'receipt',
             strcasecmp((string) ($parameters['TransactionStatus'] ?? ''), 'Completed') !== 0 => 'status',
-            abs((float) ($parameters['Amount'] ?? -1) - (float) $row->amount) > 0.005 => 'amount',
+            ! $claimOnly && abs((float) ($parameters['Amount'] ?? -1) - (float) $row->amount) > 0.005 => 'amount',
+            $claimOnly && (float) ($parameters['Amount'] ?? 0) <= 0 => 'amount',
             ! str_starts_with(trim((string) ($parameters['CreditPartyName'] ?? '')), $shortcode) => 'paybill',
             default => null,
         };
@@ -199,8 +210,11 @@ class SafPaymentVerifier
             return (int) $row->id;
         }
         $finalised = app(SafPaymentLedger::class)->mpesaTime($parameters['FinalisedTime'] ?? null);
+        if ($claimOnly) {
+            DB::table('saf_payments')->where('id', $row->id)->update(['amount' => round((float) $parameters['Amount'], 2)]);
+        }
         $this->markVerified($row, 'daraja_transaction_status', $conversation, $evidence, $finalised);
-        $this->reconciler->process((int) $row->id);
+        $this->afterVerified((int) $row->id);
 
         return (int) $row->id;
     }
@@ -221,12 +235,65 @@ class SafPaymentVerifier
 
             return;
         }
-        if (abs((float) ($match['amount'] ?? -1) - (float) $row->amount) > 0.005 || trim((string) ($match['billreference'] ?? '')) !== (string) $row->account_number) {
-            $this->reconciler->exception($row->id, "Safaricom's record does not match the notification (amount or account). Investigate before crediting.");
+        $claimOnly = (float) $row->amount <= 0 && $this->claim($row) !== null;
+        if ((! $claimOnly && abs((float) ($match['amount'] ?? -1) - (float) $row->amount) > 0.005) || trim((string) ($match['billreference'] ?? '')) !== (string) $row->account_number) {
+            $this->reconciler->exception($row->id, "Safaricom's record does not match (amount or account number). Investigate before crediting.");
 
             return;
         }
-        $this->markVerified($row, 'daraja_pull_api', (string) $match['transactionId'], ['pull_api' => SafPaymentLedger::minimize($match)]);
+        if ($claimOnly) {
+            DB::table('saf_payments')->where('id', $row->id)->update(['amount' => round((float) $match['amount'], 2)]);
+        }
+        // Safaricom's own record carries the account number, so a claimed code is fully confirmed here.
+        $this->markVerified($row, 'daraja_pull_api', (string) $match['transactionId'], ['pull_api' => SafPaymentLedger::minimize($match), 'account_confirmed_by' => 'safaricom']);
+    }
+
+    /**
+     * Allocates a newly verified payment, except a code a customer typed in when Safaricom has not told us which
+     * account it was paid to: that goes to the exception queue so the platform team confirms the invoice.
+     */
+    private function afterVerified(int $id): void
+    {
+        $row = DB::table('saf_payments')->where('id', $id)->first();
+        $claim = $this->claim($row);
+        $payload = json_decode($row->provider_payload ?? '{}', true) ?: [];
+        if ($claim && ($claim['source'] ?? null) === 'customer' && ! isset($payload['c2b_confirmation']) && ($payload['account_confirmed_by'] ?? null) !== 'safaricom') {
+            $shop = isset($claim['invoice_id']) ? DB::table('platform_billing_invoices as i')->join('bookshops as b', 'b.id', '=', 'i.bookshop_id')->where('i.id', $claim['invoice_id'])->value('b.name') : null;
+            $this->reconciler->exception($id, mb_substr('Confirmed by Safaricom. '.($shop ?? 'A bookshop').' says this payment is for invoice account '.($claim['account'] ?? '?').'; check and assign it.', 0, 255));
+
+            return;
+        }
+        $this->reconciler->process($id);
+    }
+
+    private function claim(?object $row): ?array
+    {
+        $payload = json_decode($row?->provider_payload ?? '{}', true) ?: [];
+
+        return is_array($payload['claim'] ?? null) ? $payload['claim'] : null;
+    }
+
+    /**
+     * Finds the M-Pesa confirmation code of a verified STK payment in Safaricom's transaction list (Pull API):
+     * same account reference and amount, within 30 minutes. Only an unambiguous match is used.
+     */
+    public function lookupStkReceipt(int $id): ?string
+    {
+        $row = DB::table('saf_payments')->where('id', $id)->first();
+        if (! $row || $row->mpesa_receipt_number || $row->payment_channel !== 'stk' || config('services.mpesa.c2b_verification') !== 'pull_api') return null;
+        $date = Carbon::parse($row->transaction_date ?? $row->created_at);
+        try {
+            $transactions = $this->daraja->pullTransactions($date->copy()->subMinutes(30), $date->copy()->addMinutes(30));
+        } catch (Throwable) {
+            return null;
+        }
+        $matches = collect($transactions)->filter(fn ($t) => trim((string) ($t['billreference'] ?? '')) === (string) $row->account_number
+            && abs((float) ($t['amount'] ?? -1) - (float) $row->amount) < 0.005 && SafPaymentLedger::normalizeCode($t['transactionId'] ?? null)
+            && ! DB::table('saf_payments')->where('environment', $row->environment)->where('mpesa_receipt_number', strtoupper((string) $t['transactionId']))->exists())->values();
+        if ($matches->count() !== 1) return null;
+        $code = strtoupper((string) $matches[0]['transactionId']);
+
+        return app(SafPaymentLedger::class)->attachReceipt($id, $code) ? $code : null;
     }
 
     private function markVerified(object $row, string $source, string $reference, array $evidence, ?Carbon $date = null): void

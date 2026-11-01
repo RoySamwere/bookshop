@@ -6,12 +6,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillingPage from './page'
 import PlatformBillingView from '../platform/billing-view'
 import { platformApi } from '../../lib/tenancy-api'
-import { billingApi, paymentStatus } from '../../lib/billing-api'
+import { billingApi, billsApi, paymentStatus } from '../../lib/billing-api'
 
 vi.mock('../../lib/tenancy-api', () => ({ platformApi: { plans: vi.fn() } }))
 const auth = vi.hoisted(() => ({ user: { role: 'bookshop_owner', account_type: 'bookshop', permissions: ['platform.settings.manage'] } }))
 vi.mock('../../features/auth/auth-provider', () => ({ useAuth: () => auth }))
-vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(), billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn(), context: vi.fn(), subscriptions: vi.fn(), payments: vi.fn(), updatePlan: vi.fn() } }))
+vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/billing-api')>(), billsApi: { confirmMyPayment: vi.fn() }, billingApi: { overview: vi.fn(), invoice: vi.fn(), create: vi.fn(), stk: vi.fn(), invoices: vi.fn(), attempts: vi.fn(), reconciliation: vi.fn(), confirm: vi.fn(), plan: vi.fn(), resolveUnknown: vi.fn(), context: vi.fn(), subscriptions: vi.fn(), payments: vi.fn(), updatePlan: vi.fn() } }))
 const invoice = { id: 1, bookshop_id: 1, account_number: '100000', amount: '1000.00', paid: '400.00', currency: 'KES', environment: 'sandbox' as const,
   status: 'partially_paid', billing_months: 1, period_starts_at: '2026-11-01', period_ends_at: '2026-12-01', created_at: '2026-11-01' }
 const page = { data: [invoice], current_page: 1, last_page: 1, total: 1 }
@@ -140,4 +140,16 @@ describe('subscription billing', () => {
     expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
   })
 
+  it('lets the owner confirm a payment with the code from their M-Pesa SMS', async () => {
+    vi.mocked(billsApi.confirmMyPayment).mockResolvedValue({ status: 'processing', message: 'Checking payment TJ4K8L2M9P with Safaricom.' })
+    const user = userEvent.setup(); mount()
+    await user.click(await screen.findByRole('button', { name: '#1 / 100000' }))
+    const input = await screen.findByLabelText('M-Pesa confirmation code')
+    await user.type(input, 'abc')
+    expect(screen.getByRole('button', { name: 'Confirm payment' })).toBeDisabled()
+    await user.clear(input); await user.type(input, 'tj4k8l2m9p')
+    await user.click(screen.getByRole('button', { name: 'Confirm payment' }))
+    expect(billsApi.confirmMyPayment).toHaveBeenCalledWith(1, 'TJ4K8L2M9P')
+    expect(await screen.findByText(/Checking payment TJ4K8L2M9P/)).toBeInTheDocument()
+  })
 })

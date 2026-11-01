@@ -202,6 +202,61 @@ class PlatformBillingController extends Controller
         return response()->json([...$page->toArray(), 'totals' => ['payments' => (int) $totals->payments, 'total' => round((float) $totals->total, 2)]]);
     }
 
+    /**
+     * "Already paid?": the owner enters the confirmation code from their M-Pesa SMS. The code is checked with
+     * Safaricom; nothing is credited on the customer's word, and the amount always comes from Safaricom.
+     */
+    public function confirmCode(Request $request, int $invoice, \App\Services\Billing\SafPaymentLedger $ledger)
+    {
+        $tenant = $this->tenant($request);
+        $data = $request->validate(['mpesa_code' => ['required', 'string', 'max:20']]);
+        $code = \App\Services\Billing\SafPaymentLedger::normalizeCode($data['mpesa_code']);
+        if (! $code) {
+            throw ValidationException::withMessages(['mpesa_code' => 'Enter the 10-character M-Pesa confirmation code from your SMS, e.g. TJ4K8L2M9P.']);
+        }
+        $row = DB::table('platform_billing_invoices')->where('id', $invoice)->where('bookshop_id', $tenant)->first();
+        abort_unless($row, 404);
+        $environment = (string) config('services.mpesa.environment');
+        if (! $this->paymentContext($row->environment)['can_pay']) {
+            throw ValidationException::withMessages(['mpesa_code' => 'This invoice cannot be paid in the current payment environment.']);
+        }
+        $existing = DB::table('saf_payments')->where('environment', $environment)->where('mpesa_receipt_number', $code)->first();
+        if ($existing) {
+            $mine = (int) $existing->invoice_id === (int) $row->id || ($existing->invoice_id === null && $existing->account_number === $row->account_number);
+            if ($existing->verification_status === 'reconciled') {
+                if (! $mine) throw ValidationException::withMessages(['mpesa_code' => 'This M-Pesa code has already been applied to another invoice. Contact support if this is your payment.']);
+
+                return response()->json(['status' => 'confirmed', 'message' => "Payment {$code} is already confirmed on this invoice."]);
+            }
+            if ($existing->verification_status === 'rejected') {
+                throw ValidationException::withMessages(['mpesa_code' => 'This M-Pesa code cannot be used. Contact support.']);
+            }
+            if ($existing->verification_status === 'unmatched' && ! $mine) {
+                $payload = json_decode($existing->provider_payload ?? '{}', true) ?: [];
+                $payload['claims'][] = ['source' => 'customer', 'user_id' => $request->user()->id, 'invoice_id' => $row->id, 'account' => $row->account_number, 'at' => now()->toIso8601String()];
+                DB::table('saf_payments')->where('id', $existing->id)->update([
+                    'provider_payload' => json_encode($payload), 'updated_at' => now(),
+                    'exception_reason' => mb_substr(($existing->exception_reason ? $existing->exception_reason.' ' : '').'Customer says it is for invoice account '.$row->account_number.'.', 0, 255),
+                ]);
+                \App\Models\AuditLog::record('billing.payment_code_claimed', 'Bookshop owner submitted an M-Pesa code for an invoice', null, ['saf_payment_id' => $existing->id, 'invoice_id' => $row->id], $request->user(), $tenant);
+
+                return response()->json(['status' => 'review', 'message' => "Thanks. Payment {$code} was received but paid to a different account number, so our team will check it and apply it to this invoice."]);
+            }
+
+            return response()->json(['status' => 'processing', 'message' => "We have payment {$code} and are confirming it with Safaricom. This page updates automatically."]);
+        }
+        $id = DB::transaction(fn () => $ledger->recordClaim($code, $environment, $row->account_number, 'customer', $request->user()->id, $row->id));
+        \App\Models\AuditLog::record('billing.payment_code_claimed', 'Bookshop owner submitted an M-Pesa code for an invoice', null, ['saf_payment_id' => $id, 'invoice_id' => $row->id], $request->user(), $tenant);
+        \App\Jobs\VerifySafPayment::dispatch($id);
+        $status = DB::table('saf_payments')->where('id', $id)->value('verification_status');
+
+        return response()->json(match ($status) {
+            'reconciled' => ['status' => 'confirmed', 'message' => "Payment {$code} is confirmed and applied to this invoice."],
+            'unmatched' => ['status' => 'review', 'message' => "Safaricom is checking payment {$code}. Our team will confirm which invoice it belongs to and apply it."],
+            default => ['status' => 'processing', 'message' => "Checking payment {$code} with Safaricom. This usually takes a few minutes."],
+        });
+    }
+
     public function paymentReceipt(Request $request, int $payment, \App\Services\Billing\SubscriptionReceiptPdf $pdf)
     {
         $row = DB::table('saf_payments')->where('id', $payment)->where('bookshop_id', $this->tenant($request))

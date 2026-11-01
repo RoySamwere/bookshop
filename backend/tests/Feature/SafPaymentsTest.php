@@ -352,4 +352,121 @@ class SafPaymentsTest extends TestCase
         $this->assertStringNotContainsString('JANE', (string) $this->row('OLDC2B0001')->provider_payload);
         $this->assertSame(4, DB::table('platform_billing_payments')->count(), 'Old records are untouched.');
     }
+
+    public function test_owner_can_confirm_a_payment_with_the_code_from_their_sms(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $url = "/api/billing/invoices/{$invoice->id}/confirm-payment";
+        $this->actingAs($this->owner, 'sanctum')->postJson($url, ['mpesa_code' => 'ABC'])->assertUnprocessable()->assertJsonValidationErrors('mpesa_code');
+        $this->postJson($url, ['mpesa_code' => ' tj4k 8l2m9p '])->assertOk()->assertJsonPath('status', 'processing');
+        $row = $this->row('TJ4K8L2M9P');
+        $this->assertSame('pending', $row->verification_status);
+        $this->assertSame(0.0, (float) $row->amount, 'The customer never states the amount.');
+        $this->assertSame('TJ4K8L2M9P', $this->sent[0]['TransactionID']);
+
+        // Safaricom confirms the code and its amount, but does not report the account: the team confirms it.
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($row, [], ['Amount' => 1000]))->assertOk();
+        $row = $this->row('TJ4K8L2M9P');
+        $this->assertSame('unmatched', $row->verification_status);
+        $this->assertSame(1000.0, (float) $row->amount);
+        $this->assertStringContainsString($invoice->account_number, $row->exception_reason);
+        $this->assertDatabaseHas('platform_billing_invoices', ['id' => $invoice->id, 'status' => 'pending']);
+
+        // Safaricom's Paybill notification for the same code names the account: applied automatically.
+        $this->c2b('TJ4K8L2M9P', $invoice->account_number);
+        $this->assertSame('reconciled', $this->row('TJ4K8L2M9P')->verification_status);
+        $this->assertSame('active', $this->subscription->fresh()->status);
+        $this->assertSame('TJ4K8L2M9P', DB::table('platform_billing_payments')->where('status', 'confirmed')->value('mpesa_receipt'));
+        $this->assertSame(1, DB::table('saf_payments')->count());
+        $this->postJson($url, ['mpesa_code' => 'TJ4K8L2M9P'])->assertOk()->assertJsonPath('status', 'confirmed');
+    }
+
+    public function test_a_claimed_code_waits_for_the_team_and_is_assigned_to_the_claimed_invoice(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/confirm-payment", ['mpesa_code' => 'TJ4K8L2M9Q'])->assertOk();
+        $row = $this->row('TJ4K8L2M9Q');
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($row, [], ['Amount' => 1000]))->assertOk();
+        $id = $row->id;
+        $this->actingAs($this->operator, 'sanctum')->getJson("/api/platform/bills/{$id}")->assertOk()
+            ->assertJsonPath('data.claimed_account', $invoice->account_number)->assertJsonPath('data.candidate_invoices.0.account_number', $invoice->account_number);
+        $this->postJson("/api/platform/bills/{$id}/assign", ['account_number' => $invoice->account_number, 'note' => 'Matches owner request'])->assertOk()->assertJsonPath('data.status', 'reconciled');
+        $this->assertSame('active', $this->subscription->fresh()->status);
+    }
+
+    public function test_codes_cannot_be_reused_and_owners_only_reach_their_own_invoices(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $this->c2b('TJ4K8L2M9R', $invoice->account_number);
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($this->row('TJ4K8L2M9R')))->assertOk();
+        $otherShop = Bookshop::factory()->create();
+        $other = User::factory()->forBookshop($otherShop)->create(['role' => 'bookshop_owner']);
+        $otherSub = new BookshopSubscription(['subscription_plan_id' => $this->plan->id, 'status' => 'active', 'current_period_starts_at' => now(), 'current_period_ends_at' => now()->addDays(2)]);
+        $otherSub->bookshop_id = $otherShop->id;
+        $otherSub->save();
+        $otherInvoice = $this->invoice($other);
+        $this->actingAs($other, 'sanctum')->postJson("/api/billing/invoices/{$otherInvoice->id}/confirm-payment", ['mpesa_code' => 'TJ4K8L2M9R'])
+            ->assertUnprocessable()->assertJsonValidationErrors('mpesa_code');
+        $this->postJson("/api/billing/invoices/{$invoice->id}/confirm-payment", ['mpesa_code' => 'TJ4K8L2M9S'])->assertNotFound();
+        $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
+    }
+
+    public function test_pull_api_confirms_a_claimed_code_and_its_account_automatically(): void
+    {
+        config(['services.mpesa.c2b_verification' => 'pull_api']);
+        $invoice = $this->invoice();
+        Http::fake(['*/oauth/*' => Http::response(['access_token' => 'token']), '*/pulltransactions/v1/query' => Http::response(['ResponseCode' => '1000', 'Response' => [[
+            ['transactionId' => 'TJ4K8L2M9T', 'trxDate' => now()->toDateTimeString(), 'billreference' => $invoice->account_number, 'amount' => '1000'],
+        ]]])]);
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/confirm-payment", ['mpesa_code' => 'TJ4K8L2M9T'])
+            ->assertOk()->assertJsonPath('status', 'confirmed');
+        $this->assertSame(1000.0, (float) $this->row('TJ4K8L2M9T')->amount);
+        $this->assertSame('active', $this->subscription->fresh()->status);
+    }
+
+    public function test_operators_confirm_by_code_and_safaricom_supplies_the_amount(): void
+    {
+        $this->safaricom();
+        $invoice = $this->invoice();
+        $this->actingAs($this->owner, 'sanctum')->postJson('/api/platform/bills/confirm-code', ['mpesa_code' => 'TJ4K8L2M9U', 'account_number' => $invoice->account_number])->assertForbidden();
+        $this->actingAs($this->operator, 'sanctum')->postJson('/api/platform/bills/confirm-code', ['mpesa_code' => 'TJ4K8L2M9U', 'account_number' => '999999'])->assertUnprocessable();
+        $this->postJson('/api/platform/bills/confirm-code', ['mpesa_code' => 'tj4k8l2m9u', 'account_number' => $invoice->account_number, 'note' => 'Customer called'])
+            ->assertOk()->assertJsonPath('data.mpesa_receipt_number', 'TJ4K8L2M9U')->assertJsonPath('data.status', 'pending');
+        $this->postJson('/api/billing/mpesa/transaction-status/result', $this->statusResult($this->row('TJ4K8L2M9U'), [], ['Amount' => 1000]))->assertOk();
+        $this->assertSame('reconciled', $this->row('TJ4K8L2M9U')->verification_status);
+        $this->assertSame('active', $this->subscription->fresh()->status);
+    }
+
+    public function test_stk_payments_show_the_real_confirmation_code(): void
+    {
+        config(['services.mpesa.c2b_verification' => 'pull_api']);
+        $invoice = $this->invoice();
+        $account = $invoice->account_number;
+        Http::fake([
+            '*/oauth/*' => Http::response(['access_token' => 'token']),
+            '*/mpesa/stkpush/v1/processrequest' => Http::sequence()->push(['ResponseCode' => '0', 'CheckoutRequestID' => 'ws_CO_1', 'MerchantRequestID' => 'm1'])
+                ->push(['ResponseCode' => '0', 'CheckoutRequestID' => 'ws_CO_2', 'MerchantRequestID' => 'm2']),
+            '*/mpesa/stkpushquery/v1/query' => Http::response(['ResponseCode' => '0', 'ResultCode' => '0']),
+            '*/pulltransactions/v1/query' => Http::response(['ResponseCode' => '1000', 'Response' => [[
+                ['transactionId' => 'TJ4K8L2M9V', 'trxDate' => now()->toDateTimeString(), 'billreference' => $account, 'amount' => '400'],
+            ]]]),
+        ]);
+        // 1. No callback: the code is fetched from Safaricom's transaction list.
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 400])->assertAccepted();
+        $this->travel(3)->minutes();
+        $this->artisan('billing:reconcile-payments')->assertSuccessful();
+        $first = DB::table('saf_payments')->where('provider_transaction_id', 'ws_CO_1')->first();
+        $this->assertSame(['reconciled', 'TJ4K8L2M9V'], [$first->verification_status, $first->mpesa_receipt_number]);
+        $this->assertSame('TJ4K8L2M9V', DB::table('platform_billing_payments')->where('id', $first->platform_billing_payment_id)->value('mpesa_receipt'));
+
+        // 2. Callback carries the code: recorded as is.
+        $this->postJson("/api/billing/invoices/{$invoice->id}/stk", ['phone' => '254712345678', 'amount' => 600])->assertAccepted();
+        $this->postJson('/api/billing/mpesa/stk/callback', ['Body' => ['stkCallback' => ['CheckoutRequestID' => 'ws_CO_2', 'ResultCode' => 0, 'CallbackMetadata' => ['Item' => [
+            ['Name' => 'Amount', 'Value' => 600], ['Name' => 'MpesaReceiptNumber', 'Value' => 'TJ4K8L2M9W'], ['Name' => 'PhoneNumber', 'Value' => 254712345678]]]]]])->assertOk();
+        $this->assertSame('TJ4K8L2M9W', DB::table('saf_payments')->where('provider_transaction_id', 'ws_CO_2')->value('mpesa_receipt_number'));
+        $this->getJson('/api/billing/payments')->assertJsonPath('data.0.mpesa_receipt_number', 'TJ4K8L2M9W')->assertJsonPath('data.1.mpesa_receipt_number', 'TJ4K8L2M9V');
+    }
 }

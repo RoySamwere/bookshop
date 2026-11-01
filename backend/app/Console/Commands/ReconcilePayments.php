@@ -48,6 +48,12 @@ class ReconcilePayments extends Command
                 $this->warn("Payment {$id} could not be processed; it will be retried.");
             }
         }
+        // STK payments verified before their callback arrived: fetch the SMS confirmation code from Safaricom.
+        if (config('services.mpesa.c2b_verification') === 'pull_api') {
+            $missing = DB::table('saf_payments')->where('environment', $environment)->where('payment_channel', 'stk')->whereNull('mpesa_receipt_number')
+                ->whereIn('verification_status', ['verified', 'reconciled'])->where('created_at', '>=', now()->subDays(3))->orderBy('id')->limit(20)->pluck('id');
+            foreach ($missing as $id) $verifier->lookupStkReceipt((int) $id);
+        }
         $this->line(json_encode(['environment' => $environment, 'processed' => $due->count(), 'results' => $results]));
 
         return self::SUCCESS;

@@ -39,7 +39,7 @@ export type Bill = {
   account_number: string | null; mpesa_receipt_number: string | null; phone_number: string | null; amount: number; allocated_amount: number; excess_amount: number
   shortcode: string | null; payment_channel: 'stk' | 'paybill'; environment: 'production' | 'sandbox' | 'legacy'; status: BillStatus
   verification_source: string | null; verification_reference: string | null; verified_at: string | null; verification_attempts: number; next_verification_at: string | null
-  exception_reason: string | null; resolution_note: string | null; resolved_by: string | null; reconciled_at: string | null; confirmation_sent_at: string | null; created_at: string
+  exception_reason: string | null; claimed_account: string | null; resolution_note: string | null; resolved_by: string | null; reconciled_at: string | null; confirmation_sent_at: string | null; created_at: string
 }
 export type BillDetail = Bill & {
   provider_payload: Record<string, unknown>; verification_request_id: string | null
@@ -65,7 +65,9 @@ export const billsApi = {
   show: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}`),
   retry: (id: number) => api<{ data: BillDetail }>(`/platform/bills/${id}/retry`, { method: 'POST' }),
   assign: (id: number, account_number: string, note: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/assign`, { method: 'POST', body: { account_number, note } }),
+  confirmCode: (mpesa_code: string, account_number: string, note: string) => api<{ data: BillDetail }>('/platform/bills/confirm-code', { method: 'POST', body: { mpesa_code, account_number, note } }),
   reject: (id: number, reason: string) => api<{ data: BillDetail }>(`/platform/bills/${id}/reject`, { method: 'POST', body: { reason } }),
+  confirmMyPayment: (invoiceId: number, mpesa_code: string) => api<{ status: 'confirmed' | 'processing' | 'review'; message: string }>(`/billing/invoices/${invoiceId}/confirm-payment`, { method: 'POST', body: { mpesa_code } }),
   myPayments: (page = 1) => api<Page<MyPayment> & { totals: { payments: number; total: number } }>('/billing/payments', { query: { page } }),
 }
 
@@ -80,6 +82,10 @@ export async function downloadPaymentReceipt(id: number, filename: string) {
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
+
+/** The 10-character code in the M-Pesa SMS, e.g. TJ4K8L2M9P. */
+export const MPESA_CODE_PATTERN = /^[A-Z0-9]{10}$/
+export const normalizeMpesaCode = (value: string) => value.replace(/\s+/g, '').toUpperCase()
 
 export const BILL_STATUS_LABELS: Record<BillStatus, string> = {
   pending: 'Pending verification', verified: 'Verified', reconciled: 'Reconciled', unmatched: 'Unmatched', rejected: 'Rejected',

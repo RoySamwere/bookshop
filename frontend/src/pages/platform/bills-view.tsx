@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, FileSpreadsheet, Hourglass, ReceiptText, RotateCw, Search, WalletCards } from 'lucide-react'
 import { useAuth } from '../../features/auth/auth-provider'
 import { errorMessage } from '../../lib/api'
-import { BILL_STATUS_LABELS, VERIFICATION_SOURCES, billingApi, billsApi, type Bill, type BillFilters, type BillStatus } from '../../lib/billing-api'
+import { BILL_STATUS_LABELS, MPESA_CODE_PATTERN, VERIFICATION_SOURCES, billingApi, billsApi, normalizeMpesaCode, type Bill, type BillFilters, type BillStatus } from '../../lib/billing-api'
 import { downloadBrandedTable, safeCell } from '../../lib/branded-export'
 import { EmptyState, ErrorState, LoadingState, Modal, PageHeader, Pagination, StatCard, formatDate, inputClass, primaryButton, secondaryButton, dangerButton } from '../../components/ui-kit'
 
@@ -99,9 +99,39 @@ export default function BillsView() {
         <Pagination meta={{ current_page: bills.data.current_page, last_page: bills.data.last_page, per_page: 25, total: bills.data.total, from: bills.data.from, to: bills.data.to }} onPage={page => setFilters(current => ({ ...current, page }))} />
       </>}
     </section>
+    {canManage && summary && <ConfirmByCode environment={summary.environment} onOpen={setSelected} />}
     {canManage && summary && <MissingPayment environment={summary.environment} paybill={summary.paybill} />}
     {selected !== null && <BillDetailModal id={selected} canManage={canManage} onClose={() => setSelected(null)} />}
   </div>
+}
+
+/**
+ * Confirm a payment with the code from the customer's M-Pesa SMS. Safaricom is asked about the code and the
+ * amount it reports is applied to the invoice account entered here.
+ */
+function ConfirmByCode({ environment, onOpen }: { environment: string; onOpen: (id: number) => void }) {
+  const client = useQueryClient()
+  const [code, setCode] = useState('')
+  const [account, setAccount] = useState('')
+  const [note, setNote] = useState('')
+  const normalized = normalizeMpesaCode(code)
+  const valid = MPESA_CODE_PATTERN.test(normalized)
+  const confirm = useMutation({
+    mutationFn: () => billsApi.confirmCode(normalized, account.trim(), note.trim()),
+    onSuccess: result => { setCode(''); setAccount(''); setNote(''); void client.invalidateQueries({ queryKey: ['platform-bills'] }); onOpen(result.data.id) },
+  })
+  return <section className="rounded-2xl border border-slate-200 bg-white p-4">
+    <h2 className="font-semibold text-slate-900">Confirm a payment by M-Pesa code</h2>
+    <p className="mt-1 text-sm text-slate-600">A customer paid but it is not listed, or paid with the wrong account number? Enter the confirmation code from their M-Pesa SMS and their invoice account. The code is checked with Safaricom ({environment}) and the amount Safaricom reports is applied.</p>
+    <form className="mt-3 grid gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid-cols-[1fr_1fr_2fr_auto]" onSubmit={event => { event.preventDefault(); if (valid) confirm.mutate() }}>
+      <label>M-Pesa code<input className={`${inputClass} font-mono uppercase tracking-wider`} required maxLength={14} value={code} onChange={event => setCode(event.target.value)} placeholder="TJ4K8L2M9P" aria-invalid={code !== '' && !valid} /></label>
+      <label>Invoice account<input className={`${inputClass} font-mono`} required pattern="[0-9]{6}" inputMode="numeric" value={account} onChange={event => setAccount(event.target.value)} placeholder="100045" /></label>
+      <label>Note<input className={`${inputClass} normal-case tracking-normal`} maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="e.g. Customer sent the SMS on WhatsApp" /></label>
+      <div className="flex items-end"><button className={primaryButton} disabled={confirm.isPending || !valid || !/^[0-9]{6}$/.test(account.trim())}>{confirm.isPending ? 'Checking…' : 'Check with Safaricom'}</button></div>
+      {code !== '' && !valid && <p className="text-xs normal-case tracking-normal text-amber-700 sm:col-span-4">M-Pesa codes are 10 letters and numbers, e.g. TJ4K8L2M9P.</p>}
+      {confirm.isError && <p role="alert" className="text-sm normal-case tracking-normal text-rose-700 sm:col-span-4">{errorMessage(confirm.error)}</p>}
+    </form>
+  </section>
 }
 
 /**
@@ -121,10 +151,10 @@ function MissingPayment({ environment, paybill }: { environment: string; paybill
   const field = (key: 'receipt' | 'account' | 'amount' | 'at' | 'reference', label: string, extra: Record<string, unknown> = {}) =>
     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}<input className={`${inputClass} normal-case tracking-normal`} required value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} {...extra} /></label>
   return <details className="rounded-2xl border border-slate-200 bg-white p-4">
-    <summary className="cursor-pointer font-semibold text-slate-800">Payment missing from Bills?</summary>
+    <summary className="cursor-pointer font-semibold text-slate-800">Safaricom cannot confirm the code? Record it from the merchant statement</summary>
     <p className="mt-2 text-sm text-slate-600">Use this only when a customer paid {environment === 'production' ? 'Paybill' : 'sandbox shortcode'} {paybill} and Safaricom never notified the platform. Enter the values from your own copy of the M-Pesa merchant statement. The payment is applied immediately and recorded in the audit log.</p>
     <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={event => { event.preventDefault(); record.mutate() }}>
-      {field('receipt', 'M-Pesa code', { pattern: '[A-Za-z0-9]{6,30}' })}
+      {field('receipt', 'Code on statement', { pattern: '[A-Za-z0-9]{6,30}' })}
       {field('account', 'Invoice account (6 digits)', { pattern: '[0-9]{6}', inputMode: 'numeric' })}
       {field('amount', 'Amount (KES)', { type: 'number', min: '0.01', step: '0.01' })}
       {field('at', 'Paid at', { type: 'datetime-local' })}
@@ -143,7 +173,7 @@ function BillRow({ row, onOpen }: { row: Bill; onOpen: () => void }) {
     <td className="px-4 py-3"><strong className="text-slate-900">{row.bookshop_name ?? '—'}</strong>{row.environment !== 'production' && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">{row.environment}</span>}</td>
     <td className="px-4 py-3 text-slate-600">{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
     <td className="px-4 py-3 font-mono text-slate-700">{row.account_number ?? '—'}</td>
-    <td className="px-4 py-3"><button type="button" className="font-mono font-semibold text-blue-700 hover:underline" onClick={event => { event.stopPropagation(); onOpen() }}>{row.mpesa_receipt_number ?? (row.payment_channel === 'stk' ? 'STK (pending code)' : '—')}</button></td>
+    <td className="px-4 py-3"><button type="button" className="font-mono font-semibold text-blue-700 hover:underline" onClick={event => { event.stopPropagation(); onOpen() }}>{row.mpesa_receipt_number ?? <span className="font-sans text-xs font-normal text-slate-400">Awaiting code</span>}</button></td>
     <td className="px-4 py-3 text-slate-600">{row.phone_number ?? '—'}</td>
     <td className="px-4 py-3 text-right font-semibold text-slate-900">{kes(row.amount)}{row.excess_amount > 0 && <span className="block text-[11px] font-normal text-amber-700">{kes(row.excess_amount)} excess</span>}</td>
     <td className="px-4 py-3 text-slate-600">{row.shortcode ?? '—'}<span className="block text-[11px] text-slate-400">{row.payment_channel === 'stk' ? 'STK Push' : 'Paybill'}</span></td>
@@ -175,6 +205,7 @@ function BillDetailModal({ id, canManage, onClose }: { id: number; canManage: bo
           {([
             ['Transaction date', when(bill.transaction_date)], ['Bookshop', bill.bookshop_name ?? 'Not matched'], ['Account number', bill.account_number ?? '—'],
             ['M-Pesa code', bill.mpesa_receipt_number ?? '—'], ['Phone', bill.phone_number ?? '—'], ['Paybill / channel', `${bill.shortcode ?? '—'} · ${bill.payment_channel === 'stk' ? 'STK Push' : 'Paybill'} · ${bill.environment}`],
+            ['Customer says it is for', bill.claimed_account ? `Invoice account ${bill.claimed_account}` : '—'],
             ['Amount', kes(bill.amount)], ['Applied / excess', `${kes(bill.allocated_amount)} / ${kes(bill.excess_amount)}`],
             ['Verification checks', `${bill.verification_attempts}${bill.next_verification_at && bill.status === 'pending' ? ` · next ${when(bill.next_verification_at)}` : ''}`],
             ['Confirmation sent', bill.confirmation_sent_at ? when(bill.confirmation_sent_at) : '—'],

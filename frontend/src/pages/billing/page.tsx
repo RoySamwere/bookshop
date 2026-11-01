@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../features/auth/auth-provider'
-import { billingApi, paymentStatus, type Invoice, type Page } from '../../lib/billing-api'
+import { MPESA_CODE_PATTERN, billingApi, billsApi, normalizeMpesaCode, paymentStatus, type Invoice, type Page } from '../../lib/billing-api'
 import { errorMessage } from '../../lib/api'
 import { Card, ErrorState, LoadingState, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
 
@@ -71,6 +71,26 @@ function InvoiceDetail({ id }: { id: number }) {
     </form>}
     {pending && <p role="status">A payment is being confirmed with Safaricom. This page updates automatically; contact platform support if it is still pending after an hour.</p>}
     {message && <p role="status">{message}</p>}{stk.isError && <p role="alert">{errorMessage(stk.error)}</p>}
+    {invoice.data.can_pay !== false && row.status !== 'paid' && <ConfirmWithCode invoiceId={id} onDone={() => { void client.invalidateQueries({ queryKey: ['invoice', id] }); void client.invalidateQueries({ queryKey: ['billing'] }) }} />}
     <h3 className="mt-5 font-semibold">Payment history</h3><ul>{payments.map(p => <li className="border-t py-2" key={p.id}>{p.channel} · KES {p.amount} · {paymentStatus(p)} · {p.mpesa_receipt ?? 'No verified receipt'} · {p.environment}</li>)}</ul>
   </Card></section>
+}
+
+/** "Already paid?": the owner types the confirmation code from their M-Pesa SMS; it is checked with Safaricom. */
+function ConfirmWithCode({ invoiceId, onDone }: { invoiceId: number; onDone: () => void }) {
+  const [code, setCode] = useState('')
+  const normalized = normalizeMpesaCode(code)
+  const valid = MPESA_CODE_PATTERN.test(normalized)
+  const confirm = useMutation({ mutationFn: () => billsApi.confirmMyPayment(invoiceId, normalized), onSuccess: () => { setCode(''); onDone() } })
+  return <form className="my-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 print:hidden" onSubmit={event => { event.preventDefault(); if (valid) confirm.mutate() }}>
+    <p className="font-semibold">Already paid through Paybill?</p>
+    <p className="text-sm text-slate-600">Enter the confirmation code from your M-Pesa SMS (for example <span className="font-mono">TJ4K8L2M9P</span>). We check it with Safaricom and apply the payment.</p>
+    <div className="flex flex-wrap items-end gap-3">
+      <label>M-Pesa confirmation code<input className={`${inputClass} font-mono uppercase tracking-wider`} required maxLength={14} value={code} onChange={event => setCode(event.target.value)} placeholder="TJ4K8L2M9P" aria-invalid={code !== '' && !valid} /></label>
+      <button className={secondaryButton} disabled={confirm.isPending || !valid}>{confirm.isPending ? 'Checking…' : 'Confirm payment'}</button>
+    </div>
+    {code !== '' && !valid && <p className="text-sm text-amber-700">The code is 10 letters and numbers.</p>}
+    {confirm.isSuccess && <p role="status" className={confirm.data.status === 'confirmed' ? 'text-emerald-700' : 'text-slate-700'}>{confirm.data.message}</p>}
+    {confirm.isError && <p role="alert" className="text-rose-700">{errorMessage(confirm.error)}</p>}
+  </form>
 }

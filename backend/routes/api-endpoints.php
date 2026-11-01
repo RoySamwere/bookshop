@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
     // Subscription invoice access is scoped to the authenticated bookshop.
     Route::get('/billing/invoices/{invoice}', [\App\Http\Controllers\PlatformBillingController::class, 'invoice'])->whereNumber('invoice');
     Route::get('/billing/payments', [\App\Http\Controllers\PlatformBillingController::class, 'myPayments']);
+    Route::post('/billing/invoices/{invoice}/confirm-payment', [\App\Http\Controllers\PlatformBillingController::class, 'confirmCode'])->whereNumber('invoice')->middleware('throttle:6,1');
     Route::get('/billing/payments/{payment}/receipt', [\App\Http\Controllers\PlatformBillingController::class, 'paymentReceipt'])->whereNumber('payment');
     Route::post('/billing/invoices/{invoice}/stk', [\App\Http\Controllers\PlatformBillingController::class, 'stk'])->whereNumber('invoice')->middleware('throttle:5,1');
 
@@ -221,6 +222,7 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/billing/context', [\App\Http\Controllers\PlatformBillingController::class, 'context'])->middleware('permission:platform.settings.view');
         // Bills: the saf_payments ledger and its exception queue.
         Route::get('/bills', [\App\Http\Controllers\Platform\BillsController::class, 'index'])->middleware('permission:platform.settings.view');
+        Route::post('/bills/confirm-code', [\App\Http\Controllers\Platform\BillsController::class, 'confirmCode'])->middleware(['permission:platform.settings.manage', 'throttle:20,1']);
         Route::get('/bills/export', [\App\Http\Controllers\Platform\BillsController::class, 'export'])->middleware(['permission:platform.settings.view', 'throttle:10,1']);
         Route::get('/bills/{payment}', [\App\Http\Controllers\Platform\BillsController::class, 'show'])->whereNumber('payment')->middleware('permission:platform.settings.view');
         Route::post('/bills/{payment}/retry', [\App\Http\Controllers\Platform\BillsController::class, 'retry'])->whereNumber('payment')->middleware(['permission:platform.settings.manage', 'throttle:20,1']);

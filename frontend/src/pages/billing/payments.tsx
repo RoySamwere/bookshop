@@ -44,7 +44,7 @@ export default function MyPaymentsPage() {
             <td className="p-3 font-semibold">{kes(row.amount)}{row.excess_amount > 0 && <span className="block text-xs font-normal text-amber-700">{kes(row.excess_amount)} above the invoice, held for review</span>}</td>
             <td className="p-3">{row.invoice_id ? `#${row.invoice_id}` : '—'}{row.invoice_status && <span className="block text-xs text-slate-500">{row.invoice_status.replace('_', ' ')}</span>}</td>
             <td className="p-3 font-mono">{row.account_number ?? '—'}</td>
-            <td className="p-3 font-mono">{row.mpesa_receipt_number ?? '—'}</td>
+            <td className="p-3 font-mono">{row.mpesa_receipt_number ?? <span className="font-sans text-xs text-slate-400">Awaiting code</span>}</td>
             <td className="p-3">{row.phone ?? '—'}</td>
             <td className="p-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${LABELS[row.status][1]}`}>{LABELS[row.status][0]}</span>{row.environment === 'sandbox' && <span className="block text-xs text-amber-700">Test payment</span>}</td>
             <td className="p-3 text-right">{row.has_receipt && <button className={secondaryButton} onClick={() => void receipt(row)}><Download size={15} /> Receipt</button>}</td>

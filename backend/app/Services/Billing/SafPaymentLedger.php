@@ -21,6 +21,16 @@ class SafPaymentLedger
         'ResultType', 'ReasonType', 'transactionId', 'trxDate', 'transactiontype', 'billreference', 'amount',
     ];
 
+    /** The confirmation code in the customer's M-Pesa SMS, e.g. TJ4K8L2M9P. */
+    public const CODE_PATTERN = '/^[A-Z0-9]{10}$/';
+
+    public static function normalizeCode(mixed $value): ?string
+    {
+        $code = strtoupper(preg_replace('/\s+/', '', (string) $value));
+
+        return preg_match(self::CODE_PATTERN, $code) ? $code : null;
+    }
+
     public static function minimize(array $payload): array
     {
         $clean = [];
@@ -50,7 +60,9 @@ class SafPaymentLedger
         $existing = DB::table('saf_payments')->where('environment', $environment)->where(fn ($q) => $q
             ->where('mpesa_receipt_number', $receipt)->orWhere(fn ($w) => $w->where('payment_channel', 'paybill')->where('provider_transaction_id', $receipt)))->first();
         if ($existing) {
-            return (int) $existing->id; // Duplicate callback.
+            $this->mergeNotificationIntoClaim($existing, $data);
+
+            return (int) $existing->id; // Duplicate callback, or a code a customer already gave us.
         }
         DB::table('saf_payments')->insertOrIgnore([
             'account_number' => mb_substr(trim((string) $data['BillRefNumber']), 0, 20),
@@ -103,7 +115,10 @@ class SafPaymentLedger
                 $payload['stk_callback'] = self::minimize($callback);
                 $updates['provider_payload'] = json_encode($payload);
             }
+            $receiptUpdate = $updates['mpesa_receipt_number'] ?? null;
+            unset($updates['mpesa_receipt_number']);
             if ($updates) DB::table('saf_payments')->where('id', $existing->id)->update([...$updates, 'updated_at' => now()]);
+            if ($receiptUpdate && ! $existing->mpesa_receipt_number) $this->attachReceipt((int) $existing->id, $receiptUpdate);
 
             return (int) $existing->id;
         }
@@ -164,6 +179,64 @@ class SafPaymentLedger
             'allocated_amount' => $credit['allocated'], 'excess_amount' => $credit['excess'],
             'provider_transaction_id' => $values['receipt'], 'provider_payload' => json_encode(['statement_reference' => $values['statement_reference']]),
             'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * A payment identified only by its M-Pesa confirmation code (typed by a customer from their SMS, or by an
+     * operator). It stays pending until Safaricom confirms the code; the amount comes from Safaricom, never the claimant.
+     */
+    public function recordClaim(string $code, string $environment, ?string $account, string $source, int $userId, ?int $invoiceId = null, ?string $note = null): int
+    {
+        $existing = DB::table('saf_payments')->where('environment', $environment)->where(fn ($q) => $q
+            ->where('mpesa_receipt_number', $code)->orWhere(fn ($w) => $w->where('payment_channel', 'paybill')->where('provider_transaction_id', $code)))->first();
+        if ($existing) return (int) $existing->id;
+        DB::table('saf_payments')->insertOrIgnore([
+            'account_number' => $account, 'mpesa_receipt_number' => $code, 'amount' => 0,
+            'shortcode' => PlatformPaymentSettlementService::expectedShortcode($environment),
+            'payment_channel' => 'paybill', 'environment' => $environment, 'verification_status' => 'pending',
+            'provider_transaction_id' => $code, 'next_verification_at' => now(),
+            'provider_payload' => json_encode(['claim' => array_filter(['source' => $source, 'user_id' => $userId, 'invoice_id' => $invoiceId,
+                'account' => $account, 'note' => $note ? mb_substr($note, 0, 500) : null, 'at' => now()->toIso8601String()], fn ($v) => $v !== null)]),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return (int) DB::table('saf_payments')->where('environment', $environment)->where('mpesa_receipt_number', $code)->value('id');
+    }
+
+    /**
+     * Records the confirmation code on a payment that did not have it yet (e.g. an STK payment whose
+     * callback arrived late) and on the credited invoice payment, so both histories show the real code.
+     */
+    public function attachReceipt(int $safPaymentId, string $receipt): bool
+    {
+        $row = DB::table('saf_payments')->where('id', $safPaymentId)->first();
+        if (! $row || $row->mpesa_receipt_number) return false;
+        if (DB::table('saf_payments')->where('environment', $row->environment)->where('mpesa_receipt_number', $receipt)->exists()) return false;
+        DB::table('saf_payments')->where('id', $safPaymentId)->whereNull('mpesa_receipt_number')->update(['mpesa_receipt_number' => $receipt, 'updated_at' => now()]);
+        if ($row->platform_billing_payment_id && ! DB::table('platform_billing_payments')->where('mpesa_receipt', $receipt)->exists()) {
+            DB::table('platform_billing_payments')->where('id', $row->platform_billing_payment_id)->whereNull('mpesa_receipt')->update(['mpesa_receipt' => $receipt, 'updated_at' => now()]);
+        }
+
+        return true;
+    }
+
+    /** A Safaricom notification for a code someone already gave us supplies the account number and amount. */
+    private function mergeNotificationIntoClaim(object $existing, array $data): void
+    {
+        $payload = json_decode($existing->provider_payload ?? '{}', true) ?: [];
+        if (! isset($payload['claim']) || isset($payload['c2b_confirmation']) || $existing->verification_status === 'reconciled') return;
+        $payload['c2b_confirmation'] = self::minimize($data);
+        $notified = round((float) $data['TransAmount'], 2);
+        DB::table('saf_payments')->where('id', $existing->id)->update([
+            'account_number' => mb_substr(trim((string) $data['BillRefNumber']), 0, 20),
+            'phone_number' => $existing->phone_number ?? self::phone($data['MSISDN'] ?? null),
+            'amount' => (float) $existing->amount > 0 ? $existing->amount : $notified,
+            'transaction_date' => $this->mpesaTime($data['TransTime'] ?? null) ?? $existing->transaction_date,
+            'provider_payload' => json_encode($payload), 'updated_at' => now(),
+            // Already confirmed by Safaricom and only waiting for the account: allocate it now.
+            ...($existing->verification_status === 'unmatched' && $existing->verified_at && abs((float) $existing->amount - $notified) < 0.005
+                ? ['verification_status' => 'verified', 'exception_reason' => null] : []),
         ]);
     }
 
