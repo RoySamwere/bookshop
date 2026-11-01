@@ -47,11 +47,12 @@ Laravel tests use isolated in-memory SQLite and Laravel `Http::fake` with stray 
 
 ## Recorded cloud validation
 
-- Full Laravel suite: **224 passed**, 1,714 assertions.
+- Full Laravel suite: **226 passed**, 1,725 assertions.
 - Billing/security contract suites: **38 passed**, 151 assertions (part of the full suite).
 - Frontend: TypeScript/Vite production build passed; **74 tests passed** across 13 files.
 - Existing headless Chromium smoke: desktop/mobile login, cookie authentication, refresh restoration, permission redirects and logout passed without runtime exceptions.
 - New billing migration: applied, rolled back by its specific migration path and reapplied successfully against a disposable SQLite database. Local development database migration and scheduler registration also passed.
+- An isolated MariaDB 11.8 instance with `explicit_defaults_for_timestamp=OFF` and strict zero-date checks reproduced error 1067 using the old period column definitions. The full application migration chain then passed with required `DATETIME` period columns and the shortened reconciliation unique-index name.
 - Real Safaricom requests/public callbacks and MySQL concurrency acceptance were **not performed**. No live VPS was accessed or changed.
 
 ## External Safaricom sandbox acceptance (pending until performed)
@@ -63,6 +64,25 @@ Laravel tests use isolated in-memory SQLite and Laravel `Http::fake` with stray 
 5. Reconcile only against evidence independently provided by the sandbox merchant tooling. A sandbox app may not expose a merchant statement; if unavailable, leave that manual step pending instead of inventing a receipt. Local mocked tests already cover the subsequent settlement contract.
 6. Verify the sandbox invoice can become paid only through authorized reconciliation and **subscription dates/status remain unchanged**. Repeat duplicate callbacks and settlement attempts, cancellations, timeouts, partial payments and overpayments. Test a real public callback failure/retry and lost-response recovery. No live transaction or production subscription should be involved.
 7. On staging MySQL, run simultaneous invoice creation and same/different-receipt reconciliation requests. Verify account uniqueness, one confirmed receipt, one renewal event and rollback of the losing request. SQLite tests validate behavior, not MySQL contention/row-lock behavior. These MySQL contention and real gateway/network steps must be recorded separately before production use.
+
+## Retrying the MySQL billing migration
+
+If `2026_11_01_000010_create_platform_billing_invoices` failed with error 1067 for `period_ends_at`, pull the compatibility fix and retry normal migrations. The required period columns now use `DATETIME`, avoiding implicit legacy `TIMESTAMP` zero-date defaults. The reconciliation migration also uses an explicit short unique-index name to avoid MySQL error 1059. Do not disable strict SQL mode or use `migrate:fresh`; the reported failed CREATE TABLE does not require resetting the database.
+
+From your existing application checkout on the testing VPS:
+
+```sh
+git fetch origin
+git switch codex/mpesa-subscription-billing
+git pull --ff-only origin codex/mpesa-subscription-billing
+cd backend
+php artisan config:clear
+php artisan migrate --force
+# Rebuild cached configuration if that is used by your deployment:
+php artisan config:cache
+```
+
+These commands retain the private existing `.env`. M-Pesa values in a VPS `.env` are not automatically available in the cloud development workspace; they are neither copied nor committed by this fix.
 
 ## Exact VPS testing commands (operator-run; no VPS changes performed by Codex)
 

@@ -17,7 +17,7 @@ return new class extends Migration {
             $table->string('status', 24)->default('awaiting_verification')->index();
             $table->json('payload');
             $table->timestamps();
-            $table->unique(['source', 'provider_transaction_id']);
+            $table->unique(['source', 'provider_transaction_id'], 'platform_reconciliation_source_tx_unique');
         });
     }
     public function down(): void { Schema::dropIfExists('platform_payment_reconciliation_items'); }
