@@ -1,0 +1,35 @@
+name: Billing safety tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/billing-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  laravel-billing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, sqlite3, bcmath, dom, xml
+          coverage: none
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare testing environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Verify Laravel routes
+        run: php artisan route:list --path=api/billing
+      - name: Run billing safety tests
+        run: php artisan test --filter=PlatformBillingSafetyTest
+      - name: Run Laravel tests
+        run: php artisan test
