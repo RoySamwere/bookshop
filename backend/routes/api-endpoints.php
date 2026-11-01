@@ -210,6 +210,8 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
     // Platform administration: platform staff only, and no route here reads bookshop business data.
     Route::prefix('platform')->middleware('platform')->group(function () {
         Route::get('/overview', [PlatformController::class, 'overview']);
+        Route::get('/billing/reconciliation', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'index'])->middleware('permission:platform.settings.manage');
+        Route::post('/billing/reconciliation/{item}/confirm', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'confirm'])->whereNumber('item')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
         Route::get('/managed-bookshops', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'index']);
         Route::post('/management/{bookshop}/enter', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'enter'])->middleware('throttle:10,1');
         Route::post('/management/leave', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'leave']);
