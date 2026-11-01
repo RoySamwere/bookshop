@@ -42,6 +42,10 @@ class DarajaStkService
         $passkey = config('services.mpesa.passkey');
         $shortcode = (string) config('services.mpesa.shortcode');
         $callback = config('services.mpesa.callback_url');
+        if (config('services.mpesa.environment') === 'production'
+            && $shortcode !== (string) config('services.mpesa.platform_paybill')) {
+            throw new RuntimeException('Live STK shortcode must match the authorized platform Paybill.');
+        }
         if (!$key || !$secret || !$passkey || !$shortcode || !$callback) {
             throw new RuntimeException('Daraja STK configuration is incomplete.');
         }
