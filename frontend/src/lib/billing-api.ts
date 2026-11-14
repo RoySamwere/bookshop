@@ -18,6 +18,22 @@ export type Payment = { id: number; status: string; channel: string; amount: str
 export type Attempt = Payment & { account_number: string; checkout_request_id: string; merchant_request_id?: string | null; bookshop_id: number }
 export type Reconciliation = { id: number; source: string; status: string; environment: string; provider_transaction_id: string; account_number: string; amount: string; destination_shortcode: string }
 export type Evidence = { verified_receipt: string; verified_amount: number; verified_at: string; verified_shortcode: string; verified_account?: string; statement_reference: string; statement_verified: boolean }
+/** A bookshop subscription as the Platform Owner's trial-extension screen sees it. */
+export type TrialSubscription = SubscriptionRow & {
+  bookshop_status: string | null; trial_starts_at: string | null; trial_state: 'active' | 'expired' | 'not_trial'
+  remaining_trial_days: number; eligible: boolean; ineligible_reason: string | null; extensions_count: number
+}
+export type TrialExtension = {
+  id: number; bookshop_id: number; bookshop_name: string | null; previous_status: string; previous_trial_ends_at: string | null; new_trial_ends_at: string
+  days_granted: number; reactivated: boolean; extended_by: number | null; extended_by_name: string | null; reason: string | null; created_at: string
+}
+export type TrialExtensionRequest = { days: number; reason: string | null; idempotency_key: string; expected_trial_ends_at: string | null }
+export const trialApi = {
+  subscriptions: (query: { page?: number; search?: string; state?: string; bookshop_id?: number }) => api<Page<TrialSubscription> & { max_days: number }>('/platform/trial-extensions/subscriptions', { query }),
+  history: (query: { page?: number; bookshop_id?: number }) => api<Page<TrialExtension>>('/platform/trial-extensions', { query }),
+  extend: (bookshopId: number, body: TrialExtensionRequest) => api<{ message: string; duplicate: boolean; data: TrialExtension; subscription: TrialSubscription }>(`/platform/bookshops/${bookshopId}/trial-extensions`, { method: 'POST', body }),
+}
+
 export const billingApi = {
   overview: (page = 1) => api<{ invoices: Page<Invoice>; subscription: SubscriptionSummary | null; plans: Plan[]; paybill: string | null; environment: string; can_pay?: boolean }>(`/billing?page=${page}`),
   create: (plan_id: number) => api<{ data: Invoice }>('/billing/invoices', { method: 'POST', body: { plan_id } }),

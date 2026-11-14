@@ -8,6 +8,7 @@ import { errorMessage } from '../../lib/api'
 import { Card, ErrorState, LoadingState, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
 import { InvoiceTable, Pager } from '../billing/page'
 import PaymentsReconciliation from './payments-reconciliation'
+import TrialExtensionsPanel from './trial-extensions'
 
 type PlanDraft = { code: string; name: string; price: string; interval: string }
 
@@ -16,7 +17,8 @@ export default function PlatformBillingView() {
   const client = useQueryClient()
   const context = useQuery({ queryKey: ['platform-billing', 'context'], queryFn: billingApi.context })
   const canManage = user?.permissions?.includes('platform.settings.manage') ?? false
-  const [tab, setTab] = useState<'mpesa' | 'invoices' | 'attempts' | 'reconciliation' | 'subscriptions' | 'payments' | 'plans'>('mpesa')
+  const canExtendTrials = user?.permissions?.includes('platform.subscriptions.extend_trial') ?? false
+  const [tab, setTab] = useState<'mpesa' | 'invoices' | 'attempts' | 'reconciliation' | 'subscriptions' | 'trials' | 'payments' | 'plans'>('mpesa')
   const [draft, setDraft] = useState<PlanDraft | undefined>()
   const [page, setPage] = useState(1)
   const [environment, setEnvironment] = useState('')
@@ -41,9 +43,9 @@ export default function PlatformBillingView() {
       }}>Prepare sandbox test plan</button>}
       <Link className="ml-3 text-blue-700 underline" to="/platform/bookshops">Open test bookshops</Link>
     </Card>}
-    <div className="flex flex-wrap gap-3">{(['mpesa', 'invoices', 'attempts', 'reconciliation', 'subscriptions', 'payments', 'plans'] as const).map(t => <button aria-pressed={tab === t} className={tab === t ? primaryButton : secondaryButton} key={t} onClick={() => { setTab(t); setPage(1) }}>{{ mpesa: 'Payments & reconciliation', invoices: 'Invoices', attempts: 'STK requests', reconciliation: 'Excess & legacy review', subscriptions: 'Subscriptions', payments: 'Payment ledger', plans: 'Plans & pricing' }[t]}</button>)}
+    <div className="flex flex-wrap gap-3">{(['mpesa', 'invoices', 'attempts', 'reconciliation', 'subscriptions', ...(canExtendTrials ? ['trials'] as const : []), 'payments', 'plans'] as const).map(t => <button aria-pressed={tab === t} className={tab === t ? primaryButton : secondaryButton} key={t} onClick={() => { setTab(t); setPage(1) }}>{{ mpesa: 'Payments & reconciliation', invoices: 'Invoices', attempts: 'STK requests', reconciliation: 'Excess & legacy review', subscriptions: 'Subscriptions', trials: 'Trial extension', payments: 'Payment ledger', plans: 'Plans & pricing' }[t]}</button>)}
       <button className={secondaryButton} onClick={() => void client.invalidateQueries({ queryKey: ['platform-billing'] })}>Refresh</button></div>
-    {tab !== 'subscriptions' && tab !== 'plans' && tab !== 'mpesa' && <label>Environment<select className={inputClass} value={environment} onChange={e => { setEnvironment(e.target.value); setPage(1) }}><option value="">All environments</option><option>production</option><option>sandbox</option><option>legacy</option></select></label>}
+    {['invoices', 'attempts', 'reconciliation', 'payments'].includes(tab) && <label>Environment<select className={inputClass} value={environment} onChange={e => { setEnvironment(e.target.value); setPage(1) }}><option value="">All environments</option><option>production</option><option>sandbox</option><option>legacy</option></select></label>}
     {['invoices', 'attempts', 'reconciliation'].includes(tab) && <Card title="Billing records">{active.isPending ? <LoadingState /> : active.isError ? <ErrorState message={errorMessage(active.error)} onRetry={() => void active.refetch()} /> : <>
       {tab === 'invoices' && invoices.data && <InvoiceTable invoices={invoices.data.data} />}
       {tab === 'attempts' && attempts.data && <div className="grid gap-3">{attempts.data.data.map(a => <div key={a.id} className="rounded border p-3"><p>Request #{a.id} · Shop {a.bookshop_id} · Account {a.account_number} · KES {a.amount} · {paymentStatus(a)} · {a.environment}</p><p className="break-all">Checkout: {a.checkout_request_id ?? 'Unknown'} · Merchant request: {a.merchant_request_id ?? 'Unknown'}</p>{canManage && a.status === 'unknown' && <UnknownResolution id={a.id} />}</div>)}{!attempts.data.data.length && <p>No STK requests.</p>}</div>}
@@ -52,6 +54,7 @@ export default function PlatformBillingView() {
     </>}</Card>}
     {tab === 'mpesa' && <PaymentsReconciliation />}
     {tab === 'subscriptions' && <SubscriptionList />}
+    {tab === 'trials' && canExtendTrials && <TrialExtensionsPanel />}
     {tab === 'payments' && <PaymentLedger environment={environment} />}
     {tab === 'plans' && <PlanManagement canManage={canManage} draft={draft} />}
     <Link className="text-blue-700 underline" to="/platform/audit">Open billing and platform audit history</Link>

@@ -243,6 +243,10 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::post('/billing/stk-attempts/{attempt}/confirm', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'confirmStk'])->whereNumber('attempt')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
         Route::get('/billing/reconciliation', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'index'])->middleware('permission:platform.settings.view');
         Route::post('/billing/reconciliation/{item}/confirm', [\App\Http\Controllers\Platform\PaymentReconciliationController::class, 'confirm'])->whereNumber('item')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
+        // Manual trial extensions: Platform Owner only. History is append-only, so there are no edit or delete routes.
+        Route::get('/trial-extensions/subscriptions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'index'])->middleware('permission:platform.subscriptions.extend_trial');
+        Route::get('/trial-extensions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'history'])->middleware('permission:platform.subscriptions.extend_trial');
+        Route::post('/bookshops/{bookshop}/trial-extensions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'store'])->whereNumber('bookshop')->middleware(['permission:platform.subscriptions.extend_trial', 'throttle:20,1']);
         Route::get('/managed-bookshops', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'index']);
         Route::post('/management/{bookshop}/enter', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'enter'])->middleware('throttle:10,1');
         Route::post('/management/leave', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'leave']);

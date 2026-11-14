@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowLeft, Building2, ReceiptText, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
+import { Activity, ArrowLeft, Building2, CalendarPlus, ReceiptText, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from '@/lib/navigation'
 import BrandLoader from '../../components/brand-loader'
 import { BrandMark } from '../../components/brand-mark'
@@ -13,7 +13,9 @@ import { useAuth } from '../../features/auth/auth-provider'
 import { ApiError, errorMessage } from '../../lib/api'
 import { hasPermission, homeFor, logout, type BookshopUser, type Permission } from '../../lib/auth'
 import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
+import { trialApi } from '../../lib/billing-api'
 import PlatformBillingView from './billing-view'
+import { ExtendTrialModal } from './trial-extensions'
 import BillsView from './bills-view'
 import BookshopRegisterPage from '../register/bookshop/page'
 
@@ -260,7 +262,11 @@ function BookshopDetailView() {
   const client = useQueryClient()
   const shop = useQuery({ queryKey: ['platform', 'bookshop', id], queryFn: () => platformApi.bookshop(id) })
   const [dialog, setDialog] = useState<'suspend' | 'reactivate' | null>(null)
+  const [extending, setExtending] = useState(false)
   const [notice, setNotice] = useState('')
+  const canExtendTrial = hasPermission(user, 'platform.subscriptions.extend_trial')
+  const trial = useQuery({ queryKey: ['platform-billing', 'trials', 'bookshop', id], queryFn: () => trialApi.subscriptions({ bookshop_id: id }), enabled: canExtendTrial })
+  const trialRow = trial.data?.data.find(row => row.bookshop_id === id)
   const approve = useMutation({ mutationFn: () => platformApi.approve(id), onSuccess: result => { setNotice(result.message); void client.invalidateQueries({ queryKey: ['platform'] }) }, onError: error => setNotice(errorMessage(error)) })
 
   if (shop.isPending) return <LoadingState />
@@ -297,12 +303,15 @@ function BookshopDetailView() {
         <div><dt className="text-xs text-slate-400">Plan</dt><dd className="m-0">{data.subscription.plan?.name || '—'}</dd></div>
         <div><dt className="text-xs text-slate-400">Status</dt><dd className="m-0 capitalize">{data.subscription.status.replace('_', ' ')}</dd></div>
         <div><dt className="text-xs text-slate-400">Trial ends</dt><dd className="m-0">{formatDate(data.subscription.trial_ends_at)}</dd></div>
+        {data.subscription.trial_days_left !== null && <div><dt className="text-xs text-slate-400">Trial days left</dt><dd className="m-0">{data.subscription.trial_days_left}</dd></div>}
+        {trialRow?.eligible && <div className="pt-1"><button className={secondaryButton} onClick={() => { setNotice(''); setExtending(true) }}><CalendarPlus size={15} /> Extend Trial</button></div>}
       </dl> : <p className="text-sm text-slate-500">No subscription record (legacy bookshop).</p>}</Card>
     </div>
     <div className="mt-6"><Card title="Lifecycle history" description="Registration, activation, suspension and support actions." flush>
       {data.history.length === 0 ? <EmptyState icon={<History size={22} />} title="No history yet" body="Lifecycle events will appear here." />
         : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{data.history.map(entry => <li key={entry.id} className="px-6 py-3 text-sm"><p className="m-0 text-slate-800">{entry.description}</p><small className="text-xs text-slate-400">{formatDate(entry.created_at, true)}{entry.user ? ` · ${entry.user.name}` : ''}</small></li>)}</ul>}
     </Card></div>
+    {extending && trialRow && trial.data && <ExtendTrialModal target={trialRow} maxDays={trial.data.max_days} onClose={() => setExtending(false)} onDone={message => { setExtending(false); setNotice(message) }} />}
     {dialog && <StatusDialog shop={data} mode={dialog} onClose={() => setDialog(null)} onDone={done} />}
   </>
 }

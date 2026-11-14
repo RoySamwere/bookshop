@@ -13,7 +13,7 @@ export type Permission =
   | 'storefront.access'
   | 'platform.access' | 'platform.bookshops.view' | 'platform.bookshops.onboard' | 'platform.bookshops.suspend'
   | 'platform.users.view' | 'platform.users.manage' | 'platform.settings.view' | 'platform.settings.manage'
-  | 'platform.audit.view' | 'platform.plans.view'
+  | 'platform.audit.view' | 'platform.plans.view' | 'platform.subscriptions.extend_trial'
 
 export type Role = 'platform_owner' | 'platform_admin' | 'bookshop_owner' | 'system_owner' | 'admin' | 'store_manager' | 'cashier' | 'inventory_officer' | 'customer'
 export type BranchSummary = { id: number; name: string; code: string; is_main?: boolean }

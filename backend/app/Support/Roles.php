@@ -41,6 +41,8 @@ final class Roles
         'platform.access', 'platform.bookshops.view', 'platform.bookshops.onboard', 'platform.bookshops.suspend',
         'platform.users.view', 'platform.users.manage', 'platform.settings.view', 'platform.settings.manage',
         'platform.audit.view', 'platform.plans.view',
+        // Manual trial extensions. Not granted to Platform Administrators.
+        'platform.subscriptions.extend_trial',
     ];
 
     public const PERMISSIONS = [...self::TENANT_PERMISSIONS, ...self::PLATFORM_PERMISSIONS];
