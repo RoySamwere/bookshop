@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarPlus, History, Search } from 'lucide-react'
-import { Card, EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, formatDate, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
+import { CalendarPlus, History } from 'lucide-react'
+import { EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, formatDate, inputClass, primaryButton, secondaryButton } from '../../components/ui-kit'
 import { ApiError, errorMessage } from '../../lib/api'
 import { trialApi, type TrialSubscription } from '../../lib/billing-api'
-import { Pager } from '../billing/page'
+import { PageControls, Panel, Pill, SearchField, SelectField, Toolbar, tdClass, thClass, type Tone } from './platform-ui'
 
 const DAY_MS = 86_400_000
 
@@ -28,15 +28,15 @@ export function previewExpiry(target: TrialTarget, days: number, now = new Date(
   return new Date(base.getTime() + days * DAY_MS)
 }
 
-const STATE_LABEL: Record<TrialSubscription['trial_state'], { label: string; tone: string }> = {
-  active: { label: 'Active trial', tone: 'bg-blue-50 text-blue-700 ring-blue-200' },
-  expired: { label: 'Trial expired', tone: 'bg-rose-50 text-rose-700 ring-rose-200' },
-  not_trial: { label: 'Not on trial', tone: 'bg-slate-100 text-slate-600 ring-slate-200' },
+const STATE_LABEL: Record<TrialSubscription['trial_state'], { label: string; tone: Tone }> = {
+  active: { label: 'Active trial', tone: 'info' },
+  expired: { label: 'Trial expired', tone: 'danger' },
+  not_trial: { label: 'Not on trial', tone: 'neutral' },
 }
 
 function TrialStateBadge({ state }: { state: TrialSubscription['trial_state'] }) {
   const { label, tone } = STATE_LABEL[state]
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone}`}>{label}</span>
+  return <Pill tone={tone}>{label}</Pill>
 }
 
 /** Platform Owner screen: trial status of every bookshop, the Extend Trial action and the permanent history. */
@@ -55,49 +55,44 @@ export default function TrialExtensionsPanel() {
   const maxDays = rows.data?.max_days ?? 90
 
   return <div className="grid gap-6">
-    <Card title="Trial extension" description={`Give an unpaid bookshop more trial time. Active trials grow from their current expiry; expired trials restart from today. Plans, invoices and payments are never changed. Up to ${maxDays} days per extension.`}>
-      {notice && <div className="mb-4"><FormAlert tone="success" message={notice} /></div>}
-      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_220px]">
-        <label className="text-sm font-medium text-slate-700">Search bookshops
-          <span className="relative block"><Search className="pointer-events-none absolute left-3 top-[calc(50%+4px)] -translate-y-1/2 text-slate-400" size={16} />
-            <input className={`${inputClass} pl-9`} value={search} placeholder="Bookshop name" onChange={e => { setSearch(e.target.value); setPage(1) }} /></span>
-        </label>
-        <label className="text-sm font-medium text-slate-700">Show
-          <select className={inputClass} value={state} onChange={e => { setState(e.target.value); setPage(1) }}>
-            <option value="">All bookshops</option><option value="active">Active trials</option><option value="expired">Expired trials</option><option value="eligible">Eligible for extension</option>
-          </select>
-        </label>
-      </div>
+    <Panel title="Trial management" description={`Give an unpaid bookshop more trial time. Active trials grow from their current expiry; expired trials restart from today. Plans, invoices and payments are never changed. Up to ${maxDays} days per extension.`} flush>
+      {notice && <div className="border-b border-[var(--pf-line)] px-5 py-3"><FormAlert tone="success" message={notice} /></div>}
+      <Toolbar>
+        <SearchField label="Search bookshops" value={search} onChange={value => { setSearch(value); setPage(1) }} placeholder="Bookshop name" />
+        <SelectField label="Show" hideLabel value={state} onChange={value => { setState(value); setPage(1) }}>
+          <option value="">All bookshops</option><option value="active">Active trials</option><option value="expired">Expired trials</option><option value="eligible">Eligible for extension</option>
+        </SelectField>
+      </Toolbar>
       {rows.isPending ? <LoadingState /> : rows.isError ? <ErrorState message={errorMessage(rows.error)} onRetry={() => void rows.refetch()} />
         : !rows.data.data.length ? <EmptyState icon={<CalendarPlus size={22} />} title="No matching bookshops" body="Change the search or filter to see other subscriptions." />
         : <>
-          <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400"><tr>
-              {['Bookshop', 'Trial status', 'Trial started', 'Trial expires', 'Days left', 'Extensions', 'Action'].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}
+          <table className="hidden w-full text-sm md:table">
+            <thead className="border-b border-[var(--pf-line)] bg-slate-50/70"><tr>
+              {['Bookshop', 'Trial status', 'Trial started', 'Trial expires', 'Days left', 'Extensions', 'Action'].map(h => <th key={h} className={thClass}>{h}</th>)}
             </tr></thead>
-            <tbody className="divide-y divide-slate-100">{rows.data.data.map(row => <tr key={row.id}>
-              <td className="px-3 py-3"><p className="m-0 font-semibold text-slate-800">{row.bookshop_name}</p><small className="text-xs capitalize text-slate-400">{row.plan?.name ?? 'No plan'} · {row.status.replace('_', ' ')}</small></td>
-              <td className="px-3 py-3"><TrialStateBadge state={row.trial_state} /></td>
-              <td className="px-3 py-3 text-slate-600">{formatDate(row.trial_starts_at)}</td>
-              <td className="px-3 py-3 text-slate-600">{formatDate(row.trial_ends_at, true)}</td>
-              <td className="px-3 py-3 font-semibold text-slate-800">{row.trial_state === 'not_trial' ? '—' : row.remaining_trial_days}</td>
-              <td className="px-3 py-3"><button className="font-semibold text-blue-700 underline-offset-2 hover:underline disabled:text-slate-400 disabled:no-underline" disabled={!row.extensions_count} onClick={() => setHistoryFor(row)} aria-label={`View trial extension history for ${row.bookshop_name}`}>{row.extensions_count}</button></td>
-              <td className="px-3 py-3"><ExtendButton row={row} onClick={() => { setNotice(''); setTarget(row) }} /></td>
+            <tbody className="divide-y divide-[var(--pf-line)]">{rows.data.data.map(row => <tr key={row.id}>
+              <td className={tdClass}><p className="m-0 font-semibold">{row.bookshop_name}</p><small className="text-xs text-[var(--pf-muted)]">{row.plan?.name ?? 'No plan'}, {row.status.replace('_', ' ')}</small></td>
+              <td className={tdClass}><TrialStateBadge state={row.trial_state} /></td>
+              <td className={`${tdClass} text-[var(--pf-muted)]`}>{formatDate(row.trial_starts_at)}</td>
+              <td className={`${tdClass} text-[var(--pf-muted)]`}>{formatDate(row.trial_ends_at, true)}</td>
+              <td className={`${tdClass} pf-num font-semibold`}>{row.trial_state === 'not_trial' ? '—' : row.remaining_trial_days}</td>
+              <td className={tdClass}><button className="font-semibold text-[var(--pf-brand)] underline-offset-2 hover:underline disabled:text-slate-400 disabled:no-underline" disabled={!row.extensions_count} onClick={() => setHistoryFor(row)} aria-label={`View trial extension history for ${row.bookshop_name}`}>{row.extensions_count}</button></td>
+              <td className={tdClass}><ExtendButton row={row} onClick={() => { setNotice(''); setTarget(row) }} /></td>
             </tr>)}</tbody>
-          </table></div>
-          <ul className="m-0 grid list-none gap-3 p-0 md:hidden">{rows.data.data.map(row => <li key={row.id} className="rounded-xl border border-slate-200 p-4">
-            <div className="flex items-start justify-between gap-3"><p className="m-0 font-semibold text-slate-800">{row.bookshop_name}</p><TrialStateBadge state={row.trial_state} /></div>
+          </table>
+          <ul className="m-0 grid list-none divide-y divide-[var(--pf-line)] p-0 md:hidden">{rows.data.data.map(row => <li key={row.id} className="p-4">
+            <div className="flex items-start justify-between gap-3"><p className="m-0 font-semibold">{row.bookshop_name}</p><TrialStateBadge state={row.trial_state} /></div>
             <dl className="my-3 grid grid-cols-2 gap-2 text-sm">
-              <div><dt className="text-xs text-slate-400">Trial started</dt><dd className="m-0">{formatDate(row.trial_starts_at)}</dd></div>
-              <div><dt className="text-xs text-slate-400">Trial expires</dt><dd className="m-0">{formatDate(row.trial_ends_at)}</dd></div>
-              <div><dt className="text-xs text-slate-400">Days left</dt><dd className="m-0">{row.trial_state === 'not_trial' ? '—' : row.remaining_trial_days}</dd></div>
-              <div><dt className="text-xs text-slate-400">Extensions</dt><dd className="m-0">{row.extensions_count ? <button className="font-semibold text-blue-700" onClick={() => setHistoryFor(row)}>{row.extensions_count} · view</button> : 0}</dd></div>
+              <div><dt className="text-xs text-[var(--pf-muted)]">Trial started</dt><dd className="m-0">{formatDate(row.trial_starts_at)}</dd></div>
+              <div><dt className="text-xs text-[var(--pf-muted)]">Trial expires</dt><dd className="m-0">{formatDate(row.trial_ends_at)}</dd></div>
+              <div><dt className="text-xs text-[var(--pf-muted)]">Days left</dt><dd className="m-0">{row.trial_state === 'not_trial' ? '—' : row.remaining_trial_days}</dd></div>
+              <div><dt className="text-xs text-[var(--pf-muted)]">Extensions</dt><dd className="m-0">{row.extensions_count ? <button className="font-semibold text-[var(--pf-brand)]" onClick={() => setHistoryFor(row)}>{row.extensions_count}, view</button> : 0}</dd></div>
             </dl>
             <ExtendButton row={row} onClick={() => { setNotice(''); setTarget(row) }} />
           </li>)}</ul>
-          <Pager page={rows.data} setPage={setPage} />
+          <PageControls page={rows.data} onPage={setPage} />
         </>}
-    </Card>
+    </Panel>
     <TrialExtensionHistory bookshop={historyFor} onClear={() => setHistoryFor(null)} />
     {target && <ExtendTrialModal target={target} maxDays={maxDays} onClose={() => setTarget(null)} onDone={message => { setTarget(null); setNotice(message) }} />}
   </div>
@@ -154,7 +149,7 @@ export function ExtendTrialModal({ target, maxDays, onClose, onDone }: { target:
         <input className={inputClass} inputMode="numeric" autoComplete="off" value={rawDays} onChange={e => setRawDays(e.target.value)} onBlur={() => setTouched(true)} aria-invalid={touched && !!parsed.error} required />
       </Field>
       <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm" aria-live="polite">
-        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-blue-700">New trial expiry</p>
+        <p className="m-0 text-xs font-semibold text-blue-700">New trial expiry</p>
         <p className="m-0 mt-1 text-base font-semibold text-slate-900" data-testid="new-expiry">{newExpiry ? formatDate(newExpiry.toISOString(), true) : '—'}</p>
       </div>
       <Field label="Reason for extension (optional)">
@@ -187,26 +182,27 @@ function TrialExtensionHistory({ bookshop, onClear }: { bookshop: TrialSubscript
   const [page, setPage] = useState(1)
   const bookshopId = bookshop?.bookshop_id
   const rows = useQuery({ queryKey: ['platform-billing', 'trial-history', bookshopId ?? 'all', page], queryFn: () => trialApi.history({ page, bookshop_id: bookshopId }), placeholderData: keepPreviousData })
-  return <Card title="Trial extension history" description={bookshop ? `Extensions granted to ${bookshop.bookshop_name}. History is permanent and cannot be edited.` : 'Every extension granted on the platform. History is permanent and cannot be edited.'}
+  return <Panel title="Trial extension history" description={bookshop ? `Extensions granted to ${bookshop.bookshop_name}. History is permanent and cannot be edited.` : 'Every extension granted on the platform. History is permanent and cannot be edited.'} flush
     actions={bookshop ? <button className={secondaryButton} onClick={() => { onClear(); setPage(1) }}>Show all bookshops</button> : undefined}>
     {rows.isPending ? <LoadingState /> : rows.isError ? <ErrorState message={errorMessage(rows.error)} onRetry={() => void rows.refetch()} />
       : !rows.data.data.length ? <EmptyState icon={<History size={22} />} title="No trial extensions yet" body="Extensions you grant will be listed here." />
       : <>
-        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400"><tr>
-            {['Date', 'Bookshop', 'Previous expiry', 'Days', 'New expiry', 'Granted by', 'Reason'].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}
+        <table className="w-full text-sm">
+          <thead className="border-b border-[var(--pf-line)] bg-slate-50/70"><tr>
+            <th className={thClass}>Date</th><th className={thClass}>Bookshop</th><th className={`${thClass} hidden lg:table-cell`}>Previous expiry</th><th className={`${thClass} text-right`}>Days</th>
+            <th className={`${thClass} hidden sm:table-cell`}>New expiry</th><th className={`${thClass} hidden md:table-cell`}>Granted by</th><th className={`${thClass} hidden lg:table-cell`}>Reason</th>
           </tr></thead>
-          <tbody className="divide-y divide-slate-100">{rows.data.data.map(entry => <tr key={entry.id}>
-            <td className="px-3 py-3 text-slate-600">{formatDate(entry.created_at, true)}</td>
-            <td className="px-3 py-3 font-semibold text-slate-800">{entry.bookshop_name ?? `Bookshop ${entry.bookshop_id}`}</td>
-            <td className="px-3 py-3 text-slate-600">{formatDate(entry.previous_trial_ends_at, true)}{entry.reactivated && <span className="ml-1 text-xs text-rose-600">(expired)</span>}</td>
-            <td className="px-3 py-3 font-semibold">+{entry.days_granted}</td>
-            <td className="px-3 py-3 text-slate-600">{formatDate(entry.new_trial_ends_at, true)}</td>
-            <td className="px-3 py-3 text-slate-600">{entry.extended_by_name ?? '—'}</td>
-            <td className="max-w-[260px] break-words px-3 py-3 text-slate-600">{entry.reason ?? '—'}</td>
+          <tbody className="divide-y divide-[var(--pf-line)]">{rows.data.data.map(entry => <tr key={entry.id}>
+            <td className={`${tdClass} text-[var(--pf-muted)]`}>{formatDate(entry.created_at, true)}</td>
+            <td className={`${tdClass} font-semibold`}>{entry.bookshop_name ?? `Bookshop ${entry.bookshop_id}`}{entry.reason && <small className="block break-words text-xs font-normal text-[var(--pf-muted)] lg:hidden">{entry.reason}</small>}</td>
+            <td className={`${tdClass} hidden text-[var(--pf-muted)] lg:table-cell`}>{formatDate(entry.previous_trial_ends_at, true)}{entry.reactivated && <span className="ml-1 text-xs text-rose-600">(expired)</span>}</td>
+            <td className={`${tdClass} pf-num text-right font-semibold`}>+{entry.days_granted}</td>
+            <td className={`${tdClass} hidden text-[var(--pf-muted)] sm:table-cell`}>{formatDate(entry.new_trial_ends_at, true)}</td>
+            <td className={`${tdClass} hidden text-[var(--pf-muted)] md:table-cell`}>{entry.extended_by_name ?? '—'}</td>
+            <td className={`${tdClass} hidden max-w-[260px] break-words text-[var(--pf-muted)] lg:table-cell`}>{entry.reason ?? '—'}</td>
           </tr>)}</tbody>
-        </table></div>
-        <Pager page={rows.data} setPage={setPage} />
+        </table>
+        <PageControls page={rows.data} onPage={setPage} />
       </>}
-  </Card>
+  </Panel>
 }

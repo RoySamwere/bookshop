@@ -44,7 +44,7 @@ export const billingApi = {
   payments: (page = 1, environment = '') => api<Page<LedgerPayment>>(`/platform/billing/payments?page=${page}&environment=${environment}`),
   updatePlan: (id: number, body: { name: string; price: number; billing_interval: string; is_active: boolean }) => api(`/platform/billing/plans/${id}`, { method: 'PATCH', body }),
   plan: (body: { code: string; name: string; price: number; billing_interval: string }) => api('/platform/billing/plans', { method: 'POST', body }),
-  invoices: (page = 1, environment = '') => api<Page<Invoice>>(`/platform/billing/invoices?page=${page}${environment ? `&environment=${environment}` : ''}`),
+  invoices: (page = 1, environment = '', status = '') => api<Page<Invoice>>(`/platform/billing/invoices?page=${page}${environment ? `&environment=${environment}` : ''}${status ? `&status=${status}` : ''}`),
   attempts: (page = 1, environment = '') => api<Page<Attempt>>(`/platform/billing/stk-attempts?page=${page}&environment=${environment}`),
   reconciliation: (page = 1, environment = '') => api<Page<Reconciliation>>(`/platform/billing/reconciliation?page=${page}&environment=${environment}`),
   resolveOverpayment: (id: number, body: { refund_reference: string; refund_verified: boolean }) => api(`/platform/billing/reconciliation/${id}/resolve-overpayment`, { method: 'POST', body }),

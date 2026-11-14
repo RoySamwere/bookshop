@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import TrialExtensionsPanel, { parseExtensionDays, previewExpiry } from './trial-extensions'
 import PlatformBillingView from './billing-view'
@@ -72,7 +72,7 @@ describe('Trial extension panel', () => {
     expect(screen.getAllByRole('button', { name: 'Extend trial for Lakeside Books' }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Extend trial for Old Town Books' }).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Extend trial for Paid Pages' })).not.toBeInTheDocument()
-    expect(await screen.findByText('Data migration delay')).toBeInTheDocument()
+    expect((await screen.findAllByText('Data migration delay')).length).toBeGreaterThan(0)
   })
 
   it('validates, previews, confirms and submits a single extension', async () => {
@@ -136,17 +136,20 @@ describe('Trial extension panel', () => {
 })
 
 describe('Platform billing tabs', () => {
-  it('shows the Trial extension tab to the Platform Owner only', async () => {
+  it('shows the Trial management tab to the Platform Owner only', async () => {
     const user = userEvent.setup()
-    const view = mount(<PlatformBillingView />)
-    await user.click(await screen.findByRole('button', { name: 'Trial extension' }))
-    expect(await screen.findByRole('heading', { name: 'Trial extension' })).toBeInTheDocument()
+    const view = render(<MemoryRouter initialEntries={['/platform/billing']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Routes><Route path="/platform/billing/*" element={<PlatformBillingView />} /></Routes></QueryClientProvider></MemoryRouter>)
+    await user.click(await screen.findByRole('link', { name: 'Trial management' }))
+    expect(await screen.findByRole('heading', { name: 'Trial management' })).toBeInTheDocument()
     view.unmount()
+    vi.mocked(trialApi.subscriptions).mockClear()
 
     auth.user = { role: 'platform_admin', account_type: 'platform', permissions: ['platform.access', 'platform.settings.view'] }
-    mount(<PlatformBillingView />)
-    expect(await screen.findByRole('button', { name: 'Subscriptions' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Trial extension' })).not.toBeInTheDocument()
+    render(<MemoryRouter initialEntries={['/platform/billing/trials']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Routes><Route path="/platform/billing/*" element={<PlatformBillingView />} /></Routes></QueryClientProvider></MemoryRouter>)
+    expect(await screen.findByRole('link', { name: 'Subscriptions' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Trial management' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Trial management' })).not.toBeInTheDocument()
+    expect(trialApi.subscriptions).not.toHaveBeenCalled()
   })
 })
 

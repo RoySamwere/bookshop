@@ -1,0 +1,26 @@
+/* Platform Owner console. Scoped to .pf so bookshop workspaces are unaffected. */
+.pf {
+  --pf-ink: #13203b;
+  --pf-muted: #5b6782;
+  --pf-canvas: #f4f6fa;
+  --pf-line: #e2e7f0;
+  --pf-brand: #087df5;
+  --pf-owed: #d97706;
+  background: var(--pf-canvas);
+  color: var(--pf-ink);
+  font-family: Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.pf-title { font-family: 'Libre Caslon Display', 'Iowan Old Style', Georgia, serif; font-weight: 400; letter-spacing: -0.01em; line-height: 1.1; }
+.pf-num { font-variant-numeric: tabular-nums; }
+.pf :focus-visible { outline: 2px solid var(--pf-brand); outline-offset: 2px; }
+.pf-scroll-x { overflow-x: auto; scrollbar-width: none; }
+.pf-scroll-x::-webkit-scrollbar { display: none; }
+
+/* Bar charts: a per-mark hover/focus tooltip with the exact value. */
+.pf-bar { position: relative; }
+.pf-bar [role='tooltip'] { position: absolute; left: 0; bottom: calc(100% + 6px); opacity: 0; pointer-events: none; transition: opacity 120ms; white-space: nowrap; }
+.pf-bar:hover [role='tooltip'], .pf-bar:focus-visible [role='tooltip'] { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pf *, .pf *::before, .pf *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}

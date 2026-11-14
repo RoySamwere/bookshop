@@ -52,7 +52,7 @@ it('restores the original workspace modules and provides Return to Platform', as
 
 it('redirects an unmanaged platform owner away from direct tenant navigation', async () => {
   mount('/dashboard')
-  expect(await screen.findByRole('link', { name: 'Bookshop Management' })).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: 'Bookshop management' })).toBeInTheDocument()
   expect(screen.queryByText('Original workspace')).not.toBeInTheDocument()
 })
 

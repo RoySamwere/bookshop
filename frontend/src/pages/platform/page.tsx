@@ -1,22 +1,20 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowLeft, Building2, CalendarPlus, ReceiptText, CircleCheck, Gauge, History, LogOut, Menu, Eye, Pencil, Search, Settings, ShieldCheck, Store, UserPlus, Users, X } from 'lucide-react'
-import { useRouter } from '@/lib/navigation'
-import BrandLoader from '../../components/brand-loader'
-import { BrandMark } from '../../components/brand-mark'
+import { AlertTriangle, ArrowLeft, Building2, CalendarPlus, CheckCircle2, ChevronRight, Eye, History, Pencil, ShieldCheck, Store, UserPlus } from 'lucide-react'
 import {
-  Card, EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, ModalActions, PageHeader, Pagination, StatCard, StatusBadge,
+  EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, ModalActions,
   dangerButton, formatDate, inputClass, primaryButton, secondaryButton,
 } from '../../components/ui-kit'
 import { useAuth } from '../../features/auth/auth-provider'
 import { ApiError, errorMessage } from '../../lib/api'
-import { hasPermission, homeFor, logout, type BookshopUser, type Permission } from '../../lib/auth'
+import { hasPermission, type BookshopUser, type BookshopStatus, type Permission } from '../../lib/auth'
+import { billingApi, billsApi, trialApi } from '../../lib/billing-api'
 import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
-import { trialApi } from '../../lib/billing-api'
 import PlatformBillingView from './billing-view'
 import { ExtendTrialModal } from './trial-extensions'
-import BillsView from './bills-view'
+import { BarList, Metric, MetricStrip, PageControls, Panel, Pill, PlatformTitle, SearchField, SelectField, SplitBar, StatePill, Toolbar, humanize, kes, tdClass, thClass } from './platform-ui'
+import { PlatformShell } from './shell'
 import BookshopRegisterPage from '../register/bookshop/page'
 
 /** The Platform Owner console at /platform. Separate from every bookshop workspace; it shows tenant metadata only. */
@@ -29,9 +27,10 @@ export default function PlatformPage() {
       <Route path="management" element={<ManagementView />} />
       <Route path="bookshops/:id" element={<BookshopDetailView />} />
       <Route path="users" element={<Gate permission="platform.users.view"><UsersView /></Gate>} />
-      <Route path="billing" element={<Gate permission="platform.settings.view"><PlatformBillingView /></Gate>} />
-      <Route path="bills" element={<Gate permission="platform.settings.view"><BillsView /></Gate>} />
-      <Route path="plans" element={<Gate permission="platform.plans.view"><PlansView /></Gate>} />
+      <Route path="billing/*" element={<Gate permission="platform.settings.view"><PlatformBillingView /></Gate>} />
+      {/* Earlier addresses, kept so bookmarks and links still work. */}
+      <Route path="bills" element={<Navigate replace to="/platform/billing/payments" />} />
+      <Route path="plans" element={<Gate permission="platform.plans.view"><Navigate replace to="/platform/billing/plans" /></Gate>} />
       <Route path="settings" element={<Gate permission="platform.settings.view"><SettingsView /></Gate>} />
       <Route path="audit" element={<Gate permission="platform.audit.view"><AuditView /></Gate>} />
       <Route path="*" element={<Navigate replace to="/platform" />} />
@@ -39,62 +38,9 @@ export default function PlatformPage() {
   </Routes>
 }
 
-const nav: { to: string; label: string; icon: typeof Gauge; permission: Permission }[] = [
-  { to: '/platform', label: 'Overview', icon: Gauge, permission: 'platform.access' },
-  { to: '/platform/bookshops', label: 'Bookshops', icon: Store, permission: 'platform.bookshops.view' },
-  { to: '/platform/management', label: 'Bookshop Management', icon: Building2, permission: 'platform.access' },
-  { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
-  { to: '/platform/billing', label: 'Subscription billing', icon: Building2, permission: 'platform.settings.view' },
-  { to: '/platform/bills', label: 'Bills', icon: ReceiptText, permission: 'platform.settings.view' },
-  { to: '/platform/plans', label: 'Subscription plans', icon: Building2, permission: 'platform.plans.view' },
-  { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
-  { to: '/platform/audit', label: 'Audit history', icon: History, permission: 'platform.audit.view' },
-]
-
 function useCurrentUser(): BookshopUser {
   const { user } = useAuth()
   return user as BookshopUser
-}
-
-function PlatformShell() {
-  const { user, loading } = useAuth()
-  const location = useLocation()
-  const router = useRouter()
-  const [open, setOpen] = useState(false)
-  if (loading) return <BrandLoader />
-  if (!user) return <Navigate replace to={`/login?next=${encodeURIComponent(location.pathname)}`} />
-  if (user.account_type !== 'platform' || !hasPermission(user, 'platform.access')) return <Navigate replace to={homeFor(user)} />
-
-  const links = nav.filter(item => hasPermission(user, item.permission) && (item.to !== '/platform/management' || user.role === 'platform_owner'))
-  const sidebar = <nav aria-label="Platform navigation" className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-1">
-    {links.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/platform'} onClick={() => setOpen(false)}
-      className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-      <Icon size={18} aria-hidden="true" />{label}
-    </NavLink>)}
-  </nav>
-
-  return <div className="min-h-screen bg-slate-100 lg:pl-64">
-    <a className="skip-link" href="#platform-content">Skip to content</a>
-    <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-slate-950 px-4 py-5 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`} aria-label="Platform console">
-      <div className="mb-8 flex items-center gap-3 px-2">
-        <BrandMark size={36} />
-        <div><strong className="block text-sm">Hekima Platform</strong><span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-400">Owner console</span></div>
-        <button className="ml-auto grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-white/10 lg:hidden" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={18} /></button>
-      </div>
-      {sidebar}
-      <div className="mt-auto rounded-xl bg-white/5 p-3 text-xs text-slate-400">
-        <p className="m-0 font-semibold text-white">{user.name}</p>
-        <p className="m-0 mt-0.5">{user.role_label}</p>
-        <button className="mt-3 flex items-center gap-2 font-semibold text-slate-300 hover:text-white" onClick={() => void logout().then(() => router.replace('/login?signed_out=1'))}><LogOut size={14} /> Sign out</button>
-      </div>
-    </aside>
-    {open && <div className="fixed inset-0 z-30 bg-slate-950/50 lg:hidden" onClick={() => setOpen(false)} aria-hidden="true" />}
-    <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-      <button className="grid size-9 place-items-center rounded-lg hover:bg-slate-100" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={20} /></button>
-      <strong className="text-sm">Platform console</strong>
-    </header>
-    <main id="platform-content" tabIndex={-1} className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-8"><Outlet /></main>
-  </div>
 }
 
 function Gate({ permission, children }: { permission: Permission; children: ReactNode }) {
@@ -102,42 +48,82 @@ function Gate({ permission, children }: { permission: Permission; children: Reac
   return hasPermission(user, permission) ? <>{children}</> : <EmptyState icon={<ShieldCheck size={22} />} title="Not available" body="Your platform role does not include this area." />
 }
 
-function StatusPill({ status }: { status: PlatformBookshop['status'] }) {
-  const tone = status === 'active' ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/10' : status === 'suspended' ? 'bg-rose-50 text-rose-700 ring-rose-600/10' : 'bg-amber-50 text-amber-700 ring-amber-600/10'
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone}`}><span className="size-1.5 rounded-full bg-current" />{BOOKSHOP_STATUS_LABELS[status]}</span>
+function ShopStatus({ status }: { status: BookshopStatus }) {
+  return <StatePill status={status} label={BOOKSHOP_STATUS_LABELS[status]} />
 }
 
 function OverviewView() {
   const user = useCurrentUser()
+  const canBilling = hasPermission(user, 'platform.settings.view')
   const overview = useQuery({ queryKey: ['platform', 'overview'], queryFn: platformApi.overview })
+  const revenue = useQuery({ queryKey: ['platform-bills', 'summary'], queryFn: () => billsApi.list({ page: 1 }), enabled: canBilling })
+  const expiring = useQuery({ queryKey: ['platform-billing', 'subscriptions', 1, 'upcoming'], queryFn: () => billingApi.subscriptions(1, 'upcoming'), enabled: canBilling })
+
+  if (overview.isPending) return <><PlatformTitle title="Platform overview" /><LoadingState /></>
+  if (overview.error) return <><PlatformTitle title="Platform overview" /><ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} /></>
+  const data = overview.data
+  const summary = revenue.data?.summary
+  const attention = [
+    { label: 'Bookshops awaiting approval', count: data.bookshops.pending_verification, to: '/platform/bookshops?status=pending_verification', show: true },
+    { label: 'Unmatched M-Pesa payments', count: summary?.unmatched_count ?? 0, to: '/platform/billing/payments', show: canBilling },
+    { label: 'Payments waiting for Safaricom', count: summary?.pending_count ?? 0, to: '/platform/billing/payments', show: canBilling },
+    { label: 'Subscriptions ending within 7 days', count: expiring.data?.total ?? 0, to: '/platform/billing/subscriptions?state=upcoming', show: canBilling },
+    { label: 'Expired subscriptions', count: data.subscriptions.expired ?? 0, to: '/platform/billing/subscriptions?state=expired', show: canBilling },
+    { label: 'Suspended bookshops', count: data.bookshops.suspended, to: '/platform/bookshops?status=suspended', show: true },
+  ].filter(item => item.show && item.count > 0)
+
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Gauge size={15} />} title="Platform overview" description="Bookshops, subscriptions and accounts across the platform. Bookshop business records are never shown here." />
-    {user.role === 'platform_owner' && <div className="mb-6"><Card title="Bookshop Management" description="Open the original Hekima Bookshop through your authorized management context."><Link className={primaryButton} to="/platform/management">Manage authorized bookshops</Link></Card></div>}
-    {overview.isPending ? <LoadingState /> : overview.error ? <ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} /> : <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Bookshops" value={overview.data.bookshops.total} hint={`${overview.data.bookshops.registered_last_30_days} registered in the last 30 days`} icon={<Store size={18} />} />
-        <StatCard label="Active" value={overview.data.bookshops.active} hint="Verified and operating" icon={<CircleCheck size={18} />} tone="emerald" />
-        <StatCard label="Awaiting verification" value={overview.data.bookshops.pending_verification} hint="Owner has not confirmed email" icon={<Activity size={18} />} tone="amber" />
-        <StatCard label="Suspended" value={overview.data.bookshops.suspended} hint="Workspace access paused" icon={<ShieldCheck size={18} />} tone="pink" />
-      </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card title="Subscriptions" description="Trial and billing state. Payments are verified automatically; exceptions are in Bills.">
-          <dl className="grid grid-cols-2 gap-3 text-sm">{Object.entries(overview.data.subscriptions).map(([status, total]) => <div key={status} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2"><dt className="capitalize text-slate-500">{status.replace('_', ' ')}</dt><dd className="m-0 font-semibold text-slate-900">{total}</dd></div>)}</dl>
-        </Card>
-        <Card title="Accounts" description="People using the platform.">
-          <dl className="grid gap-3 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Bookshop staff</dt><dd className="m-0 font-semibold">{overview.data.users.bookshop_staff}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Platform staff</dt><dd className="m-0 font-semibold">{overview.data.users.platform_staff}</dd></div>
-            {overview.data.users.unassigned_legacy_staff > 0 && <div className="flex justify-between text-amber-700"><dt>Legacy staff not yet in a bookshop</dt><dd className="m-0 font-semibold">{overview.data.users.unassigned_legacy_staff}</dd></div>}
+    <PlatformTitle title="Platform overview" description="Bookshops, subscriptions and revenue across the platform. Bookshop business records are never shown here."
+      actions={user.role === 'platform_owner' && <Link className={secondaryButton} to="/platform/management">Open a managed bookshop</Link>} />
+    <MetricStrip label="Bookshops">
+      <Metric label="Bookshops" value={data.bookshops.total} hint={`${data.bookshops.registered_last_30_days} new in the last 30 days`} />
+      <Metric label="Active" value={data.bookshops.active} hint="Approved and operating" />
+      <Metric label="Awaiting approval" value={data.bookshops.pending_verification} hint="Need verification or approval" />
+      <Metric label="Suspended" value={data.bookshops.suspended} hint="Workspace access paused" tone={data.bookshops.suspended ? 'alert' : undefined} />
+    </MetricStrip>
+    <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      {canBilling ? <Panel title="Revenue" description="Verified M-Pesa collections against unpaid invoice balances." actions={<Link className="text-sm font-semibold text-[var(--pf-brand)] hover:underline" to="/platform/billing">Open billing</Link>}>
+        {revenue.isPending ? <LoadingState /> : revenue.error ? <ErrorState message={errorMessage(revenue.error)} onRetry={() => void revenue.refetch()} /> : summary && <>
+          <SplitBar collected={summary.verified_collections} outstanding={summary.outstanding_balance} />
+          <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-[var(--pf-line)] pt-4 text-sm sm:grid-cols-3">
+            <div><dt className="text-[var(--pf-muted)]">Collected today</dt><dd className="pf-num m-0 mt-0.5 font-semibold">{kes(summary.today_collections)}</dd></div>
+            <div><dt className="text-[var(--pf-muted)]">Unpaid invoices</dt><dd className="pf-num m-0 mt-0.5 font-semibold">{summary.outstanding_invoices}</dd></div>
+            <div><dt className="text-[var(--pf-muted)]">Payment mode</dt><dd className="m-0 mt-0.5 font-semibold capitalize">{summary.environment}</dd></div>
           </dl>
-        </Card>
-      </div>
-      <div className="mt-6"><Card title="Newest bookshops" flush>
-        {overview.data.recent_bookshops.length === 0 ? <EmptyState icon={<Store size={22} />} title="No bookshops yet" body="Bookshops appear here as soon as an owner registers." />
-          : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{overview.data.recent_bookshops.map(shop => <li key={shop.id}><Link to={`/platform/bookshops/${shop.id}`} className="flex items-center justify-between gap-3 px-6 py-3 hover:bg-slate-50"><span><strong className="text-sm text-slate-900">{shop.name}</strong><small className="block text-xs text-slate-400">{shop.country} · {formatDate(shop.created_at)}</small></span><StatusPill status={shop.status} /></Link></li>)}</ul>}
-      </Card></div>
-    </>}
+        </>}
+      </Panel> : <Panel title="Accounts"><AccountCounts data={data.users} /></Panel>}
+      <Panel title="Needs attention" flush>
+        {attention.length === 0 ? <p className="flex items-center gap-2 px-5 py-6 text-sm text-[var(--pf-muted)]"><CheckCircle2 size={18} className="text-emerald-600" /> Nothing needs your attention right now.</p>
+          : <ul className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{attention.map(item => <li key={item.label}>
+            <Link to={item.to} className="flex items-center gap-3 px-5 py-3 text-sm hover:bg-slate-50">
+              <AlertTriangle size={16} className="shrink-0 text-amber-600" aria-hidden="true" /><span className="flex-1">{item.label}</span>
+              <span className="pf-num font-semibold">{item.count}</span><ChevronRight size={16} className="text-slate-400" aria-hidden="true" />
+            </Link></li>)}</ul>}
+      </Panel>
+    </div>
+    <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <Panel title="Subscriptions by status">
+        <BarList label="Subscriptions by status" rows={Object.entries(data.subscriptions).map(([status, total]) => ({ key: status, label: humanize(status), value: total }))} />
+      </Panel>
+      {canBilling ? <Panel title="Accounts"><AccountCounts data={data.users} /></Panel> : null}
+    </div>
+    <div className="mt-6"><Panel title="Newest bookshops" flush actions={<Link className="text-sm font-semibold text-[var(--pf-brand)] hover:underline" to="/platform/bookshops">All bookshops</Link>}>
+      {data.recent_bookshops.length === 0 ? <EmptyState icon={<Store size={22} />} title="No bookshops yet" body="Bookshops appear here as soon as an owner registers." />
+        : <ul className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{data.recent_bookshops.map(shop => <li key={shop.id}>
+          <Link to={`/platform/bookshops/${shop.id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
+            <span className="min-w-0"><strong className="block truncate text-sm font-semibold">{shop.name}</strong><small className="text-xs text-[var(--pf-muted)]">{shop.country}, registered {formatDate(shop.created_at)}</small></span>
+            <ShopStatus status={shop.status} />
+          </Link></li>)}</ul>}
+    </Panel></div>
   </>
+}
+
+function AccountCounts({ data }: { data: { bookshop_staff: number; platform_staff: number; unassigned_legacy_staff: number } }) {
+  return <dl className="grid gap-3 text-sm">
+    <div className="flex justify-between"><dt className="text-[var(--pf-muted)]">Bookshop staff</dt><dd className="pf-num m-0 font-semibold">{data.bookshop_staff}</dd></div>
+    <div className="flex justify-between"><dt className="text-[var(--pf-muted)]">Platform staff</dt><dd className="pf-num m-0 font-semibold">{data.platform_staff}</dd></div>
+    {data.unassigned_legacy_staff > 0 && <div className="flex justify-between text-amber-700"><dt>Legacy staff not yet in a bookshop</dt><dd className="pf-num m-0 font-semibold">{data.unassigned_legacy_staff}</dd></div>}
+  </dl>
 }
 
 function ManagementView() {
@@ -150,70 +136,84 @@ function ManagedBookshops() {
   const shops = useQuery({ queryKey: ['platform', 'managed-bookshops'], queryFn: platformApi.managedBookshops })
   const enter = useMutation({ mutationFn: enterBookshopManagement })
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Building2 size={15} />} title="Bookshop Management" description="Only businesses explicitly authorized for your account appear here." />
-    {enter.error && <FormAlert message={errorMessage(enter.error)} />}
+    <PlatformTitle title="Bookshop management" description="Work inside a bookshop's own workspace. Only businesses explicitly authorized for your account appear here, and every action is recorded." />
+    {enter.error && <div className="mb-4"><FormAlert message={errorMessage(enter.error)} /></div>}
     {shops.isPending ? <LoadingState /> : shops.error ? <ErrorState message={errorMessage(shops.error)} onRetry={() => void shops.refetch()} /> : shops.data.length === 0
       ? <EmptyState icon={<Building2 size={22} />} title="Original bookshop awaiting authorization" body="The server administrator must verify and restore the original bookshop before it can be managed here." />
-      : <div className="grid gap-4 sm:grid-cols-2">{shops.data.map(shop => <Card key={shop.id} title={shop.name} description={BOOKSHOP_STATUS_LABELS[shop.status]}>
-        <button type="button" className={primaryButton} disabled={enter.isPending || shop.status !== 'active'} onClick={() => enter.mutate(shop.id)}>{enter.isPending ? 'Opening…' : 'Open bookshop workspace'}</button>
-      </Card>)}</div>}
-  </>
-}
-
-function PlansView() {
-  const plans = useQuery({ queryKey: ['platform', 'plans'], queryFn: platformApi.plans })
-  return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Building2 size={15} />} title="Subscription plans" description="Available plans, prices and trial periods." />
-    {plans.isPending ? <LoadingState /> : plans.error ? <ErrorState message={errorMessage(plans.error)} onRetry={() => void plans.refetch()} /> :
-      <div className="grid gap-4 sm:grid-cols-2">{plans.data.map(plan => <Card key={plan.id} title={plan.name} description={plan.description || undefined}>
-        <p className="font-semibold">{plan.currency} {plan.price} / {plan.billing_interval}</p>
-        <p className="text-sm text-slate-500">{plan.trial_days} trial days · {plan.is_active ? 'Active' : 'Inactive'}</p>
-      </Card>)}</div>}
+      : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{shops.data.map(shop => <Panel key={shop.id}>
+        <div className="flex items-start justify-between gap-3"><h2 className="text-base font-semibold">{shop.name}</h2><ShopStatus status={shop.status} /></div>
+        <p className="mt-1 text-sm text-[var(--pf-muted)]">{shop.location || shop.country}</p>
+        <button type="button" className={`${primaryButton} mt-4 w-full`} disabled={enter.isPending || shop.status !== 'active'} onClick={() => enter.mutate(shop.id)}>{enter.isPending ? 'Opening…' : 'Open bookshop workspace'}</button>
+      </Panel>)}</div>}
   </>
 }
 
 function BookshopsView() {
   const user = useCurrentUser()
   const client = useQueryClient()
+  const [params, setParams] = useSearchParams()
+  const canOnboard = hasPermission(user, 'platform.bookshops.onboard')
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
+  const [search, setSearch] = useState(params.get('q') ?? '')
+  const [status, setStatus] = useState(params.get('status') ?? '')
   const [page, setPage] = useState(1)
   const [selectedShop, setSelectedShop] = useState<number | null>(null)
+
+  // The header search and "New bookshop" quick action arrive as ?q= and ?create=1.
+  useEffect(() => {
+    const q = params.get('q'); const filter = params.get('status')
+    if (q !== null) { setSearch(q); setPage(1) }
+    if (filter !== null) { setStatus(filter); setPage(1) }
+    if (params.get('create') === '1') {
+      if (canOnboard) { setNotice(''); setCreateOpen(true) }
+      const next = new URLSearchParams(params); next.delete('create'); setParams(next, { replace: true })
+    }
+  }, [params, setParams, canOnboard])
+
   const list = useQuery({ queryKey: ['platform', 'bookshops', search, status, page], queryFn: () => platformApi.bookshops({ search: search.trim() || undefined, status: status || undefined, page }), placeholderData: keepPreviousData })
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Store size={15} />} title="Bookshops" description="Every registered bookshop, its owner and subscription state." />
-    {hasPermission(user, 'platform.bookshops.onboard') && <div className="mb-4"><button type="button" className={primaryButton} onClick={() => { setNotice(''); setCreateOpen(true) }}>Create bookshop</button></div>}
-    {notice && <p className="mb-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800" role="status">{notice}</p>}
-    {createOpen && hasPermission(user, 'platform.bookshops.onboard') && <Modal title="Create bookshop" description="Add a shop and its separate owner account." icon={<Store size={18} />} wide busy={creating} onClose={() => { if (!creating) setCreateOpen(false) }}>
+    <PlatformTitle title="Bookshops" description="Every registered bookshop, its owner and subscription state."
+      actions={canOnboard && <button type="button" className={primaryButton} onClick={() => { setNotice(''); setCreateOpen(true) }}>Create bookshop</button>} />
+    {notice && <div className="mb-4"><p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" role="status">{notice}</p></div>}
+    {createOpen && canOnboard && <Modal title="Create bookshop" description="Add a shop and its separate owner account." icon={<Store size={18} />} wide busy={creating} onClose={() => { if (!creating) setCreateOpen(false) }}>
       <BookshopRegisterPage platformMode embedded onPendingChange={setCreating} onCancel={() => setCreateOpen(false)} onCreated={message => {
         setCreateOpen(false); setNotice(message)
         void client.invalidateQueries({ queryKey: ['platform'] })
       }} />
     </Modal>}
-    <Card title="Directory" flush actions={<div className="flex flex-col gap-2 sm:flex-row">
-      <label className="relative"><span className="sr-only">Search bookshops</span><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm sm:w-64" placeholder="Name, code or email" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></label>
-      <label><span className="sr-only">Status</span><select className="h-10 rounded-xl border border-slate-200 px-3 text-sm" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">All statuses</option>{Object.entries(BOOKSHOP_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-    </div>}>
+    <Panel flush>
+      <Toolbar>
+        <SearchField label="Search bookshops" value={search} onChange={value => { setSearch(value); setPage(1) }} placeholder="Name, code or email" />
+        <SelectField label="Status" hideLabel value={status} onChange={value => { setStatus(value); setPage(1) }}>
+          <option value="">All statuses</option>{Object.entries(BOOKSHOP_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </SelectField>
+      </Toolbar>
       {list.isPending ? <LoadingState /> : list.error ? <ErrorState message={errorMessage(list.error)} onRetry={() => void list.refetch()} />
         : list.data.data.length === 0 ? <EmptyState icon={<Store size={22} />} title="No bookshops found" body="Try a different search or status." />
-        : <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
-          <thead><tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400"><th className="px-6 py-3 font-semibold">Bookshop</th><th className="px-3 py-3 font-semibold">Owner</th><th className="px-3 py-3 font-semibold">Branches · staff</th><th className="px-3 py-3 font-semibold">Subscription</th><th className="px-3 py-3 font-semibold">Status</th><th className="px-3 py-3 font-semibold">Actions</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{list.data.data.map(shop => <tr key={shop.id} className="hover:bg-slate-50">
-            <td className="px-6 py-3"><Link to={`/platform/bookshops/${shop.id}`} className="font-semibold text-slate-900 hover:text-[#087df5]">{shop.name}</Link><small className="block text-xs text-slate-400">{shop.slug} · {shop.country}</small></td>
-            <td className="px-3 py-3">{shop.owner ? <><span className="text-slate-700">{shop.owner.name}</span><small className="block text-xs text-slate-400">{shop.owner.email}{!shop.owner.email_verified && ' · unverified'}</small></> : '—'}</td>
-            <td className="px-3 py-3 text-slate-600">{shop.branches_count ?? 0} · {shop.staff_count ?? 0}</td>
-            <td className="px-3 py-3 capitalize text-slate-600">{shop.subscription ? `${shop.subscription.status.replace('_', ' ')}${shop.subscription.trial_days_left !== null ? ` · ${shop.subscription.trial_days_left}d left` : ''}` : '—'}</td>
-            <td className="px-3 py-3"><StatusPill status={shop.status} /></td>
-            <td className="px-3 py-3"><button type="button" className={`${secondaryButton} h-9 px-3`} title={`View and manage ${shop.name}`} aria-label={`View and manage ${shop.name}`} onClick={() => setSelectedShop(shop.id)}><Eye size={16} /></button></td>
+        : <table className="w-full text-sm">
+          <thead className="border-b border-[var(--pf-line)] bg-slate-50/70"><tr>
+            <th className={thClass}>Bookshop</th><th className={`${thClass} hidden md:table-cell`}>Owner</th><th className={`${thClass} hidden lg:table-cell`}>Branches / staff</th>
+            <th className={`${thClass} hidden sm:table-cell`}>Subscription</th><th className={thClass}>Status</th><th className={thClass}><span className="sr-only">Actions</span></th>
+          </tr></thead>
+          <tbody className="divide-y divide-[var(--pf-line)]">{list.data.data.map(shop => <tr key={shop.id} className="hover:bg-slate-50/70">
+            <td className={tdClass}><Link to={`/platform/bookshops/${shop.id}`} className="font-semibold text-[var(--pf-ink)] hover:text-[var(--pf-brand)]">{shop.name}</Link><small className="block text-xs text-[var(--pf-muted)]"><span className="hidden sm:inline">{shop.slug}, </span>{shop.country}</small></td>
+            <td className={`${tdClass} hidden md:table-cell`}>{shop.owner ? <><span>{shop.owner.name}</span><small className="block text-xs text-[var(--pf-muted)]">{shop.owner.email}{!shop.owner.email_verified && ' (unverified)'}</small></> : '—'}</td>
+            <td className={`${tdClass} pf-num hidden text-[var(--pf-muted)] lg:table-cell`}>{shop.branches_count ?? 0} / {shop.staff_count ?? 0}</td>
+            <td className={`${tdClass} hidden sm:table-cell`}>{shop.subscription ? <span className="flex flex-col items-start gap-1"><StatePill status={shop.subscription.status} />{shop.subscription.trial_days_left !== null && <small className="text-xs text-[var(--pf-muted)]">{shop.subscription.trial_days_left} trial days left</small>}</span> : <span className="text-[var(--pf-muted)]">—</span>}</td>
+            <td className={tdClass}><ShopStatus status={shop.status} /></td>
+            <td className={`${tdClass} text-right`}><button type="button" className="inline-grid size-9 place-items-center rounded-lg border border-[var(--pf-line)] bg-white text-slate-600 hover:bg-slate-50" title={`View and manage ${shop.name}`} aria-label={`View and manage ${shop.name}`} onClick={() => setSelectedShop(shop.id)}><Eye size={16} /></button></td>
           </tr>)}</tbody>
-        </table></div>}
-      {list.data && <Pagination meta={list.data.meta} onPage={setPage} />}
-    </Card>
-    {selectedShop !== null && <BookshopManageModal id={selectedShop} onClose={() => setSelectedShop(null)} /> }
+        </table>}
+      {list.data && list.data.meta.total > 0 && <PageControls page={list.data.meta} onPage={setPage} />}
+    </Panel>
+    {selectedShop !== null && <BookshopManageModal id={selectedShop} onClose={() => setSelectedShop(null)} />}
   </>
+}
+
+function DetailList({ rows }: { rows: [string, ReactNode][] }) {
+  return <dl className="m-0 grid gap-3 text-sm">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(0,8.5rem)_1fr] gap-3"><dt className="text-[var(--pf-muted)]">{label}</dt><dd className="m-0 min-w-0 break-words">{value}</dd></div>)}</dl>
 }
 
 function BookshopManageModal({ id, onClose }: { id: number; onClose: () => void }) {
@@ -236,18 +236,18 @@ function BookshopManageModal({ id, onClose }: { id: number; onClose: () => void 
   })
   const shop = detail.data
   return <Modal title={shop ? `Manage ${shop.name}` : 'Manage bookshop'} description="Review registration, update business details and manage activation." wide onClose={onClose} busy={save.isPending || approve.isPending}>
-    {detail.isPending ? <LoadingState /> : detail.error ? <ErrorState message={errorMessage(detail.error)} onRetry={() => void detail.refetch()} /> : shop && <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><StatusPill status={shop.status} /><Link className={secondaryButton} to={`/platform/bookshops/${id}`} onClick={onClose}>Full management page</Link></div>
+    {detail.isPending ? <LoadingState /> : detail.error ? <ErrorState message={errorMessage(detail.error)} onRetry={() => void detail.refetch()} /> : shop && <div className="grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><ShopStatus status={shop.status} /><Link className={secondaryButton} to={`/platform/bookshops/${id}`} onClick={onClose}>Full management page</Link></div>
       {notice && <FormAlert tone="success" message={notice} />}
       {error && <FormAlert message={error} />}
-      <div className="grid gap-2 text-sm"><p><strong>Owner:</strong> {shop.owner?.name || '—'} ({shop.owner?.email || '—'})</p><p><strong>Registered:</strong> {formatDate(shop.registered_at, true)}</p><p><strong>Branches / staff:</strong> {shop.branches_count ?? 0} / {shop.staff_count ?? 0}</p></div>
-      {editing ? <form className="grid gap-3" onSubmit={e => { e.preventDefault(); save.mutate() }}>
+      <DetailList rows={[['Owner', `${shop.owner?.name || '—'} (${shop.owner?.email || '—'})`], ['Registered', formatDate(shop.registered_at, true)], ['Branches / staff', `${shop.branches_count ?? 0} / ${shop.staff_count ?? 0}`]]} />
+      {editing ? <form className="grid gap-3 border-t border-slate-100 pt-4" onSubmit={e => { e.preventDefault(); save.mutate() }}>
         <Field label="Bookshop name"><input required className={inputClass} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Business email"><input type="email" className={inputClass} value={form.business_email} onChange={e => setForm({ ...form, business_email: e.target.value })} /></Field>
         <Field label="Phone"><input className={inputClass} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
         <Field label="Location"><input className={inputClass} value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></Field>
         <div className="flex gap-2"><button className={primaryButton} type="submit" disabled={save.isPending}>Save changes</button><button type="button" className={secondaryButton} onClick={() => setEditing(false)}>Cancel</button></div>
-      </form> : <div className="grid gap-2 text-sm"><p><strong>Bookshop:</strong> {shop.name}</p><p><strong>Business email:</strong> {shop.business_email || '—'}</p><p><strong>Phone:</strong> {shop.phone || '—'}</p><p><strong>Location:</strong> {shop.location || '—'}</p></div>}
+      </form> : <div className="border-t border-slate-100 pt-4"><DetailList rows={[['Bookshop', shop.name], ['Business email', shop.business_email || '—'], ['Phone', shop.phone || '—'], ['Location', shop.location || '—']]} /></div>}
       {user.role === 'platform_owner' && <div className="flex flex-wrap gap-2">
         {!editing && <button type="button" className={secondaryButton} onClick={() => { setForm({ name: shop.name, business_email: shop.business_email || '', phone: shop.phone || '', location: shop.location || '' }); setEditing(true); setError('') }}><Pencil size={16} /> Edit details</button>}
         {shop.status === 'pending_verification' && <button type="button" className={primaryButton} disabled={approve.isPending} onClick={() => approve.mutate()}>Approve & activate</button>}
@@ -275,10 +275,9 @@ function BookshopDetailView() {
   const done = (message: string) => { setDialog(null); setNotice(message); void client.invalidateQueries({ queryKey: ['platform'] }) }
 
   return <>
-    <Link to="/platform/bookshops" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900"><ArrowLeft size={15} /> All bookshops</Link>
-    <PageHeader eyebrow={data.slug.toUpperCase()} icon={<Building2 size={15} />} title={data.name} description={`${data.location || 'No location'} · ${data.country} · ${data.currency}`}
+    <Link to="/platform/bookshops" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--pf-muted)] hover:text-[var(--pf-ink)]"><ArrowLeft size={15} /> All bookshops</Link>
+    <PlatformTitle title={data.name} description={`${data.location || 'No location'}, ${data.country}. Prices in ${data.currency}.`} meta={<><ShopStatus status={data.status} /><span className="text-xs text-[var(--pf-muted)]">Code {data.slug}</span></>}
       actions={<>
-        <StatusPill status={data.status} />
         {user.role === 'platform_owner' && data.status === 'pending_verification' && <button className={primaryButton} onClick={() => approve.mutate()} disabled={approve.isPending}>{approve.isPending ? 'Approving…' : 'Approve & activate'}</button>}
         {hasPermission(user, 'platform.bookshops.suspend') && (data.status === 'suspended'
           ? <button className={primaryButton} onClick={() => setDialog('reactivate')}>Reactivate</button>
@@ -286,31 +285,34 @@ function BookshopDetailView() {
       </>} />
     {notice && <div className="mb-5"><FormAlert tone="success" message={notice} /></div>}
     {data.status === 'suspended' && <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="status"><strong>Suspended {formatDate(data.suspended_at, true)}.</strong> {data.suspension_reason}</div>}
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card title="Owner">{data.owner ? <dl className="grid gap-2 text-sm">
-        <div><dt className="text-xs text-slate-400">Name</dt><dd className="m-0 font-medium">{data.owner.name}</dd></div>
-        <div><dt className="text-xs text-slate-400">Email</dt><dd className="m-0 break-all">{data.owner.email}</dd></div>
-        <div><dt className="text-xs text-slate-400">Phone</dt><dd className="m-0">{data.owner.phone || '—'}</dd></div>
-        <div><dt className="text-xs text-slate-400">Last sign-in</dt><dd className="m-0">{formatDate(data.owner.last_login_at ?? null, true)}</dd></div>
-      </dl> : <p className="text-sm text-slate-500">No owner account.</p>}</Card>
-      <Card title="Bookshop"><dl className="grid gap-2 text-sm">
-        <div><dt className="text-xs text-slate-400">Registered</dt><dd className="m-0">{formatDate(data.registered_at, true)}</dd></div>
-        <div><dt className="text-xs text-slate-400">Approved</dt><dd className="m-0">{formatDate(data.verified_at, true)}</dd></div>
-        <div><dt className="text-xs text-slate-400">Business contact</dt><dd className="m-0 break-all">{data.business_email || '—'} · {data.phone || '—'}</dd></div>
-        <div><dt className="text-xs text-slate-400">Branches · staff accounts</dt><dd className="m-0">{data.branches_count ?? 0} · {data.staff_count ?? 0}</dd></div>
-      </dl></Card>
-      <Card title="Subscription">{data.subscription ? <dl className="grid gap-2 text-sm">
-        <div><dt className="text-xs text-slate-400">Plan</dt><dd className="m-0">{data.subscription.plan?.name || '—'}</dd></div>
-        <div><dt className="text-xs text-slate-400">Status</dt><dd className="m-0 capitalize">{data.subscription.status.replace('_', ' ')}</dd></div>
-        <div><dt className="text-xs text-slate-400">Trial ends</dt><dd className="m-0">{formatDate(data.subscription.trial_ends_at)}</dd></div>
-        {data.subscription.trial_days_left !== null && <div><dt className="text-xs text-slate-400">Trial days left</dt><dd className="m-0">{data.subscription.trial_days_left}</dd></div>}
-        {trialRow?.eligible && <div className="pt-1"><button className={secondaryButton} onClick={() => { setNotice(''); setExtending(true) }}><CalendarPlus size={15} /> Extend Trial</button></div>}
-      </dl> : <p className="text-sm text-slate-500">No subscription record (legacy bookshop).</p>}</Card>
+    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+      <div className="grid min-w-0 content-start gap-6">
+        <Panel title="Subscription">{data.subscription ? <div className="grid gap-4">
+          <DetailList rows={[
+            ['Plan', data.subscription.plan?.name || '—'],
+            ['Status', <StatePill key="s" status={data.subscription.status} />],
+            ['Trial ends', formatDate(data.subscription.trial_ends_at)],
+            ...(data.subscription.trial_days_left !== null ? [['Trial days left', String(data.subscription.trial_days_left)] as [string, ReactNode]] : []),
+            ...(data.subscription.current_period_ends_at ? [['Paid until', formatDate(data.subscription.current_period_ends_at)] as [string, ReactNode]] : []),
+          ]} />
+          {trialRow?.eligible && <div><button className={secondaryButton} onClick={() => { setNotice(''); setExtending(true) }}><CalendarPlus size={15} /> Extend Trial</button></div>}
+        </div> : <p className="text-sm text-[var(--pf-muted)]">No subscription record (legacy bookshop).</p>}</Panel>
+        <Panel title="Lifecycle history" description="Registration, activation, suspension and support actions." flush>
+          {data.history.length === 0 ? <EmptyState icon={<History size={22} />} title="No history yet" body="Lifecycle events will appear here." />
+            : <ol className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{data.history.map(entry => <li key={entry.id} className="px-5 py-3 text-sm"><p className="m-0">{entry.description}</p><small className="text-xs text-[var(--pf-muted)]">{formatDate(entry.created_at, true)}{entry.user ? `, by ${entry.user.name}` : ''}</small></li>)}</ol>}
+        </Panel>
+        {data.subscription_history?.length > 0 && <Panel title="Subscription history" flush>
+          <ol className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{data.subscription_history.map((entry, index) => <li key={`${entry.created_at}-${index}`} className="flex flex-wrap items-start justify-between gap-2 px-5 py-3 text-sm">
+            <span><span className="font-medium">{humanize(entry.event)}</span>{entry.note && <small className="block text-xs text-[var(--pf-muted)]">{entry.note}</small>}</span>
+            <span className="flex items-center gap-2">{entry.from_status && <StatePill status={entry.from_status} />}{entry.from_status && <ChevronRight size={14} className="text-slate-400" aria-label="to" />}<StatePill status={entry.to_status} /><time className="text-xs text-[var(--pf-muted)]">{formatDate(entry.created_at, true)}</time></span>
+          </li>)}</ol>
+        </Panel>}
+      </div>
+      <div className="grid content-start gap-6">
+        <Panel title="Owner">{data.owner ? <DetailList rows={[['Name', data.owner.name], ['Email', data.owner.email], ['Phone', data.owner.phone || '—'], ['Last sign-in', formatDate(data.owner.last_login_at ?? null, true)]]} /> : <p className="text-sm text-[var(--pf-muted)]">No owner account.</p>}</Panel>
+        <Panel title="Bookshop"><DetailList rows={[['Registered', formatDate(data.registered_at, true)], ['Approved', formatDate(data.verified_at, true)], ['Business email', data.business_email || '—'], ['Phone', data.phone || '—'], ['Branches / staff', `${data.branches_count ?? 0} / ${data.staff_count ?? 0}`]]} /></Panel>
+      </div>
     </div>
-    <div className="mt-6"><Card title="Lifecycle history" description="Registration, activation, suspension and support actions." flush>
-      {data.history.length === 0 ? <EmptyState icon={<History size={22} />} title="No history yet" body="Lifecycle events will appear here." />
-        : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{data.history.map(entry => <li key={entry.id} className="px-6 py-3 text-sm"><p className="m-0 text-slate-800">{entry.description}</p><small className="text-xs text-slate-400">{formatDate(entry.created_at, true)}{entry.user ? ` · ${entry.user.name}` : ''}</small></li>)}</ul>}
-    </Card></div>
     {extending && trialRow && trial.data && <ExtendTrialModal target={trialRow} maxDays={trial.data.max_days} onClose={() => setExtending(false)} onDone={message => { setExtending(false); setNotice(message) }} />}
     {dialog && <StatusDialog shop={data} mode={dialog} onClose={() => setDialog(null)} onDone={done} />}
   </>
@@ -346,17 +348,22 @@ function UsersView() {
   const toggle = useMutation({ mutationFn: (target: { id: number; is_active: boolean }) => platformApi.setUserStatus(target.id, target.is_active), onSuccess: result => { setNotice(result.message); void client.invalidateQueries({ queryKey: ['platform', 'users'] }) }, onError: error => setNotice(errorMessage(error)) })
   const canManage = hasPermission(user, 'platform.users.manage')
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Users size={15} />} title="Platform users" description="People who administer the platform. Platform Owners are created from the server console only."
+    <PlatformTitle title="Platform users" description="People who administer the platform. Platform Owners are created from the server console only."
       actions={canManage && <button className={primaryButton} onClick={() => setCreating(true)}><UserPlus size={16} /> Add administrator</button>} />
     {notice && <div className="mb-5"><FormAlert tone="success" message={notice} /></div>}
-    <Card title="Platform staff" flush>
+    <Panel flush>
       {users.isPending ? <LoadingState /> : users.error ? <ErrorState message={errorMessage(users.error)} onRetry={() => void users.refetch()} />
-        : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{users.data.map(member => <li key={member.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
-          <span><strong className="text-sm text-slate-900">{member.name}</strong><small className="block text-xs text-slate-400">{member.email} · {member.role_label} · last sign-in {formatDate(member.last_login_at)}</small></span>
-          <span className="flex items-center gap-3"><StatusBadge active={member.is_active} />
-            {canManage && member.role !== 'platform_owner' && member.id !== user.id && <button className={`${secondaryButton} h-9`} onClick={() => toggle.mutate({ id: member.id, is_active: !member.is_active })}>{member.is_active ? 'Deactivate' : 'Activate'}</button>}</span>
-        </li>)}</ul>}
-    </Card>
+        : <table className="w-full text-sm">
+          <thead className="border-b border-[var(--pf-line)] bg-slate-50/70"><tr><th className={thClass}>Name</th><th className={`${thClass} hidden sm:table-cell`}>Role</th><th className={`${thClass} hidden md:table-cell`}>Last sign-in</th><th className={thClass}>Status</th><th className={thClass}><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody className="divide-y divide-[var(--pf-line)]">{users.data.map(member => <tr key={member.id}>
+            <td className={tdClass}><strong className="font-semibold">{member.name}</strong><small className="block break-all text-xs text-[var(--pf-muted)]">{member.email}</small></td>
+            <td className={`${tdClass} hidden sm:table-cell`}>{member.role_label}</td>
+            <td className={`${tdClass} hidden text-[var(--pf-muted)] md:table-cell`}>{formatDate(member.last_login_at)}</td>
+            <td className={tdClass}><Pill tone={member.is_active ? 'positive' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</Pill></td>
+            <td className={`${tdClass} text-right`}>{canManage && member.role !== 'platform_owner' && member.id !== user.id && <button className={`${secondaryButton} h-9`} onClick={() => toggle.mutate({ id: member.id, is_active: !member.is_active })}>{member.is_active ? 'Deactivate' : 'Activate'}</button>}</td>
+          </tr>)}</tbody>
+        </table>}
+    </Panel>
     {creating && <CreateAdminDialog onClose={() => setCreating(false)} onDone={message => { setCreating(false); setNotice(message); void client.invalidateQueries({ queryKey: ['platform', 'users'] }) }} />}
   </>
 }
@@ -391,26 +398,30 @@ function SettingsView() {
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const save = useMutation({
     mutationFn: () => platformApi.updateSettings({ bookshop_registration_open: draft!.open, support_email: draft!.email.trim() || null, trial_days: draft!.trial === '' ? null : Number(draft!.trial) }),
-    onSuccess: result => { setMessage({ tone: 'success', text: result.message }); void client.invalidateQueries({ queryKey: ['platform', 'settings'] }) },
+    onSuccess: result => { setMessage({ tone: 'success', text: result.message }); setDraft(null); void client.invalidateQueries({ queryKey: ['platform', 'settings'] }) },
     onError: error => setMessage({ tone: 'error', text: errorMessage(error) }),
   })
-  if (settings.isPending) return <LoadingState />
-  if (settings.error) return <ErrorState message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} />
+  if (settings.isPending) return <><PlatformTitle title="Platform settings" /><LoadingState /></>
+  if (settings.error) return <><PlatformTitle title="Platform settings" /><ErrorState message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} /></>
   const value = draft ?? { open: settings.data.bookshop_registration_open, email: settings.data.support_email ?? '', trial: settings.data.trial_days === null ? '' : String(settings.data.trial_days) }
   const canEdit = hasPermission(user, 'platform.settings.manage')
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<Settings size={15} />} title="Platform settings" description="Global settings that apply to every bookshop." />
-    <Card title="Registration and trials">
-      <form className="grid gap-4" onSubmit={event => { event.preventDefault(); save.mutate() }}>
+    <PlatformTitle title="Platform settings" description="Global settings that apply to every bookshop." />
+    <form className="grid max-w-3xl gap-6" onSubmit={event => { event.preventDefault(); save.mutate() }}>
+      <Panel title="Registration" description="Whether new bookshops can sign up on their own.">
         <label className="hk-check"><input type="checkbox" checked={value.open} disabled={!canEdit} onChange={e => setDraft({ ...value, open: e.target.checked })} /><span>Accept new bookshop registrations<small>When off, the public bookshop sign-up form is paused.</small></span></label>
+      </Panel>
+      <Panel title="Support and trials">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Support email" hint="Shown to bookshops that need help."><input className={inputClass} type="email" value={value.email} disabled={!canEdit} onChange={e => setDraft({ ...value, email: e.target.value })} /></Field>
-          <Field label="Trial length (days)" hint={`Leave empty to use the server default of ${settings.data.default_trial_days} days.`}><input className={inputClass} type="number" min={0} max={365} value={value.trial} disabled={!canEdit} onChange={e => setDraft({ ...value, trial: e.target.value })} /></Field>
+          <Field label="Trial length (days)" hint={`Applies to new bookshops. Leave empty to use the server default of ${settings.data.default_trial_days} days.`}><input className={inputClass} type="number" min={0} max={365} value={value.trial} disabled={!canEdit} onChange={e => setDraft({ ...value, trial: e.target.value })} /></Field>
         </div>
-        {message && <FormAlert tone={message.tone} message={message.text} />}
-        {canEdit && <div className="mt-5 flex justify-end"><button className={primaryButton} type="submit" disabled={save.isPending || !draft}>{save.isPending ? 'Saving…' : 'Save settings'}</button></div>}
-      </form>
-    </Card>
+        {hasPermission(user, 'platform.subscriptions.extend_trial') && <p className="mt-4 text-sm text-[var(--pf-muted)]">To give one bookshop more trial time, use <Link className="font-semibold text-[var(--pf-brand)] hover:underline" to="/platform/billing/trials">Trial management</Link>.</p>}
+      </Panel>
+      {message && <FormAlert tone={message.tone} message={message.text} />}
+      {canEdit ? <div className="flex justify-end"><button className={primaryButton} type="submit" disabled={save.isPending || !draft}>{save.isPending ? 'Saving…' : 'Save settings'}</button></div>
+        : <p className="text-sm text-[var(--pf-muted)]">Your role can view these settings but not change them.</p>}
+    </form>
   </>
 }
 
@@ -419,15 +430,16 @@ function AuditView() {
   const [page, setPage] = useState(1)
   const audit = useQuery({ queryKey: ['platform', 'audit', search, page], queryFn: () => platformApi.audit({ search: search.trim() || undefined, page }), placeholderData: keepPreviousData })
   return <>
-    <PageHeader eyebrow="PLATFORM" icon={<History size={15} />} title="Audit history" description="Platform administration and bookshop lifecycle events. Activity inside bookshops stays in each bookshop's own audit log." />
-    <Card title="Events" flush actions={<label className="relative"><span className="sr-only">Search events</span><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm sm:w-64" placeholder="Search descriptions" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></label>}>
+    <PlatformTitle title="Audit history" description="Platform administration, billing and bookshop lifecycle events. Activity inside bookshops stays in each bookshop's own audit log." />
+    <Panel flush>
+      <Toolbar><SearchField label="Search events" value={search} onChange={value => { setSearch(value); setPage(1) }} placeholder="Search descriptions" /></Toolbar>
       {audit.isPending ? <LoadingState /> : audit.error ? <ErrorState message={errorMessage(audit.error)} onRetry={() => void audit.refetch()} />
         : audit.data.data.length === 0 ? <EmptyState icon={<History size={22} />} title="No events" body="Platform events will appear here." />
-        : <ul className="m-0 list-none divide-y divide-slate-100 p-0">{audit.data.data.map(entry => <li key={entry.id} className="flex flex-wrap items-start justify-between gap-2 px-6 py-3 text-sm">
-          <span><span className="text-slate-800">{entry.description}</span><small className="block text-xs text-slate-400">{entry.action}{entry.user ? ` · ${entry.user.name}` : ''}</small></span>
-          <time className="text-xs text-slate-400">{formatDate(entry.created_at, true)}</time>
-        </li>)}</ul>}
-      {audit.data && <Pagination meta={audit.data.meta} onPage={setPage} />}
-    </Card>
+        : <ol className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{audit.data.data.map(entry => <li key={entry.id} className="flex flex-col gap-1 px-5 py-3 text-sm sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <span className="min-w-0"><span className="block">{entry.description}</span><small className="text-xs text-[var(--pf-muted)]">{humanize(entry.action.split('.')[0])} event{entry.user ? `, by ${entry.user.name}` : ''}</small></span>
+          <time className="shrink-0 text-xs text-[var(--pf-muted)]">{formatDate(entry.created_at, true)}</time>
+        </li>)}</ol>}
+      {audit.data && audit.data.meta.total > 0 && <PageControls page={audit.data.meta} onPage={setPage} />}
+    </Panel>
   </>
 }

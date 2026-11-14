@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillingPage from './page'
 import PlatformBillingView from '../platform/billing-view'
@@ -15,6 +15,11 @@ vi.mock('../../lib/billing-api', async importOriginal => ({ ...await importOrigi
 const invoice = { id: 1, bookshop_id: 1, account_number: '100000', amount: '1000.00', paid: '400.00', currency: 'KES', environment: 'sandbox' as const,
   status: 'partially_paid', billing_months: 1, period_starts_at: '2026-11-01', period_ends_at: '2026-12-01', created_at: '2026-11-01' }
 const page = { data: [invoice], current_page: 1, last_page: 1, total: 1 }
+/** The platform billing workspace is route-based; mount it where the console mounts it. */
+function mountPlatform(path = '/platform/billing') {
+  return render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+    <Routes><Route path="/platform/billing/*" element={<PlatformBillingView />} /></Routes></QueryClientProvider></MemoryRouter>)
+}
 function mount(element = <BillingPage />) {
   return render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>{element}</QueryClientProvider></MemoryRouter>)
 }
@@ -91,7 +96,7 @@ describe('subscription billing', () => {
 
   it('no longer asks operators to approve routine payments against the statement', async () => {
     vi.mocked(billingApi.attempts).mockResolvedValue({ data: [{ id: 3, account_number: '100000', checkout_request_id: 'checkout-1', bookshop_id: 1, amount: '1000', status: 'pending', environment: 'production', channel: 'stk', mpesa_receipt: null, created_at: '2026-11-01' }], current_page: 1, last_page: 1, total: 1 })
-    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    const user = userEvent.setup(); mountPlatform('/platform/billing/payments')
     expect((await screen.findAllByText(/verified with Safaricom and applied to invoices automatically/)).length).toBeGreaterThan(0)
     await user.click(screen.getByRole('button', { name: 'STK requests' }))
     expect(await screen.findByText(/Request #3/)).toBeInTheDocument()
@@ -102,8 +107,8 @@ describe('subscription billing', () => {
   })
   it('allows platform operators to update future plan pricing', async () => {
     vi.mocked(billingApi.updatePlan).mockResolvedValue({})
-    const user = userEvent.setup(); mount(<PlatformBillingView />)
-    await user.click(screen.getByRole('button', { name: 'Plans & pricing' }))
+    const user = userEvent.setup(); mountPlatform()
+    await user.click(screen.getByRole('link', { name: 'Plans & pricing' }))
     const price = await screen.findByLabelText('New invoice price (whole KES)')
     await user.clear(price); await user.type(price, '1200')
     await user.click(screen.getByRole('button', { name: 'Save plan' }))
@@ -111,19 +116,31 @@ describe('subscription billing', () => {
   })
 
   it('shows subscription days and supports the expired filter', async () => {
-    const user = userEvent.setup(); mount(<PlatformBillingView />)
-    await user.click(screen.getByRole('button', { name: 'Subscriptions' }))
-    expect(await screen.findByText(/Test Shop.*3 days remaining/)).toBeInTheDocument()
+    const user = userEvent.setup(); mountPlatform()
+    await user.click(screen.getByRole('link', { name: 'Subscriptions' }))
+    expect(await screen.findByRole('row', { name: /Test Shop.*Active.*3/ })).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Show'), 'expired')
     expect(billingApi.subscriptions).toHaveBeenCalledWith(1, 'expired')
   })
 
   it('shows independent statement evidence with payment environment filtering', async () => {
-    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    const user = userEvent.setup(); mountPlatform('/platform/billing/payments')
     await user.click(screen.getByRole('button', { name: 'Payment ledger' }))
     expect(await screen.findByText(/merchant-statement-1/)).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Environment'), 'sandbox')
     expect(billingApi.payments).toHaveBeenCalledWith(1, 'sandbox')
+  })
+
+  it('opens each billing section from its tab and filters invoices by status', async () => {
+    const user = userEvent.setup(); mountPlatform()
+    for (const name of ['Overview', 'Subscriptions', 'Invoices', 'Payments', 'Plans & pricing', 'Reports']) expect(screen.getByRole('link', { name })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Trial management' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Invoices' }))
+    expect(screen.getByRole('link', { name: 'Invoices' })).toHaveAttribute('aria-current', 'page')
+    expect(await screen.findByText('#1')).toBeInTheDocument()
+    expect(billingApi.invoices).toHaveBeenLastCalledWith(1, '', '')
+    await user.selectOptions(screen.getByLabelText('Status'), 'paid')
+    expect(billingApi.invoices).toHaveBeenLastCalledWith(1, '', 'paid')
   })
 
   it.each([['cancelled', 'Cancelled by payer'], ['timed_out', 'Timed out — no verified payment'], ['failed', 'Payment failed']])('explains %s provider outcomes', (status, label) => {
@@ -140,7 +157,7 @@ describe('subscription billing', () => {
 
   it('prepares a sandbox plan draft and saves only after explicit submission', async () => {
     vi.mocked(billingApi.plan).mockResolvedValue({})
-    const user = userEvent.setup(); mount(<PlatformBillingView />)
+    const user = userEvent.setup(); mountPlatform('/platform/billing/plans')
     await user.click(await screen.findByRole('button', { name: 'Prepare sandbox test plan' }))
     expect(screen.getByLabelText('Name')).toHaveValue('Sandbox test monthly')
     expect(screen.getByLabelText('Total price for this period (whole KES)')).toHaveValue(1)
@@ -155,15 +172,15 @@ describe('subscription billing', () => {
 
   it('does not offer the sandbox plan shortcut in production mode', async () => {
     vi.mocked(billingApi.context).mockResolvedValue({ environment: 'production', paybill: '152451', can_pay: true })
-    mount(<PlatformBillingView />)
-    expect(await screen.findByText(/Production Paybill 152451/)).toBeInTheDocument()
+    mountPlatform('/platform/billing/plans')
+    expect(await screen.findByText('Live payments on Paybill 152451')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
   })
 
   it('keeps sandbox plan creation unavailable to read-only administrators', async () => {
     auth.user.permissions = []
-    mount(<PlatformBillingView />)
-    expect(await screen.findByText(/TEST MODE · Sandbox shortcode 174379/)).toBeInTheDocument()
+    mountPlatform('/platform/billing/plans')
+    expect((await screen.findAllByText(/Test mode on sandbox shortcode 174379/)).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Prepare sandbox test plan' })).not.toBeInTheDocument()
   })
 

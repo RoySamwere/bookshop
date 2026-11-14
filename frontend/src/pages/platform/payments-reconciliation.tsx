@@ -5,22 +5,21 @@ import { useAuth } from '../../features/auth/auth-provider'
 import { errorMessage } from '../../lib/api'
 import { BILL_STATUS_LABELS, MPESA_CODE_PATTERN, VERIFICATION_SOURCES, billingApi, billsApi, normalizeMpesaCode, type Bill, type BillFilters, type BillStatus } from '../../lib/billing-api'
 import { downloadBrandedTable, safeCell } from '../../lib/branded-export'
-import { EmptyState, ErrorState, LoadingState, Modal, PageHeader, Pagination, StatCard, formatDate, inputClass, primaryButton, secondaryButton, dangerButton } from '../../components/ui-kit'
+import { EmptyState, ErrorState, LoadingState, Modal, formatDate, inputClass, primaryButton, secondaryButton, dangerButton } from '../../components/ui-kit'
+import { Metric, MetricStrip, PageControls, Pill, fieldClass, thClass, toneFor } from './platform-ui'
 
-const statusTone: Record<BillStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700 ring-amber-200', verified: 'bg-sky-50 text-sky-700 ring-sky-200',
-  reconciled: 'bg-emerald-50 text-emerald-700 ring-emerald-200', unmatched: 'bg-rose-50 text-rose-700 ring-rose-200', rejected: 'bg-slate-100 text-slate-600 ring-slate-200',
-}
 const kes = (value: number) => `KES ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const when = (value: string | null) => value ? new Date(value).toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
 /** Tells the platform team, without secrets, why payments are not being confirmed automatically and how to fix it. */
-function BillingHealthBanner() {
+export function BillingHealthBanner() {
   const health = useQuery({ queryKey: ['bills-health'], queryFn: billsApi.health, staleTime: 60_000 })
   const failing = (health.data?.data ?? []).filter(check => !check.ok)
   if (!failing.length) return null
   return <section aria-label="Automatic confirmation problems" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-    <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} /> Some payments cannot be confirmed automatically yet</p>
+    <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} className="shrink-0" /> Some payments cannot be confirmed automatically yet</p>
+    <details className="mt-2">
+    <summary className="cursor-pointer font-medium text-amber-800">Show what to fix ({failing.length})</summary>
     <ul className="mt-3 grid gap-3">
       {failing.map(check => <li key={check.key}>
         <p className="font-semibold">{check.title}</p>
@@ -28,11 +27,12 @@ function BillingHealthBanner() {
         {check.fix && <p className="mt-1 text-amber-800"><span className="font-semibold">Fix:</span> {check.fix}</p>}
       </li>)}
     </ul>
+    </details>
   </section>
 }
 
 export function BillStatusPill({ status }: { status: BillStatus }) {
-  return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusTone[status]}`}>{BILL_STATUS_LABELS[status]}</span>
+  return <Pill tone={toneFor(status)}>{BILL_STATUS_LABELS[status]}</Pill>
 }
 
 /** Payments & reconciliation (on /platform/billing): collections, Update payments, exports and exception handling. */
@@ -74,13 +74,15 @@ export default function PaymentsReconciliation() {
   }
 
   return <div className="grid gap-6">
-    <PageHeader eyebrow="Subscription billing" icon={<ReceiptText size={22} />} title="Payments & reconciliation"
-      description={`Every M-Pesa payment received for subscriptions${summary ? ` · ${summary.environment === 'production' ? 'Production Paybill' : 'Sandbox shortcode'} ${summary.paybill}` : ''}. Payments are verified with Safaricom and applied to invoices automatically; only exceptions need you.`}
-      actions={<div className="flex flex-wrap gap-2">
-        {canManage && <button className={primaryButton} disabled={sync.isPending} onClick={() => sync.mutate()} title="Check every payment in saf_payments with Safaricom by its M-Pesa code and apply confirmed ones"><RotateCw size={16} className={sync.isPending ? 'animate-spin' : ''} /> {sync.isPending ? 'Updating…' : 'Update payments'}</button>}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div><h2 className="text-lg font-semibold">M-Pesa payments</h2>
+        <p className="mt-1 max-w-[68ch] text-sm text-[var(--pf-muted)]">Every M-Pesa payment received for subscriptions{summary ? ` on ${summary.environment === 'production' ? 'Paybill' : 'sandbox shortcode'} ${summary.paybill}` : ''}. Payments are verified with Safaricom and applied to invoices automatically; only exceptions need you.</p></div>
+      <div className="flex flex-wrap gap-2">
+        {canManage && <button className={primaryButton} disabled={sync.isPending} onClick={() => sync.mutate()} title="Check every payment with Safaricom by its M-Pesa code and apply confirmed ones"><RotateCw size={16} className={sync.isPending ? 'animate-spin' : ''} /> {sync.isPending ? 'Updating…' : 'Update payments'}</button>}
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('csv')}><Download size={16} /> CSV</button>
         <button className={secondaryButton} disabled={exporting} onClick={() => void exportRows('xlsx')}><FileSpreadsheet size={16} /> Excel</button>
-      </div>} />
+      </div>
+    </div>
     <BillingHealthBanner />
     {exportError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{exportError}</p>}
     {sync.isError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{errorMessage(sync.error)}</p>}
@@ -88,17 +90,16 @@ export default function PaymentsReconciliation() {
       Checked {sync.data.data.checked} payment(s) by M-Pesa code: {sync.data.data.applied} applied, {sync.data.data.still_pending} still waiting for Safaricom, {sync.data.data.needs_review} need review{sync.data.data.codes_filled ? `, ${sync.data.data.codes_filled} code(s) filled in` : ''}.
     </p>}
 
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Collections summary">
-      <StatCard label="Verified collections" value={summary ? kes(summary.verified_collections) : '—'} hint={summary ? `${summary.verified_count} payment(s) applied` : ''} icon={<CheckCircle2 size={19} />} tone="emerald" />
-      <StatCard label="Today's collections" value={summary ? kes(summary.today_collections) : '—'} hint={summary ? `${summary.today_count} today (EAT)` : ''} icon={<CalendarClock size={19} />} tone="blue" />
-      <StatCard label="Pending verification" value={summary ? String(summary.pending_count) : '—'} hint={summary ? kes(summary.pending_amount) : ''} icon={<Hourglass size={19} />} tone="amber" />
-      <StatCard label="Unmatched payments" value={summary ? String(summary.unmatched_count) : '—'} hint={summary ? `${kes(summary.unmatched_amount)} to review` : ''} icon={<AlertTriangle size={19} />} tone="pink" />
-      <StatCard label="Outstanding invoices" value={summary ? kes(summary.outstanding_balance) : '—'} hint={summary ? `${summary.outstanding_invoices} unpaid invoice(s)` : ''} icon={<WalletCards size={19} />} tone="blue" />
-    </section>
+    <MetricStrip label="Collections summary">
+      <Metric label="Verified collections" value={summary ? kes(summary.verified_collections) : '—'} hint={summary ? `${summary.verified_count} payment(s) applied` : ''} />
+      <Metric label="Today's collections" value={summary ? kes(summary.today_collections) : '—'} hint={summary ? `${summary.today_count} today (EAT)` : ''} />
+      <Metric label="Pending verification" value={summary ? String(summary.pending_count) : '—'} hint={summary ? kes(summary.pending_amount) : ''} />
+      <Metric label="Unmatched payments" value={summary ? String(summary.unmatched_count) : '—'} hint={summary ? `${kes(summary.unmatched_amount)} to review` : ''} tone={summary?.unmatched_count ? 'alert' : undefined} />
+      <Metric label="Outstanding invoices" value={summary ? kes(summary.outstanding_balance) : '—'} hint={summary ? `${summary.outstanding_invoices} unpaid invoice(s)` : ''} tone="owed" />
+    </MetricStrip>
 
     <PaymentsTable bills={bills} filters={filters} setFilters={setFilters} search={search} setSearch={setSearch} onView={setSelected} />
-    {canManage && summary && <ConfirmByCode environment={summary.environment} onOpen={setSelected} />}
-    {canManage && summary && <MissingPayment environment={summary.environment} paybill={summary.paybill} />}
+    {canManage && summary && <div className="grid gap-4"><ConfirmByCode environment={summary.environment} onOpen={setSelected} /><MissingPayment environment={summary.environment} paybill={summary.paybill} /></div>}
     {selected !== null && <BillDetailModal id={selected} canManage={canManage} onClose={() => setSelected(null)} />}
   </div>
 }
@@ -118,16 +119,16 @@ function ConfirmByCode({ environment, onOpen }: { environment: string; onOpen: (
     mutationFn: () => billsApi.confirmCode(normalized, account.trim(), note.trim()),
     onSuccess: result => { setCode(''); setAccount(''); setNote(''); void client.invalidateQueries({ queryKey: ['platform-bills'] }); onOpen(result.data.id) },
   })
-  return <section className="rounded-2xl border border-slate-200 bg-white p-4">
-    <h2 className="font-semibold text-slate-900">Confirm a payment by M-Pesa code</h2>
-    <p className="mt-1 text-sm text-slate-600">A customer paid but it is not listed, or paid with the wrong account number? Enter the confirmation code from their M-Pesa SMS and their invoice account. The code is checked with Safaricom ({environment}) and the amount Safaricom reports is applied.</p>
-    <form className="mt-3 grid gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid-cols-[1fr_1fr_2fr_auto]" onSubmit={event => { event.preventDefault(); if (valid) confirm.mutate() }}>
+  return <section className="rounded-2xl border border-[var(--pf-line)] bg-white p-5">
+    <h2 className="text-[15px] font-semibold">Confirm a payment by M-Pesa code</h2>
+    <p className="mt-1 max-w-[80ch] text-sm text-[var(--pf-muted)]">A customer paid but it is not listed, or paid with the wrong account number? Enter the confirmation code from their M-Pesa SMS and their invoice account. The code is checked with Safaricom ({environment}) and the amount Safaricom reports is applied.</p>
+    <form className="mt-4 grid gap-3 text-xs font-medium text-[var(--pf-muted)] sm:grid-cols-[1fr_1fr_2fr_auto]" onSubmit={event => { event.preventDefault(); if (valid) confirm.mutate() }}>
       <label>M-Pesa code<input className={`${inputClass} font-mono uppercase tracking-wider`} required maxLength={14} value={code} onChange={event => setCode(event.target.value)} placeholder="TJ4K8L2M9P" aria-invalid={code !== '' && !valid} /></label>
       <label>Invoice account<input className={`${inputClass} font-mono`} required pattern="[0-9]{6}" inputMode="numeric" value={account} onChange={event => setAccount(event.target.value)} placeholder="100045" /></label>
-      <label>Note<input className={`${inputClass} normal-case tracking-normal`} maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="e.g. Customer sent the SMS on WhatsApp" /></label>
+      <label>Note<input className={`${inputClass}`} maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="e.g. Customer sent the SMS on WhatsApp" /></label>
       <div className="flex items-end"><button className={primaryButton} disabled={confirm.isPending || !valid || !/^[0-9]{6}$/.test(account.trim())}>{confirm.isPending ? 'Checking…' : 'Check with Safaricom'}</button></div>
-      {code !== '' && !valid && <p className="text-xs normal-case tracking-normal text-amber-700 sm:col-span-4">M-Pesa codes are 10 letters and numbers, e.g. TJ4K8L2M9P.</p>}
-      {confirm.isError && <p role="alert" className="text-sm normal-case tracking-normal text-rose-700 sm:col-span-4">{errorMessage(confirm.error)}</p>}
+      {code !== '' && !valid && <p className="text-xs text-amber-700 sm:col-span-4">M-Pesa codes are 10 letters and numbers, e.g. TJ4K8L2M9P.</p>}
+      {confirm.isError && <p role="alert" className="text-sm text-rose-700 sm:col-span-4">{errorMessage(confirm.error)}</p>}
     </form>
   </section>
 }
@@ -147,9 +148,9 @@ function MissingPayment({ environment, paybill }: { environment: string; paybill
     onSuccess: () => { setForm({ receipt: '', account: '', amount: '', at: '', reference: '', checked: false }); void client.invalidateQueries({ queryKey: ['platform-bills'] }) },
   })
   const field = (key: 'receipt' | 'account' | 'amount' | 'at' | 'reference', label: string, extra: Record<string, unknown> = {}) =>
-    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}<input className={`${inputClass} normal-case tracking-normal`} required value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} {...extra} /></label>
-  return <details className="rounded-2xl border border-slate-200 bg-white p-4">
-    <summary className="cursor-pointer font-semibold text-slate-800">Safaricom cannot confirm the code? Record it from the merchant statement</summary>
+    <label className="text-xs font-medium text-[var(--pf-muted)]">{label}<input className={`${inputClass}`} required value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} {...extra} /></label>
+  return <details className="rounded-2xl border border-[var(--pf-line)] bg-white p-5">
+    <summary className="cursor-pointer text-[15px] font-semibold">Safaricom cannot confirm the code? Record it from the merchant statement</summary>
     <p className="mt-2 text-sm text-slate-600">Use this only when a customer paid {environment === 'production' ? 'Paybill' : 'sandbox shortcode'} {paybill} and Safaricom never notified the platform. Enter the values from your own copy of the M-Pesa merchant statement. The payment is applied immediately and recorded in the audit log.</p>
     <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={event => { event.preventDefault(); record.mutate() }}>
       {field('receipt', 'Code on statement', { pattern: '[A-Za-z0-9]{6,30}' })}
@@ -173,29 +174,29 @@ export function PaymentsTable({ bills, filters, setFilters, search, setSearch, o
   search: string; setSearch: (value: string) => void; onView: (id: number) => void
 }) {
   return <>
-    <section className="rounded-2xl border border-slate-200 bg-white">
-      <div className="grid gap-3 border-b border-slate-100 p-4 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.5fr)_repeat(5,minmax(0,1fr))]">
-        <label className="relative">Search<Search size={15} className="absolute bottom-3.5 left-3 text-slate-400" />
-          <input className={`${inputClass} pl-9 normal-case tracking-normal`} value={search} onChange={event => setSearch(event.target.value)} placeholder="M-Pesa code, account, phone or bookshop" /></label>
-        <label>Status<select className={inputClass} value={filters.status ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, status: event.target.value || undefined }))}>
+    <section className="min-w-0 rounded-2xl border border-[var(--pf-line)] bg-white">
+      <div className="grid gap-3 border-b border-[var(--pf-line)] p-4 text-xs font-medium text-[var(--pf-muted)] sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.5fr)_repeat(5,minmax(0,1fr))]">
+        <label className="relative">Search<Search size={15} className="absolute bottom-3 left-3 text-slate-400" />
+          <input className={`${fieldClass} mt-1 pl-9`} value={search} onChange={event => setSearch(event.target.value)} placeholder="M-Pesa code, account, phone or bookshop" /></label>
+        <label>Status<select className={`${fieldClass} mt-1`} value={filters.status ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, status: event.target.value || undefined }))}>
           <option value="">All statuses</option>{(Object.keys(BILL_STATUS_LABELS) as BillStatus[]).map(status => <option key={status} value={status}>{BILL_STATUS_LABELS[status]}</option>)}</select></label>
-        <label>Channel<select className={inputClass} value={filters.channel ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, channel: event.target.value || undefined }))}>
+        <label>Channel<select className={`${fieldClass} mt-1`} value={filters.channel ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, channel: event.target.value || undefined }))}>
           <option value="">STK and Paybill</option><option value="stk">STK Push</option><option value="paybill">Paybill</option></select></label>
-        <label>Environment<select className={inputClass} value={filters.environment ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, environment: event.target.value || undefined }))}>
+        <label>Environment<select className={`${fieldClass} mt-1`} value={filters.environment ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, environment: event.target.value || undefined }))}>
           <option value="">All</option><option value="production">Production</option><option value="sandbox">Sandbox</option><option value="legacy">Legacy</option></select></label>
-        <label>From<input type="date" className={inputClass} value={filters.from ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, from: event.target.value || undefined }))} /></label>
-        <label>To<input type="date" className={inputClass} value={filters.to ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, to: event.target.value || undefined }))} /></label>
+        <label>From<input type="date" className={`${fieldClass} mt-1`} value={filters.from ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, from: event.target.value || undefined }))} /></label>
+        <label>To<input type="date" className={`${fieldClass} mt-1`} value={filters.to ?? ''} onChange={event => setFilters(current => ({ ...current, page: 1, to: event.target.value || undefined }))} /></label>
       </div>
       {bills.isPending ? <LoadingState label="Loading payments" /> : bills.isError ? <ErrorState message={errorMessage(bills.error)} onRetry={() => void bills.refetch()} /> : <>
-        <div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm">
-          <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr>
-            {['Date', 'Bookshop', 'Invoice', 'Account', 'M-Pesa code', 'Phone', 'Amount', 'Paybill', 'Status'].map(label => <th key={label} className={`px-4 py-3 ${label === 'Amount' ? 'text-right' : ''}`}>{label}</th>)}
-            <th className="px-4 py-3 text-center">View</th>
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-[var(--pf-line)] bg-slate-50/70"><tr>
+            {(['Date', 'Bookshop', 'Invoice', 'Account', 'M-Pesa code', 'Phone', 'Amount', 'Paybill', 'Status'] as const).map(label => <th key={label} className={`${thClass} ${HIDDEN[label] ?? ''} ${label === 'Amount' ? 'text-right' : ''}`}>{label}</th>)}
+            <th className={`${thClass} text-center`}>View</th>
           </tr></thead>
-          <tbody className="divide-y divide-slate-100">{bills.data.data.map(row => <BillRow key={row.id} row={row} onOpen={() => onView(row.id)} />)}</tbody>
-        </table></div>
+          <tbody className="divide-y divide-[var(--pf-line)]">{bills.data.data.map(row => <BillRow key={row.id} row={row} onOpen={() => onView(row.id)} />)}</tbody>
+        </table>
         {!bills.data.data.length && <EmptyState icon={<ReceiptText size={22} />} title="No payments match" body="M-Pesa payments appear here as soon as Safaricom notifies the platform." />}
-        <Pagination meta={{ current_page: bills.data.current_page, last_page: bills.data.last_page, per_page: 25, total: bills.data.total, from: bills.data.from, to: bills.data.to }} onPage={page => setFilters(current => ({ ...current, page }))} />
+        <PageControls page={bills.data} onPage={page => setFilters(current => ({ ...current, page }))} />
       </>}
     </section>
   </>
@@ -211,19 +212,23 @@ export function useBills() {
   return { bills, filters, setFilters, search, setSearch }
 }
 
+/** Columns that give way on narrow screens; the payment details dialog always shows every value. */
+const HIDDEN: Record<string, string> = { Date: 'hidden md:table-cell whitespace-nowrap', Invoice: 'hidden 2xl:table-cell', Account: 'hidden lg:table-cell', Phone: 'hidden 2xl:table-cell', Paybill: 'hidden 2xl:table-cell', Bookshop: 'hidden sm:table-cell' }
+
 export function BillRow({ row, onOpen }: { row: Bill; onOpen: () => void }) {
-  return <tr className="cursor-pointer hover:bg-blue-50/40" onClick={onOpen}>
-    <td className="px-4 py-3 text-slate-600">{when(row.transaction_date)}</td>
-    <td className="px-4 py-3"><strong className="text-slate-900">{row.bookshop_name ?? '—'}</strong>{row.environment !== 'production' && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">{row.environment}</span>}</td>
-    <td className="px-4 py-3 text-slate-600">{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
-    <td className="px-4 py-3 font-mono text-slate-700">{row.account_number ?? '—'}</td>
-    <td className="px-4 py-3"><button type="button" className="font-mono font-semibold text-blue-700 hover:underline" onClick={event => { event.stopPropagation(); onOpen() }}>{row.mpesa_receipt_number ?? <span className="font-sans text-xs font-normal text-slate-400">Awaiting code</span>}</button></td>
-    <td className="px-4 py-3 text-slate-600">{row.phone_number ?? '—'}</td>
-    <td className="px-4 py-3 text-right font-semibold text-slate-900">{kes(row.amount)}{row.excess_amount > 0 && <span className="block text-[11px] font-normal text-amber-700">{kes(row.excess_amount)} excess</span>}</td>
-    <td className="px-4 py-3 text-slate-600">{row.shortcode ?? '—'}<span className="block text-[11px] text-slate-400">{row.payment_channel === 'stk' ? 'STK Push' : 'Paybill'}</span></td>
-    <td className="px-4 py-3"><BillStatusPill status={row.status} />{row.exception_reason && row.status !== 'reconciled' && <span className="mt-1 block max-w-56 truncate text-[11px] text-slate-500" title={row.exception_reason}>{row.exception_reason}</span>}</td>
+  return <tr className="cursor-pointer hover:bg-slate-50/70" onClick={onOpen}>
+    <td className={`px-4 py-3 text-[var(--pf-muted)] ${HIDDEN.Date}`}>{when(row.transaction_date)}</td>
+    <td className={`px-4 py-3 ${HIDDEN.Bookshop}`}><strong className="font-semibold">{row.bookshop_name ?? '—'}</strong>{row.environment !== 'production' && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold capitalize text-amber-800">{row.environment}</span>}</td>
+    <td className={`px-4 py-3 text-[var(--pf-muted)] ${HIDDEN.Invoice}`}>{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
+    <td className={`pf-num px-4 py-3 ${HIDDEN.Account}`}>{row.account_number ?? '—'}</td>
+    <td className="px-4 py-3"><button type="button" className="font-semibold tracking-wide text-[var(--pf-brand)] hover:underline" onClick={event => { event.stopPropagation(); onOpen() }}>{row.mpesa_receipt_number ?? <span className="text-xs font-normal tracking-normal text-slate-400">Awaiting code</span>}</button>
+      <span className="block text-xs text-[var(--pf-muted)] md:hidden">{when(row.transaction_date)}</span></td>
+    <td className={`px-4 py-3 text-[var(--pf-muted)] ${HIDDEN.Phone}`}>{row.phone_number ?? '—'}</td>
+    <td className="pf-num whitespace-nowrap px-4 py-3 text-right font-semibold">{kes(row.amount)}{row.excess_amount > 0 && <span className="block text-[11px] font-normal text-amber-700">{kes(row.excess_amount)} excess</span>}</td>
+    <td className={`px-4 py-3 text-[var(--pf-muted)] ${HIDDEN.Paybill}`}>{row.shortcode ?? '—'}<span className="block text-[11px] text-slate-400">{row.payment_channel === 'stk' ? 'STK Push' : 'Paybill'}</span></td>
+    <td className="px-4 py-3"><BillStatusPill status={row.status} />{row.exception_reason && row.status !== 'reconciled' && <span className="mt-1 hidden max-w-56 truncate text-[11px] text-[var(--pf-muted)] lg:block" title={row.exception_reason}>{row.exception_reason}</span>}</td>
     <td className="px-4 py-3 text-center"><button type="button" aria-label={`View payment ${row.mpesa_receipt_number ?? row.id}`} title="View payment details"
-      className="inline-grid size-9 place-items-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+      className="inline-grid size-9 place-items-center rounded-lg border border-[var(--pf-line)] text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-[var(--pf-brand)]"
       onClick={event => { event.stopPropagation(); onOpen() }}><Eye size={17} /></button></td>
   </tr>
 }
@@ -256,7 +261,7 @@ export function BillDetailModal({ id, canManage, onClose }: { id: number; canMan
             ['Amount', kes(bill.amount)], ['Applied / excess', `${kes(bill.allocated_amount)} / ${kes(bill.excess_amount)}`],
             ['Verification checks', `${bill.verification_attempts}${bill.next_verification_at && bill.status === 'pending' ? ` · next ${when(bill.next_verification_at)}` : ''}`],
             ['Confirmation sent', bill.confirmation_sent_at ? when(bill.confirmation_sent_at) : '—'],
-          ] as const).map(([label, value]) => <div key={label}><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-0.5 font-medium text-slate-900">{value}</dd></div>)}
+          ] as const).map(([label, value]) => <div key={label}><dt className="text-xs font-medium text-[var(--pf-muted)]">{label}</dt><dd className="mt-0.5 font-medium text-slate-900">{value}</dd></div>)}
         </dl>
         {bill.invoice && <div className="rounded-xl border border-slate-200 p-3"><p className="font-semibold text-slate-900">Invoice #{bill.invoice.id} · account {bill.invoice.account_number}</p>
           <p className="text-slate-600">{kes(bill.invoice.amount)} · paid {kes(bill.invoice.paid)} · balance {kes(bill.invoice.balance)} · {bill.invoice.status} · {formatDate(bill.invoice.period_starts_at)} – {formatDate(bill.invoice.period_ends_at)}</p></div>}
