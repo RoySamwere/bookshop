@@ -21,15 +21,17 @@ function OwnerGate({ children }: { children: (user: BookshopUser) => ReactNode }
   if (!user) return <Navigate replace to={`/login?next=${encodeURIComponent(location.pathname)}`} />
   if (user.account_type === 'platform') return <Navigate replace to="/platform" />
   if (!user.bookshop?.is_owner) return <Navigate replace to={user.account_type === 'bookshop' ? '/dashboard' : '/account'} />
-  if (user.bookshop.status === 'suspended') return <AuthShell story={story}><SuspendedNotice reason={user.bookshop.suspension_reason} /><SignOutLink /></AuthShell>
+  if (user.bookshop.status === 'suspended') return <AuthShell story={story}><SuspendedNotice reason={user.bookshop.suspension_reason} supportEmail={user.bookshop.support_email} /><SignOutLink /></AuthShell>
   return <>{children(user)}</>
 }
 
-export function SuspendedNotice({ reason }: { reason: string | null }) {
+/** Shown to every user of a suspended bookshop. They stay signed in; the server refuses workspace requests. */
+export function SuspendedNotice({ reason, supportEmail }: { reason: string | null; supportEmail?: string | null }) {
   return <>
-    <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-rose-50 text-rose-600"><ShieldAlert size={24} /></span>
-    <AuthHeading title="This bookshop is suspended">Your records are safe, but the workspace is unavailable until platform support restores access.</AuthHeading>
+    <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-amber-50 text-amber-600"><ShieldAlert size={24} /></span>
+    <AuthHeading title="Your bookshop is temporarily unavailable">Access to this workspace has been paused for now. Your sales, stock, customers and accounts are safe and unchanged.</AuthHeading>
     {reason && <div className="hk-auth-panel text-sm text-slate-600"><p className="m-0"><strong className="text-slate-900">Reason:</strong> {reason}</p></div>}
+    <p className="hk-auth-lede">To have access restored, please contact Hekima Bookshop support{supportEmail ? <> at <a className="hk-auth-link" href={`mailto:${supportEmail}`}>{supportEmail}</a></> : ''}. We will reactivate your workspace as soon as the matter is resolved.</p>
   </>
 }
 

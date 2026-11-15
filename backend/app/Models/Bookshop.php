@@ -98,6 +98,8 @@ class Bookshop extends Model
             'verified_at' => $this->verified_at?->toIso8601String(),
             'suspended_at' => $this->suspended_at?->toIso8601String(),
             'suspension_reason' => $this->isSuspended() ? $this->suspension_reason : null,
+            // Where a suspended bookshop's users can ask for reactivation.
+            'support_email' => $this->isSuspended() ? (PlatformSetting::get('support_email') ?: config('mail.from.address')) : null,
         ];
     }
 }

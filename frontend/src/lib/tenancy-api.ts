@@ -45,6 +45,8 @@ export type PlatformOverview = {
   users: { bookshop_staff: number; platform_staff: number; unassigned_legacy_staff: number }
   recent_bookshops: { id: number; name: string; slug: string; status: BookshopStatus; country: string; created_at: string }[]
 }
+/** A bookshop's user account as platform staff see it: metadata only. */
+export type BookshopAccount = { id: number; name: string; email: string; phone: string | null; role: Role; role_label: string; is_active: boolean; is_owner: boolean; email_verified: boolean; last_login_at: string | null; created_at: string | null }
 export type PlatformStaff = { id: number; name: string; email: string; role: Role; role_label: string; is_active: boolean; last_login_at: string | null; created_at: string | null }
 export type PlatformSettings = { bookshop_registration_open: boolean; support_email: string | null; trial_days: number | null; default_trial_days: number }
 
@@ -66,7 +68,11 @@ export const platformApi = {
   setUserStatus: (id: number, is_active: boolean) => api<Saved<PlatformStaff>>(`/platform/users/${id}/status`, { method: 'PATCH', body: { is_active } }),
   settings: async () => (await api<{ data: PlatformSettings }>('/platform/settings')).data,
   updateSettings: (body: Partial<Omit<PlatformSettings, 'default_trial_days'>>) => api<Saved<PlatformSettings>>('/platform/settings', { method: 'PUT', body }),
-  audit: (query: { search?: string; page?: number }) => api<Paginated<AuditEntry>>('/platform/audit-logs', { query }),
+  audit: (query: { search?: string; page?: number; bookshop_id?: number }) => api<Paginated<AuditEntry>>('/platform/audit-logs', { query }),
+  bookshopUsers: async (id: number) => (await api<{ data: BookshopAccount[] }>(`/platform/bookshops/${id}/users`)).data,
+  setBookshopUserStatus: (id: number, userId: number, is_active: boolean) => api<Saved<BookshopAccount>>(`/platform/bookshops/${id}/users/${userId}/status`, { method: 'PATCH', body: { is_active } }),
+  changePlan: (id: number, plan_id: number) => api<Saved<SubscriptionSummary>>(`/platform/bookshops/${id}/subscription/plan`, { method: 'POST', body: { plan_id } }),
+  renewalInvoice: (id: number, plan_id: number) => api<Saved<{ id: number; account_number: string; amount: string; status: string }>>(`/platform/bookshops/${id}/subscription/renewal-invoice`, { method: 'POST', body: { plan_id } }),
 }
 
 /** Discard cached tenant records and reload the UI after the server changes the session context. */

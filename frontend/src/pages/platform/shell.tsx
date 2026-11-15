@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Building2, ChevronDown, CreditCard, Gauge, History, LayoutGrid, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Plus, ReceiptText, Search, Settings, Store, Users, X, Zap } from 'lucide-react'
+import { Building2, ChevronDown, CreditCard, Mail, Gauge, History, LayoutGrid, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Plus, ReceiptText, Search, Settings, Store, Users, X, Zap } from 'lucide-react'
 import { useRouter } from '@/lib/navigation'
 import BrandLoader from '../../components/brand-loader'
 import { BrandMark } from '../../components/brand-mark'
@@ -19,6 +19,7 @@ export const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
     { to: '/platform/management', label: 'Bookshop management', icon: Building2, permission: 'platform.access', ownerOnly: true },
   ] },
   { label: 'Revenue', items: [{ to: '/platform/billing', label: 'Billing', icon: CreditCard, permission: 'platform.settings.view' }] },
+  { label: 'Communication', items: [{ to: '/platform/communications', label: 'Communication', icon: Mail, permission: 'platform.communications.manage' }] },
   { label: 'Administration', items: [
     { to: '/platform/users', label: 'Platform users', icon: Users, permission: 'platform.users.view' },
     { to: '/platform/settings', label: 'Settings', icon: Settings, permission: 'platform.settings.view' },
@@ -137,6 +138,7 @@ function QuickAccess({ user }: { user: BookshopUser }) {
     { to: '/platform/billing/invoices', label: 'Invoices', icon: CreditCard, ok: hasPermission(user, 'platform.settings.view') },
     { to: '/platform/billing/trials', label: 'Trial management', icon: Zap, ok: hasPermission(user, 'platform.subscriptions.extend_trial') },
     { to: '/platform/bookshops?status=pending_verification', label: 'Bookshops awaiting approval', icon: Store, ok: hasPermission(user, 'platform.bookshops.view') },
+    { to: '/platform/communications/announcements', label: 'Send an announcement', icon: Mail, ok: hasPermission(user, 'platform.communications.manage') },
     { to: '/platform/audit', label: 'Audit history', icon: History, ok: hasPermission(user, 'platform.audit.view') },
   ].filter(link => link.ok)
   if (!links.length) return null

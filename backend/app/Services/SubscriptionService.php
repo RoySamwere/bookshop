@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Bookshop;
 use App\Models\BookshopSubscription;
 use App\Models\PlatformSetting;
+use App\Models\SubscriptionEvent;
 use App\Models\SubscriptionPlan;
 use App\Models\SubscriptionTrialExtension;
 use App\Models\User;
@@ -184,9 +185,18 @@ class SubscriptionService
         return $existing;
     }
 
-    private function record(BookshopSubscription $subscription, string $event, ?string $from, ?User $actor, ?string $note): void
+    /** Sets the plan for future renewals. Status, current period, trial and issued invoices are left as they are. */
+    public function changePlan(BookshopSubscription $subscription, SubscriptionPlan $plan, ?User $actor = null): SubscriptionEvent
     {
-        $subscription->events()->create([
+        $from = $subscription->plan?->name ?? 'no plan';
+        $subscription->forceFill(['subscription_plan_id' => $plan->id])->save();
+
+        return $this->record($subscription, 'plan_changed', $subscription->status, $actor, "Plan changed from {$from} to {$plan->name}");
+    }
+
+    private function record(BookshopSubscription $subscription, string $event, ?string $from, ?User $actor, ?string $note): SubscriptionEvent
+    {
+        return $subscription->events()->create([
             'bookshop_id' => $subscription->bookshop_id,
             'subscription_plan_id' => $subscription->subscription_plan_id,
             'event' => $event,

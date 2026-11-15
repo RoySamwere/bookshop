@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import type { BookshopStatus } from '../../lib/auth'
+import { BOOKSHOP_STATUS_LABELS } from '../../lib/tenancy-api'
 import { NavLink } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 
@@ -52,6 +54,15 @@ export function toneFor(status: string | null | undefined): Tone {
   }
 }
 export const humanize = (value: string) => value.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase())
+
+export function ShopStatus({ status }: { status: BookshopStatus }) {
+  return <StatePill status={status} label={BOOKSHOP_STATUS_LABELS[status]} />
+}
+
+/** Label and value pairs for detail panels. */
+export function DetailList({ rows }: { rows: [string, ReactNode][] }) {
+  return <dl className="m-0 grid gap-3 text-sm">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(0,8.5rem)_1fr] gap-3"><dt className="text-[var(--pf-muted)]">{label}</dt><dd className="m-0 flex min-w-0 flex-wrap items-center gap-2 break-words">{value}</dd></div>)}</dl>
+}
 
 /** Status badge: colour plus a written label and a dot, never colour alone. */
 export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {

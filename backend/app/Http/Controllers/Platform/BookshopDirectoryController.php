@@ -7,6 +7,7 @@ use App\Http\Resources\AuditLogResource;
 use App\Models\AuditLog;
 use App\Models\Bookshop;
 use App\Models\User;
+use App\Services\CommunicationService;
 use App\Services\SubscriptionService;
 use App\Support\Roles;
 use App\Support\SafeMail;
@@ -39,6 +40,10 @@ class BookshopDirectoryController extends Controller
         \Illuminate\Support\Facades\DB::transaction(function () use ($request, $bookshop) {
             $bookshop->forceFill(['status' => Bookshop::STATUS_ACTIVE, 'verified_at' => now()])->save();
             AuditLog::record('platform.bookshop_approved', "Approved {$bookshop->name}", $bookshop, actor: $request->user(), bookshopId: $bookshop->id);
+            // Queued after commit; the occurrence key means a bookshop is only ever welcomed once.
+            app(CommunicationService::class)->notify('welcome', $bookshop, 'activation', [
+                'trial_ends' => $bookshop->subscription?->trial_ends_at?->format('j M Y') ?? 'the end of your trial',
+            ], 'owners', actor: $request->user());
         });
 
         return response()->json(['message' => 'Bookshop approved and activated.', 'data' => $this->row($bookshop->fresh())]);
@@ -110,8 +115,10 @@ class BookshopDirectoryController extends Controller
             $subscriptions->transition($bookshop->subscription, \App\Models\BookshopSubscription::SUSPENDED, $request->user(), 'Bookshop suspended by platform');
         }
         AuditLog::record('platform.bookshop_suspended', "Suspended {$bookshop->name}", $bookshop, ['reason' => $bookshop->suspension_reason, 'previous_status' => $previous], bookshopId: $bookshop->id);
+        $notified = app(CommunicationService::class)->notify('bookshop_suspended', $bookshop, 'at-'.$bookshop->suspended_at->getTimestamp(),
+            ['reason' => $bookshop->suspension_reason], 'staff', actor: $request->user());
 
-        return response()->json(['message' => "{$bookshop->name} has been suspended. Its staff can no longer use the workspace; no records were changed.", 'data' => $this->row($bookshop->fresh())]);
+        return response()->json(['message' => "{$bookshop->name} has been suspended. Its staff can still sign in but only see a suspension notice; no records were changed. {$notified} user(s) notified by email.", 'data' => $this->row($bookshop->fresh())]);
     }
 
     public function reactivate(Request $request, Bookshop $bookshop, SubscriptionService $subscriptions): JsonResponse
@@ -119,14 +126,16 @@ class BookshopDirectoryController extends Controller
         $data = $request->validate(['note' => ['nullable', 'string', 'max:500']]);
         abort_unless($bookshop->isSuspended(), 422, 'This bookshop is not suspended.');
 
+        $episode = 'at-'.($bookshop->suspended_at?->getTimestamp() ?? 0);
         $bookshop->forceFill(['status' => $bookshop->verified_at ? Bookshop::STATUS_ACTIVE : Bookshop::STATUS_PENDING, 'suspended_at' => null, 'suspension_reason' => null])->save();
         $last = $bookshop->subscription?->events()->where('to_status', \App\Models\BookshopSubscription::SUSPENDED)->latest('id')->value('from_status');
         if ($bookshop->subscription && $last) {
             $subscriptions->transition($bookshop->subscription, $last, $request->user(), 'Bookshop reactivated by platform');
         }
         AuditLog::record('platform.bookshop_reactivated', "Reactivated {$bookshop->name}", $bookshop, ['note' => $data['note'] ?? null], bookshopId: $bookshop->id);
+        $notified = app(CommunicationService::class)->notify('bookshop_reactivated', $bookshop, $episode, [], 'staff', actor: $request->user());
 
-        return response()->json(['message' => "{$bookshop->name} has been reactivated.", 'data' => $this->row($bookshop->fresh())]);
+        return response()->json(['message' => "{$bookshop->name} has been reactivated. {$notified} user(s) notified by email.", 'data' => $this->row($bookshop->fresh())]);
     }
 
     public function resendOwnerVerification(Bookshop $bookshop): JsonResponse

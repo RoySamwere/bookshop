@@ -128,7 +128,11 @@ class SafPaymentsTest extends TestCase
         $this->assertSame(1, DB::table('saf_payments')->count());
         $this->assertSame(1, DB::table('platform_billing_payments')->where('status', 'confirmed')->count());
         $this->assertDatabaseCount('subscription_events', 1);
-        Notification::assertSentToTimes($this->owner, SubscriptionPaymentConfirmed::class, 2); // database + mail, once
+        // In-app once, and exactly one logged, delivered confirmation email despite the duplicate callbacks.
+        Notification::assertSentToTimes($this->owner, SubscriptionPaymentConfirmed::class, 1);
+        $this->assertSame(1, DB::table('communication_logs')->where('event', 'payment_confirmed')->where('user_id', $this->owner->id)->count());
+        $this->assertDatabaseHas('communication_logs', ['event' => 'payment_confirmed', 'user_id' => $this->owner->id, 'status' => 'sent']);
+        Notification::assertSentOnDemandTimes(\App\Notifications\PlatformMessage::class, 1);
     }
 
     public function test_results_without_our_correlation_ids_or_with_different_values_never_credit(): void

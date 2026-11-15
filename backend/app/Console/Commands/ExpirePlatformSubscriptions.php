@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\BookshopSubscription;
+use App\Services\CommunicationService;
 use App\Services\SubscriptionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,11 @@ class ExpirePlatformSubscriptions extends Command
                         : ($subscription->grace_ends_at ?? $subscription->current_period_ends_at);
                     if ($expiry && $expiry->lessThanOrEqualTo(now())) {
                         app(SubscriptionService::class)->transition($subscription, 'expired', null, 'Subscription period elapsed');
+                        // One notice per ended period; sent after this transaction commits.
+                        if ($subscription->bookshop) {
+                            app(CommunicationService::class)->notify('subscription_expired', $subscription->bookshop, 'ended-'.$expiry->getTimestamp(),
+                                ['ended_on' => $expiry->format('j M Y')]);
+                        }
                     }
                 }, 3);
             }

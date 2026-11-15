@@ -13,7 +13,7 @@ export type Permission =
   | 'storefront.access'
   | 'platform.access' | 'platform.bookshops.view' | 'platform.bookshops.onboard' | 'platform.bookshops.suspend'
   | 'platform.users.view' | 'platform.users.manage' | 'platform.settings.view' | 'platform.settings.manage'
-  | 'platform.audit.view' | 'platform.plans.view' | 'platform.subscriptions.extend_trial'
+  | 'platform.audit.view' | 'platform.plans.view' | 'platform.subscriptions.extend_trial' | 'platform.communications.manage'
 
 export type Role = 'platform_owner' | 'platform_admin' | 'bookshop_owner' | 'system_owner' | 'admin' | 'store_manager' | 'cashier' | 'inventory_officer' | 'customer'
 export type BranchSummary = { id: number; name: string; code: string; is_main?: boolean }
@@ -25,7 +25,7 @@ export type SubscriptionSummary = { days_remaining?: number | null; status: stri
 /** The signed-in user's own bookshop (tenant), as returned by /auth/me. */
 export type BookshopSummary = {
   id: number; name: string; slug: string; status: BookshopStatus; business_email: string | null; phone: string | null; location: string | null
-  country: string; currency: string; timezone: string; verified_at: string | null; suspended_at: string | null; suspension_reason: string | null
+  country: string; currency: string; timezone: string; verified_at: string | null; suspended_at: string | null; suspension_reason: string | null; support_email?: string | null
   is_owner: boolean; subscription: SubscriptionSummary | null
 }
 

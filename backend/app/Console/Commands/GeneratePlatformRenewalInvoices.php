@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SubscriptionPlan;
+use App\Services\CommunicationService;
 use App\Services\PlatformBillingInvoiceService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,7 @@ class GeneratePlatformRenewalInvoices extends Command
 
     protected $description = 'Create one renewal invoice when a calendar subscription approaches expiry';
 
-    public function handle(PlatformBillingInvoiceService $invoices): int
+    public function handle(PlatformBillingInvoiceService $invoices, CommunicationService $communications): int
     {
         $subscriptions = DB::table('bookshop_subscriptions')
             ->whereNotNull('current_period_ends_at')
@@ -34,8 +35,9 @@ class GeneratePlatformRenewalInvoices extends Command
             if (! $plan || ! $plan->is_active || $plan->price <= 0) {
                 continue;
             }
-            $invoices->create($subscription->bookshop_id, $plan);
+            $invoice = $invoices->create($subscription->bookshop_id, $plan);
             $this->info('Renewal invoice generated for bookshop '.$subscription->bookshop_id);
+            $communications->invoiceDue($invoice, $plan);
         }
 
         return self::SUCCESS;

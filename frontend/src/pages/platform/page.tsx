@@ -1,19 +1,20 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Building2, CalendarPlus, CheckCircle2, ChevronRight, Eye, History, Pencil, ShieldCheck, Store, UserPlus } from 'lucide-react'
+import { AlertTriangle, Building2, CheckCircle2, ChevronRight, Eye, History, Pencil, ShieldCheck, Store, UserPlus } from 'lucide-react'
 import {
   EmptyState, ErrorState, Field, FormAlert, LoadingState, Modal, ModalActions,
   dangerButton, formatDate, inputClass, primaryButton, secondaryButton,
 } from '../../components/ui-kit'
 import { useAuth } from '../../features/auth/auth-provider'
 import { ApiError, errorMessage } from '../../lib/api'
-import { hasPermission, type BookshopUser, type BookshopStatus, type Permission } from '../../lib/auth'
-import { billingApi, billsApi, trialApi } from '../../lib/billing-api'
-import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi, type PlatformBookshop } from '../../lib/tenancy-api'
+import { hasPermission, type BookshopUser, type Permission } from '../../lib/auth'
+import { billingApi, billsApi } from '../../lib/billing-api'
+import { BOOKSHOP_STATUS_LABELS, enterBookshopManagement, platformApi } from '../../lib/tenancy-api'
 import PlatformBillingView from './billing-view'
-import { ExtendTrialModal } from './trial-extensions'
-import { BarList, Metric, MetricStrip, PageControls, Panel, Pill, PlatformTitle, SearchField, SelectField, SplitBar, StatePill, Toolbar, humanize, kes, tdClass, thClass } from './platform-ui'
+import BookshopDetailView from './bookshop-detail'
+import CommunicationsView from './communications'
+import { BarList, DetailList, Metric, MetricStrip, PageControls, Panel, Pill, PlatformTitle, SearchField, SelectField, ShopStatus, SplitBar, StatePill, Toolbar, humanize, kes, tdClass, thClass } from './platform-ui'
 import { PlatformShell } from './shell'
 import BookshopRegisterPage from '../register/bookshop/page'
 
@@ -25,7 +26,8 @@ export default function PlatformPage() {
       <Route path="bookshops" element={<BookshopsView />} />
       <Route path="bookshops/new" element={<Gate permission="platform.bookshops.onboard"><BookshopRegisterPage platformMode /></Gate>} />
       <Route path="management" element={<ManagementView />} />
-      <Route path="bookshops/:id" element={<BookshopDetailView />} />
+      <Route path="bookshops/:id/*" element={<BookshopDetailView />} />
+      <Route path="communications/*" element={<Gate permission="platform.communications.manage"><CommunicationsView /></Gate>} />
       <Route path="users" element={<Gate permission="platform.users.view"><UsersView /></Gate>} />
       <Route path="billing/*" element={<Gate permission="platform.settings.view"><PlatformBillingView /></Gate>} />
       {/* Earlier addresses, kept so bookmarks and links still work. */}
@@ -46,10 +48,6 @@ function useCurrentUser(): BookshopUser {
 function Gate({ permission, children }: { permission: Permission; children: ReactNode }) {
   const user = useCurrentUser()
   return hasPermission(user, permission) ? <>{children}</> : <EmptyState icon={<ShieldCheck size={22} />} title="Not available" body="Your platform role does not include this area." />
-}
-
-function ShopStatus({ status }: { status: BookshopStatus }) {
-  return <StatePill status={status} label={BOOKSHOP_STATUS_LABELS[status]} />
 }
 
 function OverviewView() {
@@ -212,10 +210,6 @@ function BookshopsView() {
   </>
 }
 
-function DetailList({ rows }: { rows: [string, ReactNode][] }) {
-  return <dl className="m-0 grid gap-3 text-sm">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(0,8.5rem)_1fr] gap-3"><dt className="text-[var(--pf-muted)]">{label}</dt><dd className="m-0 min-w-0 break-words">{value}</dd></div>)}</dl>
-}
-
 function BookshopManageModal({ id, onClose }: { id: number; onClose: () => void }) {
   const user = useCurrentUser()
   const client = useQueryClient()
@@ -253,89 +247,6 @@ function BookshopManageModal({ id, onClose }: { id: number; onClose: () => void 
         {shop.status === 'pending_verification' && <button type="button" className={primaryButton} disabled={approve.isPending} onClick={() => approve.mutate()}>Approve & activate</button>}
       </div>}
     </div>}
-  </Modal>
-}
-
-function BookshopDetailView() {
-  const id = Number(useParams().id)
-  const user = useCurrentUser()
-  const client = useQueryClient()
-  const shop = useQuery({ queryKey: ['platform', 'bookshop', id], queryFn: () => platformApi.bookshop(id) })
-  const [dialog, setDialog] = useState<'suspend' | 'reactivate' | null>(null)
-  const [extending, setExtending] = useState(false)
-  const [notice, setNotice] = useState('')
-  const canExtendTrial = hasPermission(user, 'platform.subscriptions.extend_trial')
-  const trial = useQuery({ queryKey: ['platform-billing', 'trials', 'bookshop', id], queryFn: () => trialApi.subscriptions({ bookshop_id: id }), enabled: canExtendTrial })
-  const trialRow = trial.data?.data.find(row => row.bookshop_id === id)
-  const approve = useMutation({ mutationFn: () => platformApi.approve(id), onSuccess: result => { setNotice(result.message); void client.invalidateQueries({ queryKey: ['platform'] }) }, onError: error => setNotice(errorMessage(error)) })
-
-  if (shop.isPending) return <LoadingState />
-  if (shop.error) return <ErrorState message={errorMessage(shop.error)} onRetry={() => void shop.refetch()} />
-  const data = shop.data
-  const done = (message: string) => { setDialog(null); setNotice(message); void client.invalidateQueries({ queryKey: ['platform'] }) }
-
-  return <>
-    <Link to="/platform/bookshops" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--pf-muted)] hover:text-[var(--pf-ink)]"><ArrowLeft size={15} /> All bookshops</Link>
-    <PlatformTitle title={data.name} description={`${data.location || 'No location'}, ${data.country}. Prices in ${data.currency}.`} meta={<><ShopStatus status={data.status} /><span className="text-xs text-[var(--pf-muted)]">Code {data.slug}</span></>}
-      actions={<>
-        {user.role === 'platform_owner' && data.status === 'pending_verification' && <button className={primaryButton} onClick={() => approve.mutate()} disabled={approve.isPending}>{approve.isPending ? 'Approving…' : 'Approve & activate'}</button>}
-        {hasPermission(user, 'platform.bookshops.suspend') && (data.status === 'suspended'
-          ? <button className={primaryButton} onClick={() => setDialog('reactivate')}>Reactivate</button>
-          : <button className={dangerButton} onClick={() => setDialog('suspend')}>Suspend</button>)}
-      </>} />
-    {notice && <div className="mb-5"><FormAlert tone="success" message={notice} /></div>}
-    {data.status === 'suspended' && <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="status"><strong>Suspended {formatDate(data.suspended_at, true)}.</strong> {data.suspension_reason}</div>}
-    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-      <div className="grid min-w-0 content-start gap-6">
-        <Panel title="Subscription">{data.subscription ? <div className="grid gap-4">
-          <DetailList rows={[
-            ['Plan', data.subscription.plan?.name || '—'],
-            ['Status', <StatePill key="s" status={data.subscription.status} />],
-            ['Trial ends', formatDate(data.subscription.trial_ends_at)],
-            ...(data.subscription.trial_days_left !== null ? [['Trial days left', String(data.subscription.trial_days_left)] as [string, ReactNode]] : []),
-            ...(data.subscription.current_period_ends_at ? [['Paid until', formatDate(data.subscription.current_period_ends_at)] as [string, ReactNode]] : []),
-          ]} />
-          {trialRow?.eligible && <div><button className={secondaryButton} onClick={() => { setNotice(''); setExtending(true) }}><CalendarPlus size={15} /> Extend Trial</button></div>}
-        </div> : <p className="text-sm text-[var(--pf-muted)]">No subscription record (legacy bookshop).</p>}</Panel>
-        <Panel title="Lifecycle history" description="Registration, activation, suspension and support actions." flush>
-          {data.history.length === 0 ? <EmptyState icon={<History size={22} />} title="No history yet" body="Lifecycle events will appear here." />
-            : <ol className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{data.history.map(entry => <li key={entry.id} className="px-5 py-3 text-sm"><p className="m-0">{entry.description}</p><small className="text-xs text-[var(--pf-muted)]">{formatDate(entry.created_at, true)}{entry.user ? `, by ${entry.user.name}` : ''}</small></li>)}</ol>}
-        </Panel>
-        {data.subscription_history?.length > 0 && <Panel title="Subscription history" flush>
-          <ol className="m-0 list-none divide-y divide-[var(--pf-line)] p-0">{data.subscription_history.map((entry, index) => <li key={`${entry.created_at}-${index}`} className="flex flex-wrap items-start justify-between gap-2 px-5 py-3 text-sm">
-            <span><span className="font-medium">{humanize(entry.event)}</span>{entry.note && <small className="block text-xs text-[var(--pf-muted)]">{entry.note}</small>}</span>
-            <span className="flex items-center gap-2">{entry.from_status && <StatePill status={entry.from_status} />}{entry.from_status && <ChevronRight size={14} className="text-slate-400" aria-label="to" />}<StatePill status={entry.to_status} /><time className="text-xs text-[var(--pf-muted)]">{formatDate(entry.created_at, true)}</time></span>
-          </li>)}</ol>
-        </Panel>}
-      </div>
-      <div className="grid content-start gap-6">
-        <Panel title="Owner">{data.owner ? <DetailList rows={[['Name', data.owner.name], ['Email', data.owner.email], ['Phone', data.owner.phone || '—'], ['Last sign-in', formatDate(data.owner.last_login_at ?? null, true)]]} /> : <p className="text-sm text-[var(--pf-muted)]">No owner account.</p>}</Panel>
-        <Panel title="Bookshop"><DetailList rows={[['Registered', formatDate(data.registered_at, true)], ['Approved', formatDate(data.verified_at, true)], ['Business email', data.business_email || '—'], ['Phone', data.phone || '—'], ['Branches / staff', `${data.branches_count ?? 0} / ${data.staff_count ?? 0}`]]} /></Panel>
-      </div>
-    </div>
-    {extending && trialRow && trial.data && <ExtendTrialModal target={trialRow} maxDays={trial.data.max_days} onClose={() => setExtending(false)} onDone={message => { setExtending(false); setNotice(message) }} />}
-    {dialog && <StatusDialog shop={data} mode={dialog} onClose={() => setDialog(null)} onDone={done} />}
-  </>
-}
-
-function StatusDialog({ shop, mode, onClose, onDone }: { shop: PlatformBookshop; mode: 'suspend' | 'reactivate'; onClose: () => void; onDone: (message: string) => void }) {
-  const [text, setText] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    setBusy(true); setError('')
-    try { onDone((mode === 'suspend' ? await platformApi.suspend(shop.id, text) : await platformApi.reactivate(shop.id, text)).message) }
-    catch (e) { setError(e instanceof ApiError ? (e.field('reason') || e.message) : errorMessage(e)); setBusy(false) }
-  }
-  return <Modal title={mode === 'suspend' ? `Suspend ${shop.name}?` : `Reactivate ${shop.name}?`} description={mode === 'suspend' ? 'Staff lose workspace access immediately. No records are changed or deleted.' : 'Staff regain access to the workspace.'} onClose={onClose} busy={busy}>
-    <form onSubmit={submit} className="grid gap-4">
-      <Field label={mode === 'suspend' ? 'Reason (shown to the bookshop owner)' : 'Note (optional)'}>
-        <textarea className={`${inputClass} h-24 py-2`} value={text} onChange={e => setText(e.target.value)} required={mode === 'suspend'} />
-      </Field>
-      <FormAlert message={error} />
-      <ModalActions busy={busy} submitLabel={mode === 'suspend' ? 'Suspend bookshop' : 'Reactivate'} busyLabel="Saving…" onCancel={onClose} danger={mode === 'suspend'} />
-    </form>
   </Modal>
 }
 

@@ -44,7 +44,7 @@ export const billingApi = {
   payments: (page = 1, environment = '') => api<Page<LedgerPayment>>(`/platform/billing/payments?page=${page}&environment=${environment}`),
   updatePlan: (id: number, body: { name: string; price: number; billing_interval: string; is_active: boolean }) => api(`/platform/billing/plans/${id}`, { method: 'PATCH', body }),
   plan: (body: { code: string; name: string; price: number; billing_interval: string }) => api('/platform/billing/plans', { method: 'POST', body }),
-  invoices: (page = 1, environment = '', status = '') => api<Page<Invoice>>(`/platform/billing/invoices?page=${page}${environment ? `&environment=${environment}` : ''}${status ? `&status=${status}` : ''}`),
+  invoices: (page = 1, environment = '', status = '', bookshopId?: number) => api<Page<Invoice>>(`/platform/billing/invoices?page=${page}${environment ? `&environment=${environment}` : ''}${status ? `&status=${status}` : ''}${bookshopId ? `&bookshop_id=${bookshopId}` : ''}`),
   attempts: (page = 1, environment = '') => api<Page<Attempt>>(`/platform/billing/stk-attempts?page=${page}&environment=${environment}`),
   reconciliation: (page = 1, environment = '') => api<Page<Reconciliation>>(`/platform/billing/reconciliation?page=${page}&environment=${environment}`),
   resolveOverpayment: (id: number, body: { refund_reference: string; refund_verified: boolean }) => api(`/platform/billing/reconciliation/${id}/resolve-overpayment`, { method: 'POST', body }),
@@ -71,7 +71,7 @@ export type BillsSummary = {
   pending_count: number; pending_amount: number; unmatched_count: number; unmatched_amount: number; excess_amount: number
   outstanding_invoices: number; outstanding_balance: number
 }
-export type BillFilters = { search?: string; status?: string; channel?: string; environment?: string; from?: string; to?: string; page?: number }
+export type BillFilters = { bookshop_id?: number; search?: string; status?: string; channel?: string; environment?: string; from?: string; to?: string; page?: number }
 export type MyPayment = {
   id: number; date: string; bookshop_name?: string; shortcode?: string | null; amount: number; allocated_amount: number; excess_amount: number; invoice_id: number | null; invoice_status: string | null
   account_number: string | null; mpesa_receipt_number: string | null; phone: string | null; channel: string; environment: string

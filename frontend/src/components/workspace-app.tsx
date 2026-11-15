@@ -173,7 +173,7 @@ export function WorkspaceApp() {
   const toastNode = toast && <div className="toast" role="status"><span className="toast-check">✓</span>{toast}</div>
 
   // The server refuses every workspace request in these states; explain instead of showing failing screens.
-  const blocked = currentUser.bookshop?.status === 'suspended' ? <SuspendedNotice reason={currentUser.bookshop.suspension_reason} />
+  const blocked = currentUser.bookshop?.status === 'suspended' ? <SuspendedNotice reason={currentUser.bookshop.suspension_reason} supportEmail={currentUser.bookshop.support_email} />
     : !currentUser.bookshop ? <><h2 tabIndex={-1}>Not linked to a bookshop</h2><p className="hk-auth-lede">Your account is not part of a bookshop yet. Ask your administrator to finish moving your shop to the new bookshop setup.</p></>
     : null
   if (blocked) return <AuthShell story={{ title: 'Workspace unavailable.', body: 'Your records are kept safe while access is paused.' }}>{blocked}<p className="hk-auth-alt"><button type="button" className="hk-auth-link" onClick={() => void signOut()}>Sign out</button></p></AuthShell>

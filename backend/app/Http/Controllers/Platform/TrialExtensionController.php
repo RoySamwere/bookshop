@@ -85,6 +85,12 @@ class TrialExtensionController extends Controller
             $data['idempotency_key'], $data['expected_trial_ends_at'], $request->user());
         $subscription = BookshopSubscription::with(['bookshop:id,name,slug,status', 'plan:id,code,name'])->withCount('trialExtensions')
             ->findOrFail($extension->bookshop_subscription_id);
+        if (! $duplicate) {
+            app(\App\Services\CommunicationService::class)->notify('subscription_updated', $shop, 'trial-extension-'.$extension->id, [
+                'summary' => "Your free trial has been extended by {$extension->days_granted} day(s). It now ends on {$extension->new_trial_ends_at->format('j M Y')}.",
+                'status' => 'Trial', 'plan' => $subscription->plan?->name ?? 'Trial',
+            ], 'owners', actor: $request->user());
+        }
 
         return response()->json([
             'message' => $duplicate ? 'This extension was already saved. No extra days were added.'

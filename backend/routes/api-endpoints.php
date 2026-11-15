@@ -247,6 +247,24 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/trial-extensions/subscriptions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'index'])->middleware('permission:platform.subscriptions.extend_trial');
         Route::get('/trial-extensions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'history'])->middleware('permission:platform.subscriptions.extend_trial');
         Route::post('/bookshops/{bookshop}/trial-extensions', [\App\Http\Controllers\Platform\TrialExtensionController::class, 'store'])->whereNumber('bookshop')->middleware(['permission:platform.subscriptions.extend_trial', 'throttle:20,1']);
+        // Per-bookshop administration (Platform Owner actions are re-checked in the controller).
+        Route::get('/bookshops/{bookshop}/users', [\App\Http\Controllers\Platform\BookshopAdministrationController::class, 'users'])->whereNumber('bookshop')->middleware('permission:platform.bookshops.view');
+        Route::patch('/bookshops/{bookshop}/users/{user}/status', [\App\Http\Controllers\Platform\BookshopAdministrationController::class, 'setUserStatus'])->whereNumber(['bookshop', 'user'])->middleware('permission:platform.bookshops.suspend');
+        Route::post('/bookshops/{bookshop}/subscription/plan', [\App\Http\Controllers\Platform\BookshopAdministrationController::class, 'changePlan'])->whereNumber('bookshop')->middleware('permission:platform.settings.manage');
+        Route::post('/bookshops/{bookshop}/subscription/renewal-invoice', [\App\Http\Controllers\Platform\BookshopAdministrationController::class, 'renewalInvoice'])->whereNumber('bookshop')->middleware(['permission:platform.settings.manage', 'throttle:10,1']);
+        // Communication centre: Platform Owner only. Logs are read-only apart from retrying failed sends.
+        Route::prefix('communications')->middleware('permission:platform.communications.manage')->group(function () {
+            Route::get('/summary', [\App\Http\Controllers\Platform\CommunicationController::class, 'summary']);
+            Route::get('/logs', [\App\Http\Controllers\Platform\CommunicationController::class, 'logs']);
+            Route::post('/logs/retry-failed', [\App\Http\Controllers\Platform\CommunicationController::class, 'retryFailed'])->middleware('throttle:6,1');
+            Route::post('/logs/{log}/retry', [\App\Http\Controllers\Platform\CommunicationController::class, 'retry'])->whereNumber('log')->middleware('throttle:30,1');
+            Route::get('/templates', [\App\Http\Controllers\Platform\CommunicationController::class, 'templates']);
+            Route::put('/templates/{key}', [\App\Http\Controllers\Platform\CommunicationController::class, 'updateTemplate'])->where('key', '[a-z_]+');
+            Route::delete('/templates/{key}', [\App\Http\Controllers\Platform\CommunicationController::class, 'resetTemplate'])->where('key', '[a-z_]+');
+            Route::get('/announcements', [\App\Http\Controllers\Platform\CommunicationController::class, 'announcements']);
+            Route::post('/announcements/audience', [\App\Http\Controllers\Platform\CommunicationController::class, 'audience']);
+            Route::post('/announcements', [\App\Http\Controllers\Platform\CommunicationController::class, 'announce'])->middleware('throttle:10,1');
+        });
         Route::get('/managed-bookshops', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'index']);
         Route::post('/management/{bookshop}/enter', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'enter'])->middleware('throttle:10,1');
         Route::post('/management/leave', [\App\Http\Controllers\Platform\BookshopManagementController::class, 'leave']);

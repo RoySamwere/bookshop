@@ -43,6 +43,8 @@ final class Roles
         'platform.audit.view', 'platform.plans.view',
         // Manual trial extensions. Not granted to Platform Administrators.
         'platform.subscriptions.extend_trial',
+        // Announcements, email templates and the delivery log. Not granted to Platform Administrators.
+        'platform.communications.manage',
     ];
 
     public const PERMISSIONS = [...self::TENANT_PERMISSIONS, ...self::PLATFORM_PERMISSIONS];

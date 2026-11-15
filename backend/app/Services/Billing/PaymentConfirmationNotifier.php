@@ -4,7 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\User;
 use App\Notifications\SubscriptionPaymentConfirmed;
-use App\Support\SafeMail;
+use App\Services\CommunicationService;
 use Illuminate\Support\Facades\DB;
 
 /** Tells the bookshop owner a payment was applied. Sent once per ledger row, even if called repeatedly. */
@@ -36,8 +36,13 @@ class PaymentConfirmationNotifier
             'balance' => number_format(max(0, (float) $invoice->amount - $paid), 2),
             'access_until' => $access ? date('j M Y', strtotime($access)) : '—',
         ];
-        // The in-app notice always lands; email is best effort so an SMTP problem never blocks payment processing.
+        // The in-app notice always lands. The email goes through the logged, queued and retryable
+        // communication pipeline, so an SMTP problem never blocks payment processing and can be retried.
         $owner->notify(new SubscriptionPaymentConfirmed($details, false));
-        SafeMail::send(fn () => $owner->notifyNow(new SubscriptionPaymentConfirmed($details, true), ['mail']));
+        $bookshopModel = \App\Models\Bookshop::find($bookshop->id);
+        app(CommunicationService::class)->notify('payment_confirmed', $bookshopModel, 'saf-'.$row->id, [
+            'receipt' => $details['receipt'], 'amount' => $details['amount'], 'account' => $details['account_number'],
+            'invoice_status' => str_replace('_', ' ', $details['invoice_status']), 'balance' => $details['balance'], 'access_until' => $details['access_until'],
+        ], 'owners', inApp: false);
     }
 }

@@ -54,9 +54,10 @@ class PlatformBillingController extends Controller
 
     public function admin(Request $request)
     {
-        $data = $request->validate(['status' => 'nullable|in:pending,partially_paid,paid', 'environment' => 'nullable|in:sandbox,production,legacy']);
+        $data = $request->validate(['status' => 'nullable|in:pending,partially_paid,paid', 'environment' => 'nullable|in:sandbox,production,legacy', 'bookshop_id' => 'nullable|integer|min:1']);
 
         return response()->json($this->invoices()->when($data['status'] ?? null, fn ($q, $s) => $q->where('i.status', $s))
+            ->when($data['bookshop_id'] ?? null, fn ($q, $id) => $q->where('i.bookshop_id', $id))
             ->when($data['environment'] ?? null, fn ($q, $e) => $q->where('i.environment', $e))->orderByDesc('i.id')->paginate(30)->through(fn ($row) => self::progress($row)));
     }
 
