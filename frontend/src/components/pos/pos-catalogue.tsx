@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { BookOpen, Loader2, PackageX, Plus, RefreshCw, ScanBarcode, Search, X } from 'lucide-react'
 import { errorMessage } from '../../lib/api'
 import { formatKes, posApi, toNumber, type PosCategory, type PosProduct } from '../../lib/pos-api'
+import { assetUrl } from '../../lib/api'
 import { available } from '../../lib/pos-store'
 import { BrandMark } from '../brand-mark'
 
@@ -141,13 +142,15 @@ function ProductTile({ product, quantity, locked, onAdd }: { product: PosProduct
   const out = stock <= 0
   const left = stock - quantity
   const code = product.isbn || product.sku
+  // The small thumbnail keeps the till fast; the external cover URL is the fallback.
+  const photo = assetUrl(product.thumb_url ?? product.image_url)
   return <button type="button" onClick={onAdd} disabled={out || locked}
     aria-label={`Add ${product.title}, ${formatKes(toNumber(product.selling_price))}${out ? ', out of stock' : `, ${stock} in stock`}`}
     data-in-cart={quantity > 0}
     className="group relative flex h-full min-h-[148px] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-blue-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-60">
     <div className="flex h-[72px] w-full items-center justify-center overflow-hidden bg-slate-50">
-      {product.image_url ? <img src={product.image_url} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; event.currentTarget.nextElementSibling?.classList.remove('hidden') }} className="h-full w-full object-contain p-1.5" /> : null}
-      <span className={product.image_url ? 'hidden' : ''}><BrandMark size={48} /></span>
+      {photo ? <img src={photo} alt="" loading="lazy" decoding="async" onError={event => { event.currentTarget.style.display = 'none'; event.currentTarget.nextElementSibling?.classList.remove('hidden') }} className="h-full w-full object-contain p-1.5" /> : null}
+      <span className={photo ? 'hidden' : ''}><BrandMark size={48} /></span>
     </div>
     {quantity > 0 && <span className="absolute right-1.5 top-1.5 rounded-md bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">×{quantity}</span>}
     <div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2 pt-1.5">

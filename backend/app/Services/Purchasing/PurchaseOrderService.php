@@ -277,7 +277,8 @@ class PurchaseOrderService
         $order = $this->find($id, $bookshopId, $branchIds);
         $items = DB::table('purchase_order_items as poi')->leftJoin('books as b', 'b.id', '=', 'poi.book_id')
             ->where('poi.purchase_order_id', $id)->orderBy('poi.position')->orderBy('poi.id')
-            ->get(['poi.*', 'b.title as book_title', 'b.sku as book_sku', 'b.isbn as book_isbn']);
+            ->get(['poi.*', 'b.title as book_title', 'b.sku as book_sku', 'b.isbn as book_isbn', 'b.primary_image_id as image_id'])
+            ->map(fn ($row) => \App\Models\ProductImage::decorate($row));
         $supplier = DB::table('suppliers')->where('id', $order->supplier_id)->first(['id', 'name', 'contact_person', 'email', 'phone', 'address', 'payment_terms', 'lead_time_days', 'is_active']);
         $names = DB::table('users')->whereIn('id', array_filter([$order->created_by, $order->submitted_by, $order->approved_by, $order->confirmed_by, $order->cancelled_by]))->pluck('name', 'id');
         $receipts = DB::table('goods_receipts as gr')->leftJoin('users as u', 'u.id', '=', 'gr.received_by')

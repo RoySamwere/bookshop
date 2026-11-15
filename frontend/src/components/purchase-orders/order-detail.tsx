@@ -5,6 +5,7 @@ import type { BranchSummary } from '../../lib/auth'
 import { formatDate } from '../ui-kit'
 import { downloadLpoPdf, formatMoney, purchasingApi, STATUS_LABELS, type PurchaseOrderDetail, type PurchaseOrderStatus } from '../../lib/purchasing-api'
 import { OrderForm } from './order-form'
+import { ProductThumb } from '../product-photos'
 import { ReceiveGoods } from './receive-goods'
 import { EmailState, ReasonDialog, Sheet, StatusPill, type SupplierOption } from './shared'
 
@@ -127,7 +128,7 @@ export function OrderDetail({ id, userName, branches, suppliers, canEditPrices, 
             <th className="px-3 py-2.5 text-right">Outstanding</th><th className="px-3 py-2.5 text-right">Unit cost</th><th className="px-3 py-2.5 text-right">Line total</th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">{order.items.map(item => <tr key={item.id}>
-            <td className="px-4 py-2.5"><strong className="block text-slate-900">{item.description}</strong><span className="text-xs text-slate-500">{[item.sku, item.isbn].filter(Boolean).join(' · ')}</span></td>
+            <td className="px-4 py-2.5"><div className="flex items-center gap-3"><ProductThumb url={item.thumb_url} size="sm" alt="" /><div className="min-w-0"><strong className="block text-slate-900">{item.description}</strong><span className="text-xs text-slate-500">{[item.sku, item.isbn].filter(Boolean).join(' · ')}</span></div></div></td>
             <td className="px-3 py-2.5 text-slate-600">{item.unit_label}{item.units_per_package > 1 ? ` ×${item.units_per_package}` : ''}</td>
             <td className="px-3 py-2.5 text-right">{item.quantity}</td>
             <td className="px-3 py-2.5 text-right text-emerald-700">{item.received_quantity}</td>

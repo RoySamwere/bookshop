@@ -89,7 +89,9 @@ class CatalogController extends Controller
             $words=preg_split('/\\s+/',trim($request->input('search')));
             foreach($words as $word) $query->where(fn($q)=>$q->where('b.title','like',"%{$word}%")->orWhere('b.sku','like',"%{$word}%")->orWhere('b.isbn','like',"%{$word}%")->orWhere('s.name','like',"%{$word}%")->orWhere('c.name','like',"%{$word}%")->orWhere('b.brand','like',"%{$word}%")->orWhere('b.ruling_style','like',"%{$word}%")->orWhere('b.paper_size','like',"%{$word}%"));
         }
-        return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20));
+        return $query->when($request->boolean('receiving_search'),fn($q)=>$q->orderBy('b.is_active','desc'))->select('b.*','s.name as subcategory_name','c.name as category_name')->orderBy('b.title')->orderBy('b.id')->paginate((int)$request->input('per_page',20))
+            // Signed photo URLs for the main photo; an external cover_url is the fallback.
+            ->through(fn($row)=>\App\Models\ProductImage::decorate($row,$row->cover_url));
     }
     public function bulkCreateBooks(Request $request) {
         $this->requireMasterCatalogueOwner($request);

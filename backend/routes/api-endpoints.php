@@ -83,6 +83,12 @@ Route::get('/public/products-catalogue', function (\Illuminate\Http\Request $req
     return response()->json(['data' => $rows])->header('Cache-Control', 'public, max-age=300');
 })->middleware('throttle:60,1');
 
+// Product photos are fetched by <img> tags, so access is by short-lived signed URL rather than a session.
+// Only signed-in users of the owning bookshop are ever given these URLs.
+Route::get('/product-images/{image}/{size}', [\App\Http\Controllers\ProductImageController::class, 'show'])
+    ->whereNumber('image')->whereIn('size', \App\Models\ProductImage::SIZES)->middleware(['signed:relative', 'throttle:600,1'])
+    ->name(isset($verificationRouteName) ? 'v1.product-images.show' : 'product-images.show');
+
 // Public website: launch notification signups.
 Route::post('/public/launch-subscribers', [LaunchSubscriberController::class, 'store'])->middleware('throttle:subscribe');
 
@@ -138,6 +144,13 @@ Route::middleware(['auth:sanctum', 'active', 'session.active', \App\Http\Middlew
         Route::get('/books/{book}/units', [ProductUnitController::class,'index'])->middleware('permission:catalog.view');
         Route::post('/books/{book}/units', [ProductUnitController::class,'store'])->middleware('permission:catalog.manage');
         Route::delete('/books/{book}/units/{unit}', [ProductUnitController::class,'destroy'])->middleware('permission:catalog.manage');
+        // Product photos: the bookshop's own products only (enforced in the controller).
+        Route::get('/books/{book}/images', [\App\Http\Controllers\ProductImageController::class, 'index'])->whereNumber('book')->middleware('permission:catalog.view');
+        Route::post('/books/{book}/images', [\App\Http\Controllers\ProductImageController::class, 'store'])->whereNumber('book')->middleware(['permission:catalog.manage', 'throttle:60,1']);
+        Route::put('/books/{book}/images/order', [\App\Http\Controllers\ProductImageController::class, 'reorder'])->whereNumber('book')->middleware('permission:catalog.manage');
+        Route::post('/books/{book}/images/{image}/replace', [\App\Http\Controllers\ProductImageController::class, 'replace'])->whereNumber(['book', 'image'])->middleware(['permission:catalog.manage', 'throttle:60,1']);
+        Route::post('/books/{book}/images/{image}/primary', [\App\Http\Controllers\ProductImageController::class, 'primary'])->whereNumber(['book', 'image'])->middleware('permission:catalog.manage');
+        Route::delete('/books/{book}/images/{image}', [\App\Http\Controllers\ProductImageController::class, 'destroy'])->whereNumber(['book', 'image'])->middleware('permission:catalog.manage');
         Route::post('/books', [CatalogController::class, 'storeBook'])->middleware('permission:catalog.manage');
         Route::patch('/books/{book}', [CatalogController::class, 'updateBook'])->middleware('permission:catalog.manage');
         Route::post('/catalog/{table}', [CatalogController::class, 'createLookup'])->middleware('permission:catalog.manage');

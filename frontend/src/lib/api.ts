@@ -78,4 +78,40 @@ export async function api<T>(path: string, { method = 'GET', body, query, auth =
   }
   return data as T
 }
+/**
+ * Multipart upload with progress (fetch cannot report upload progress). Same cookies, CSRF header and
+ * error handling as api(); the browser sets the multipart Content-Type itself.
+ */
+export async function apiUpload<T>(path: string, form: FormData, onProgress?: (fraction: number) => void): Promise<T> {
+  await ensureCsrfCookie()
+  const csrf = csrfToken()
+  const session = sessionStore.get()
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', `${API_BASE}${path}`)
+    request.withCredentials = true
+    request.timeout = 120_000
+    request.setRequestHeader('Accept', 'application/json')
+    if (csrf) request.setRequestHeader('X-XSRF-TOKEN', csrf)
+    request.upload.onprogress = event => { if (event.lengthComputable) onProgress?.(event.loaded / event.total) }
+    request.onerror = () => reject(new ApiError('Cannot reach the Bookshop server. Check your connection and try again.', 0))
+    request.ontimeout = () => reject(new ApiError('The upload took too long. Check your connection and try again.', 0))
+    request.onload = () => {
+      let data: { message?: string; errors?: FieldErrors; reason?: string } = {}
+      try { data = JSON.parse(request.responseText || '{}') } catch { /* non-JSON error page */ }
+      if (request.status >= 200 && request.status < 300) return resolve(data as T)
+      if (session !== null && [401, 419].includes(request.status) && session === sessionStore.get()) {
+        sessionStore.clear()
+        window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT, { detail: { reason: data.reason } }))
+      }
+      const message = request.status === 413 ? 'The photo is too large to upload.' : request.status === 419 ? 'Your secure session expired. Sign in again.' : data.message || 'The upload was not accepted.'
+      reject(new ApiError(request.status >= 500 ? 'Something went wrong on the server. Try again shortly.' : message, request.status, data.errors || {}))
+    }
+    request.send(form)
+  })
+}
+
+/** Signed asset paths from the API (such as product photos) are relative to the API's origin. */
+export const assetUrl = (url: string | null | undefined): string | null => !url ? null : /^(https?:|data:|blob:)/.test(url) ? url : `${API_ORIGIN}${url}`
+
 export const errorMessage = (error: unknown, fallback = 'Something went wrong.') => error instanceof Error ? error.message : fallback

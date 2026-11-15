@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\InventoryService;
 use App\Support\Tenancy\Tenant;
+use App\Models\ProductImage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -44,12 +45,13 @@ class InventoryController extends Controller
             ->when($request->query('status') === 'available', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0'))
             ->when($request->query('status') === 'low', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) > 0 AND COALESCE(i.quantity,0) - COALESCE(i.reserved,0) <= b.reorder_level'))
             ->when($request->query('status') === 'out', fn($q) => $q->whereRaw('COALESCE(i.quantity,0) - COALESCE(i.reserved,0) = 0'))
-            ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, br.name as branch_name')
+            ->selectRaw('COALESCE(i.id, 0) as id, b.id as book_id, br.id as branch_id, COALESCE(i.quantity, 0) as quantity, COALESCE(i.reserved, 0) as reserved, b.title, b.sku, b.isbn, b.reorder_level, b.primary_image_id as image_id, br.name as branch_name')
             ->when($request->query('sort','available_desc')==='available_desc',fn($q)=>$q->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) DESC'))
             ->when($request->query('sort')==='available_asc',fn($q)=>$q->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) ASC'))
             ->when($request->query('sort')==='title_desc',fn($q)=>$q->orderBy('b.title','desc'))
             ->when($request->query('sort')==='sku_asc',fn($q)=>$q->orderBy('b.sku'))
-            ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30));
+            ->orderBy('b.title')->orderBy('br.id')->paginate((int) ($request->input('per_page') ?? 30))
+            ->through(fn ($row) => ProductImage::decorate($row));
         return response()->json(array_merge($result->toArray(), ['summary' => $summary]));
     }
     public function catalogueStockSummary(Request $request) {
@@ -78,8 +80,8 @@ class InventoryController extends Controller
             ->where('i.bookshop_id',$tenant)->where('b.bookshop_id',$tenant)->where('br.bookshop_id',$tenant)
             ->where('b.is_active',true)->where('br.is_active',true)
             ->when($branches!==null,fn($q)=>$q->whereIn('i.branch_id',$branches))
-            ->select('i.book_id','i.branch_id','b.sku','b.title','br.name as branch_name','i.quantity','i.reserved')
-            ->orderBy('br.name')->orderBy('b.title')->get();
+            ->select('i.book_id','i.branch_id','b.sku','b.title','b.primary_image_id as image_id','br.name as branch_name','i.quantity','i.reserved')
+            ->orderBy('br.name')->orderBy('b.title')->get()->map(fn ($row) => ProductImage::decorate($row));
         return response()->json(['rows'=>$rows,'generated_at'=>now()->toIso8601String()]);
     }
     public function stocktakeApply(Request $request, InventoryService $service) {

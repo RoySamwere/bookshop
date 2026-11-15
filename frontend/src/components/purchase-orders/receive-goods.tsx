@@ -3,6 +3,7 @@ import { PackageCheck } from 'lucide-react'
 import { ApiError, errorMessage } from '../../lib/api'
 import { purchasingApi, type PurchaseOrderDetail } from '../../lib/purchasing-api'
 import { newKey, today } from './shared'
+import { ProductThumb } from '../product-photos'
 
 type Entry = { quantity: number; damaged: number; notes: string }
 
@@ -64,7 +65,7 @@ export function ReceiveGoods({ order, userName, onClose, onDone }: { order: Purc
               <th className="px-3 py-2.5 text-right">Outstanding</th><th className="px-3 py-2.5 text-right">Receiving now</th><th className="px-3 py-2.5 text-right">Damaged / short</th><th className="px-3 py-2.5">Note</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">{open.map(item => <tr key={item.id}>
-              <td className="px-4 py-2.5"><strong className="block text-slate-900">{item.description}</strong><span className="text-xs text-slate-500">{item.unit_label}{item.units_per_package > 1 ? ` of ${item.units_per_package}` : ''} · {item.sku}</span></td>
+              <td className="px-4 py-2.5"><div className="flex items-center gap-3"><ProductThumb url={item.thumb_url} size="sm" alt="" /><div className="min-w-0"><strong className="block text-slate-900">{item.description}</strong><span className="text-xs text-slate-500">{item.unit_label}{item.units_per_package > 1 ? ` of ${item.units_per_package}` : ''} · {item.sku}</span></div></div></td>
               <td className="px-3 py-2.5 text-right">{item.quantity}</td>
               <td className="px-3 py-2.5 text-right">{item.received_quantity}</td>
               <td className="px-3 py-2.5 text-right font-semibold">{item.outstanding_quantity}</td>

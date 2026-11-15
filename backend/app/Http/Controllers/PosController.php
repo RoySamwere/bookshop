@@ -41,11 +41,13 @@ class PosController extends Controller
         });})
         ->when($data['category_id']??null,fn($q,$category)=>$q->where('cat.id',$category))
         ->select('b.id','b.title','b.sku','b.isbn','b.selling_price','sub.name as subcategory','cat.name as category','cat.id as category_id')
-        ->selectRaw($imageColumn ? 'b.`'.$imageColumn.'` as image_url' : 'NULL as image_url')
+        ->addSelect('b.primary_image_id as image_id')
+        ->selectRaw($imageColumn ? 'b.`'.$imageColumn.'` as cover_url' : 'NULL as cover_url')
         ->selectRaw('CASE WHEN COALESCE(i.quantity,0)>COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0)-COALESCE(i.reserved,0) ELSE 0 END as available')
         // A scanned barcode (exact SKU or ISBN) is always the first result.
         ->when($search,fn($q,$search)=>$q->orderByRaw('CASE WHEN b.sku = ? OR b.isbn = ? THEN 0 ELSE 1 END',[$search,$search]))
-        ->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) DESC')->orderBy('b.title')->paginate(30);
+        ->orderByRaw('(CASE WHEN COALESCE(i.quantity,0) > COALESCE(i.reserved,0) THEN COALESCE(i.quantity,0) - COALESCE(i.reserved,0) ELSE 0 END) DESC')->orderBy('b.title')->paginate(30)
+        ->through(fn($row)=>\App\Models\ProductImage::decorate($row,$row->cover_url));
     }
 
     public function sales(Request $request) {
@@ -141,7 +143,9 @@ class PosController extends Controller
 
     private function receipt(int $id): array {
         $sale=DB::table('pos_sales')->where('id',$id)->first();
-        return ['sale'=>$sale,'items'=>DB::table('pos_sale_items')->where('sale_id',$id)->get()];
+        // Current product photo next to each sold line (the sale record itself is unchanged).
+        return ['sale'=>$sale,'items'=>DB::table('pos_sale_items as item')->leftJoin('books as b',fn($j)=>$j->on('b.id','=','item.book_id')->where('b.bookshop_id',$sale->bookshop_id))
+            ->where('item.sale_id',$id)->select('item.*','b.primary_image_id as image_id')->get()->map(fn($row)=>\App\Models\ProductImage::decorate($row))];
     }
 
     public function show(Request $request,int $sale) {

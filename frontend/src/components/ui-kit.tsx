@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react'
 import type { Paginated } from '../lib/api'
 
@@ -110,8 +110,10 @@ export function Pagination({ meta, onPage }: { meta: Paginated<unknown>['meta'];
 }
 
 /** Accessible modal: traps focus, closes on Escape or backdrop click unless busy. */
-export function Modal({ title, description, icon, onClose, busy = false, wide = false, variant, children }: { title: string; description?: string; icon?: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; variant?: 'original'; children: ReactNode }) {
+/** `elevated` stacks the dialog above the older full-screen dialogs (z-index 130), for dialogs opened from inside them. */
+export function Modal({ title, description, icon, onClose, busy = false, wide = false, elevated = false, variant, children }: { title: string; description?: string; icon?: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; elevated?: boolean; variant?: 'original'; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null)
+  const titleId = useId()
   const closeRef = useRef(onClose)
   const busyRef = useRef(busy)
   useEffect(() => { closeRef.current = onClose; busyRef.current = busy })
@@ -121,6 +123,9 @@ export function Modal({ title, description, icon, onClose, busy = false, wide = 
     const focusables = () => Array.from(panel.current?.querySelectorAll<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])') || [])
     ;(focusables().find(element => element.tagName !== 'BUTTON') || focusables()[0])?.focus()
     function keydown(event: KeyboardEvent) {
+      // With nested dialogs open, only the most recently opened one responds.
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+      if (dialogs.length && dialogs[dialogs.length - 1] !== panel.current) return
       if (event.key === 'Escape' && !busyRef.current) { event.preventDefault(); closeRef.current() }
       if (event.key !== 'Tab') return
       const items = focusables()
@@ -132,13 +137,13 @@ export function Modal({ title, description, icon, onClose, busy = false, wide = 
     return () => { document.removeEventListener('keydown', keydown); if (previous?.isConnected) previous.focus() }
   }, [])
 
-  return <div className={variant === 'original' ? 'modal-backdrop stock-receipt-backdrop' : 'fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-sm'}
+  return <div className={variant === 'original' ? 'modal-backdrop stock-receipt-backdrop' : `fixed inset-0 ${elevated ? 'z-[160]' : 'z-50'} flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-sm`}
     onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <section ref={panel} className={variant === 'original' ? 'checkout-modal stock-receipt-modal' : `my-auto w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/20`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <section ref={panel} className={variant === 'original' ? 'checkout-modal stock-receipt-modal' : `my-auto w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/20`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5 sm:px-7">
         <div>
           {icon && <span className="mb-3 grid size-10 place-items-center rounded-xl bg-blue-50 text-[#087df5]">{icon}</span>}
-          <h2 id="modal-title" className="text-xl font-bold tracking-tight text-slate-900">{title}</h2>
+          <h2 id={titleId} className="text-xl font-bold tracking-tight text-slate-900">{title}</h2>
           {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
         </div>
         <button type="button" className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" onClick={onClose} disabled={busy} aria-label="Close dialog"><X size={18} /></button>

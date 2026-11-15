@@ -28,7 +28,7 @@ export type PurchaseOrderRow = PurchaseOrderSummary & {
 }
 
 export type PurchaseOrderItem = {
-  id: number; book_id: number; description: string; sku: string | null; isbn: string | null
+  id: number; book_id: number; description: string; sku: string | null; isbn: string | null; thumb_url?: string | null
   product_unit_id: number | null; unit_label: string | null; units_per_package: number
   quantity: number; received_quantity: number; cancelled_quantity: number; outstanding_quantity: number
   unit_cost: number; discount: number; line_total: number

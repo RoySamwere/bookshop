@@ -7,6 +7,7 @@ import { available, cartTotal, cartUnits, lineTotal, MPESA_CODE, quickCashOption
 import type { BusinessProfile } from '../../lib/workspace-api'
 import { receiptDate } from './receipt-print'
 import { BrandMark } from '../brand-mark'
+import { ProductThumb } from '../product-photos'
 
 /** The paper ticket: a white card with a torn bottom edge. */
 export function Ticket({ children, label }: { children: ReactNode; label: string }) {
@@ -84,6 +85,7 @@ function TicketLine({ line, flash, onQuantity, onRemove }: { line: CartLine; fla
 
   return <li data-line={product.id} className={`py-2 transition-colors duration-700 ${flash ? 'bg-blue-50/80' : ''}`}>
     <div className="flex items-start gap-3">
+      <ProductThumb url={product.thumb_url ?? product.image_url} size="xs" alt="" />
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 text-[12px] font-semibold leading-snug text-[#162c4c]">{product.title}</p>
       </div>

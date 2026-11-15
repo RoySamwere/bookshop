@@ -517,6 +517,11 @@ h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .stock-product-option:hover, .stock-product-option:focus-visible { background: #effaf7; }
 .stock-product-option strong, .stock-product-option span { display: block; font-size: 12px; }
 .stock-product-option span { margin-top: 4px; color: var(--muted); font-size: 11px; }
+/* Product photo beside a search result or the chosen product. */
+.stock-product-option.has-thumb, .stock-product-selected.has-thumb { display: flex; align-items: center; gap: 12px; }
+.stock-product-option .product-thumb, .stock-product-selected .product-thumb { display: inline-grid; margin-top: 0; }
+.stock-product-selected.has-thumb strong, .stock-product-selected.has-thumb span:not(.product-thumb) { display: block; font-size: 13px; }
+.stock-product-selected.has-thumb span:not(.product-thumb) { margin-top: 5px; color: var(--muted); font-size: 11px; }
 .stock-product-missing p { margin: 0 0 12px; }
 .stock-product-missing button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .stock-add-product { margin-top: 14px; }
